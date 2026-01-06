@@ -1,0 +1,7 @@
+{
+  "name": "Login Inteligente & Inventário",
+  "description": "A comprehensive inventory management application for warehouse workers featuring mission tracking, item counting, and damage reporting.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
