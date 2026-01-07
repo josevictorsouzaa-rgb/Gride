@@ -53,36 +53,36 @@ const App: React.FC = () => {
         // 1. Carregar Categorias
         const cats = await api.getCategories();
         
-        // Verificação de segurança para evitar crash se a API falhar
-        if (Array.isArray(cats)) {
+        // Verificação de segurança CRÍTICA
+        if (cats && Array.isArray(cats)) {
             setCategories(cats);
         } else {
-            console.warn("Categorias retornadas não são um array:", cats);
+            console.warn("API retornou categorias inválidas. Usando array vazio.");
             setCategories([]);
         }
 
         // 2. Carregar Produtos
         const products = await api.getProducts(1, 100);
         
-        if (Array.isArray(products) && products.length > 0) {
+        if (products && Array.isArray(products) && products.length > 0) {
             const groupedMap = new Map<string, any[]>();
             
             products.forEach((p: ApiProduct) => {
                 const groupKey = p.similar_id ? `SIMILAR_${p.similar_id}` : `PROD_${p.id}`;
                 
                 if (!groupedMap.has(groupKey)) {
-                groupedMap.set(groupKey, []);
+                  groupedMap.set(groupKey, []);
                 }
                 
                 groupedMap.get(groupKey)?.push({
-                id: p.id,
-                name: p.name,
-                ref: p.sku, 
-                brand: p.brand,
-                balance: p.balance, 
-                lastCount: null,
-                location: p.location,
-                similar_id: p.similar_id
+                  id: p.id,
+                  name: p.name,
+                  ref: p.sku, 
+                  brand: p.brand,
+                  balance: p.balance, 
+                  lastCount: null,
+                  location: p.location,
+                  similar_id: p.similar_id
                 });
             });
 
@@ -102,13 +102,13 @@ const App: React.FC = () => {
                 }
 
                 realBlocks.push({
-                id: idCounter++,
-                parentRef: headerTitle, 
-                location: firstItem.location || 'GERAL',
-                status: 'pending', 
-                date: 'Hoje',
-                subcategory: firstItem.brand || 'DIVERSOS', 
-                items: items
+                  id: idCounter++,
+                  parentRef: headerTitle, 
+                  location: firstItem.location || 'GERAL',
+                  status: 'pending', 
+                  date: 'Hoje',
+                  subcategory: firstItem.brand || 'DIVERSOS', 
+                  items: items
                 });
             });
 
@@ -116,6 +116,7 @@ const App: React.FC = () => {
         }
     } catch (error) {
         console.error("Erro crítico ao carregar dados:", error);
+        setCategories([]); 
     } finally {
         setIsLoading(false);
     }

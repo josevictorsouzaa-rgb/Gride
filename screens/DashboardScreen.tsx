@@ -21,12 +21,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 }) => {
   // Safety Check for Data Loading
   if (!categories || !Array.isArray(categories)) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-background-light dark:bg-background-dark text-gray-500 animate-pulse">
-        <Icon name="cloud_sync" size={48} className="mb-4 text-primary" />
-        <p>Carregando dados do banco...</p>
-      </div>
-    );
+     return null;
   }
 
   const [showAllCategories, setShowAllCategories] = useState(false);
