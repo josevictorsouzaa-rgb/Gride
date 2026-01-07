@@ -18,10 +18,124 @@ const options = {
     database: 'C:\\Users\\DELL G15\\Desktop\\BD\\DATABASE\\DATABASE.FDB',
     user: 'SYSDBA',
     password: 'masterkey',
-    lowercase_keys: false, // Retorna colunas em MAIÚSCULO conforme padrão FB
+    lowercase_keys: false, 
     role: null,
     pageSize: 4096
 };
+
+// --- ROTA DE LOGIN ---
+app.post('/login', (req, res) => {
+    const { usuario_id, senha } = req.body;
+
+    if (!usuario_id || !senha) {
+        return res.status(400).json({ error: 'ID e Senha são obrigatórios' });
+    }
+
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.status(500).json({ error: 'Erro de conexão com banco' });
+
+        // 1. Verificar se o usuário existe e está ativo
+        const sqlUser = `SELECT USU_COD, USU_NOME, USU_ATIVO FROM USUARIOS WHERE USU_COD = ?`;
+        
+        db.query(sqlUser, [usuario_id], (err, resultUser) => {
+            if (err) {
+                db.detach();
+                return res.status(500).json({ error: err.message });
+            }
+
+            if (resultUser.length === 0) {
+                db.detach();
+                return res.status(401).json({ error: 'Usuário não encontrado' });
+            }
+
+            const user = resultUser[0];
+            const ativo = user.USU_ATIVO ? user.USU_ATIVO.toString() : 'N';
+
+            if (ativo !== 'S') {
+                db.detach();
+                return res.status(403).json({ error: 'Usuário inativo' });
+            }
+
+            // 2. Buscar a última senha cadastrada
+            const sqlPwd = `SELECT FIRST 1 PWD_SENHA FROM PASSWORDS WHERE USU_COD = ? ORDER BY PWD_ID DESC`;
+
+            db.query(sqlPwd, [usuario_id], (err, resultPwd) => {
+                db.detach();
+                if (err) return res.status(500).json({ error: err.message });
+
+                if (resultPwd.length === 0) {
+                    return res.status(401).json({ error: 'Senha não cadastrada' });
+                }
+
+                // Node-firebird pode retornar buffer, converte para string
+                const dbSenha = resultPwd[0].PWD_SENHA ? resultPwd[0].PWD_SENHA.toString() : '';
+
+                if (dbSenha === senha) {
+                    const userName = user.USU_NOME ? user.USU_NOME.toString() : 'Usuário';
+                    
+                    // Retorna dados do usuário logado (Role fictícia pois não informada na tabela USUARIOS)
+                    res.json({
+                        success: true,
+                        user: {
+                            id: user.USU_COD.toString(),
+                            name: userName,
+                            role: 'Colaborador', // Default, já que não temos cargo na tabela USUARIOS
+                            avatar: `https://i.pravatar.cc/150?u=${user.USU_COD}`,
+                            isAdmin: usuario_id === '18' // Exemplo de regra hardcoded para admin, ajuste conforme necessidade
+                        }
+                    });
+                } else {
+                    res.status(401).json({ error: 'Senha incorreta' });
+                }
+            });
+        });
+    });
+});
+
+// --- ROTA DE CATEGORIAS ---
+app.get('/categories', (req, res) => {
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.status(500).json({ error: 'Erro de conexão' });
+
+        // Buscar Grupos
+        db.query('SELECT GR_COD, GR_DESCRI FROM GRUPOPRODUTOS', [], (err, groups) => {
+            if (err) {
+                db.detach();
+                return res.status(500).json({ error: err.message });
+            }
+
+            // Buscar Subgrupos
+            db.query('SELECT GR_COD, SG_COD, SG_DESCRI FROM SUBGRUPOPRODUTOS', [], (err, subgroups) => {
+                db.detach();
+                if (err) return res.status(500).json({ error: err.message });
+
+                // Processar e Montar Árvore
+                const categoryTree = groups.map(g => {
+                    const groupId = g.GR_COD;
+                    
+                    // Filtrar subgrupos deste grupo
+                    const subs = subgroups.filter(s => s.GR_COD === groupId).map(s => ({
+                        id: s.SG_COD.toString(),
+                        name: s.SG_DESCRI ? s.SG_DESCRI.toString() : '',
+                        count: 0, // Mock, pois precisaria de count(*) na tabela produtos
+                        icon: 'circle' // Ícone padrão
+                    }));
+
+                    return {
+                        id: groupId.toString(),
+                        db_id: groupId,
+                        label: g.GR_DESCRI ? g.GR_DESCRI.toString() : '',
+                        icon: 'inventory_2', // Ícone padrão
+                        count: 0, // Mock
+                        subcategories: subs
+                    };
+                });
+
+                res.json(categoryTree);
+            });
+        });
+    });
+});
 
 // Rota: Listar Produtos
 app.get('/products', (req, res) => {
@@ -36,7 +150,6 @@ app.get('/products', (req, res) => {
             return res.status(500).json({ error: 'Erro ao conectar no banco' });
         }
 
-        // QUERY ATUALIZADA: Colunas específicas, Estoque Atual e Filtro Ativo
         let sql = `
             SELECT FIRST ? SKIP ? 
                 P.PRO_COD, 
@@ -63,9 +176,7 @@ app.get('/products', (req, res) => {
             db.detach();
             if (err) return res.status(500).json({ error: err.message });
 
-            // Mapeamento atualizado conforme solicitado
             const mapped = result.map(item => {
-                // Tratamento básico para strings que podem vir como buffer no node-firebird
                 const nome = item.PRO_DESCRI ? item.PRO_DESCRI.toString() : '';
                 const sku = item.PRO_NRFABRICANTE ? item.PRO_NRFABRICANTE.toString().trim() : '';
                 const similarId = item.PRO_COD_SIMILAR ? item.PRO_COD_SIMILAR.toString().trim() : null;
@@ -74,10 +185,10 @@ app.get('/products', (req, res) => {
                     id: item.PRO_COD,
                     name: nome,
                     sku: sku,
-                    balance: parseFloat(item.PRO_EST_ATUAL || 0), // Saldo vindo de PRO_EST_ATUAL
+                    balance: parseFloat(item.PRO_EST_ATUAL || 0),
                     similar_id: similarId,
-                    brand: 'GENÉRICO', // Ajuste se houver tabela de MARCAS para fazer join
-                    location: 'ESTOQUE GERAL', // Ajuste se houver campo de localização específico
+                    brand: 'GENÉRICO',
+                    location: 'ESTOQUE GERAL',
                     status: 'active'
                 };
             });

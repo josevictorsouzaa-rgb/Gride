@@ -2,16 +2,23 @@ import React, { useState, useEffect } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { Icon } from '../components/Icon';
 import { Screen, User } from '../types';
-import { CATEGORIES_DATA } from '../data/categories'; // Import centralized data
+import { ApiCategory } from '../services/api';
 
 interface DashboardScreenProps {
   onNavigate: (screen: Screen) => void;
   onCategorySelect: (category: string) => void;
   currentUser: User | null;
   onLogout?: () => void;
+  categories: ApiCategory[]; // Receives data from App.tsx
 }
 
-export const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigate, onCategorySelect, currentUser, onLogout }) => {
+export const DashboardScreen: React.FC<DashboardScreenProps> = ({ 
+  onNavigate, 
+  onCategorySelect, 
+  currentUser, 
+  onLogout, 
+  categories 
+}) => {
   const [showAllCategories, setShowAllCategories] = useState(false);
   
   // Detection for Desktop View
@@ -26,13 +33,10 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigate, on
     return () => window.removeEventListener('resize', checkDesktop);
   }, []);
 
-  // Use the imported data. 
-  // Note: We might want to handle "active" state or sorting here if needed, 
-  // but for now we just map the raw data.
-  // Let's sort simply by count desc for visual priority if desired, or keep original order.
+  // Use props instead of static import
   const displayedCategories = (isDesktop || showAllCategories) 
-    ? CATEGORIES_DATA 
-    : CATEGORIES_DATA.slice(0, 6);
+    ? categories 
+    : categories.slice(0, 6);
 
   // Mock Issue Count
   const pendingIssuesCount = 3;
@@ -218,30 +222,34 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigate, on
             </div>
             {/* Responsive Grid: 3 cols mobile, 4 cols tablet, 6 cols desktop */}
             <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-6 gap-3">
-                {displayedCategories.map((cat, idx) => {
-                  const isActive = cat.label === 'MOTOR'; // Mock active state or pass from props
-                  return (
-                    <button 
-                        key={idx} 
-                        onClick={() => onCategorySelect(cat.label)}
-                        className={`flex flex-col items-center justify-center aspect-square rounded-xl gap-1 group active:scale-95 hover:scale-105 transition-all ${
-                        isActive 
-                        ? 'bg-surface-dark border border-primary/50 shadow-[0_0_10px_rgba(19,127,236,0.15)]' 
-                        : 'bg-surface-dark border border-card-border hover:border-gray-500 hover:shadow-md'
-                    }`}>
-                        <Icon name={cat.icon} className={`text-3xl mb-1 ${isActive ? 'text-primary group-hover:scale-110' : 'text-text-secondary group-hover:text-white'} transition-all`} />
-                        
-                        <div className="flex flex-col items-center leading-none gap-1">
-                        <span className={`text-[10px] md:text-xs font-bold text-center px-1 ${isActive ? 'text-white' : 'text-slate-300 group-hover:text-white'}`}>
-                            {cat.label}
-                        </span>
-                        <span className={`text-[10px] md:text-[11px] font-medium text-center ${isActive ? 'text-primary/80' : 'text-text-secondary'}`}>
-                            {cat.count} itens
-                        </span>
-                        </div>
-                    </button>
-                  );
-                })}
+                {displayedCategories.length === 0 ? (
+                  <div className="col-span-full py-10 text-center text-gray-400 text-sm">Carregando categorias...</div>
+                ) : (
+                  displayedCategories.map((cat, idx) => {
+                    const isActive = cat.label === 'MOTOR'; // Mock active state or pass from props
+                    return (
+                      <button 
+                          key={idx} 
+                          onClick={() => onCategorySelect(cat.label)}
+                          className={`flex flex-col items-center justify-center aspect-square rounded-xl gap-1 group active:scale-95 hover:scale-105 transition-all ${
+                          isActive 
+                          ? 'bg-surface-dark border border-primary/50 shadow-[0_0_10px_rgba(19,127,236,0.15)]' 
+                          : 'bg-surface-dark border border-card-border hover:border-gray-500 hover:shadow-md'
+                      }`}>
+                          <Icon name={cat.icon} className={`text-3xl mb-1 ${isActive ? 'text-primary group-hover:scale-110' : 'text-text-secondary group-hover:text-white'} transition-all`} />
+                          
+                          <div className="flex flex-col items-center leading-none gap-1">
+                          <span className={`text-[10px] md:text-xs font-bold text-center px-1 ${isActive ? 'text-white' : 'text-slate-300 group-hover:text-white'}`}>
+                              {cat.label}
+                          </span>
+                          <span className={`text-[10px] md:text-[11px] font-medium text-center ${isActive ? 'text-primary/80' : 'text-text-secondary'}`}>
+                              {cat.count} itens
+                          </span>
+                          </div>
+                      </button>
+                    );
+                  })
+                )}
             </div>
             </section>
         </div>

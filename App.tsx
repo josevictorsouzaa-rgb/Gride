@@ -13,22 +13,17 @@ import { AnalyticsScreen } from './screens/AnalyticsScreen';
 import { BottomNav } from './components/BottomNav';
 import { Sidebar } from './components/Sidebar'; 
 import { ScannerModal } from './components/Modals';
-import { api, ApiProduct } from './services/api'; 
+import { api, ApiProduct, ApiCategory } from './services/api'; 
 
 const initialBlocksData: Block[] = [
   { 
     id: 1, 
-    parentRef: 'DEMO / S/REF', 
-    location: 'Exemplo: Rua 04', 
-    status: 'late', 
-    date: 'Ontem', 
-    subcategory: 'Exemplo', 
-    items: [
-      { 
-        name: 'ITEM DEMO (Conecte o Node)', ref: '0000', brand: 'GENERIC', balance: 0,
-        lastCount: null 
-      }
-    ]
+    parentRef: 'SISTEMA', 
+    location: 'Aguardando', 
+    status: 'pending', 
+    date: 'Hoje', 
+    subcategory: 'Geral', 
+    items: []
   }
 ];
 
@@ -38,12 +33,14 @@ const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   
   const [blocks, setBlocks] = useState<Block[]>(initialBlocksData);
+  const [categories, setCategories] = useState<ApiCategory[]>([]); // Categorias do Banco
   
   const [segmentFilter, setSegmentFilter] = useState<string | null>(null);
   const [activeBlock, setActiveBlock] = useState<any | null>(null);
   const [showScanner, setShowScanner] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
+  // Load Categories & Products on Login
   useEffect(() => {
     if (currentScreen !== 'login') {
       loadRealData();
@@ -52,14 +49,18 @@ const App: React.FC = () => {
 
   const loadRealData = async () => {
     setIsLoading(true);
+    
+    // 1. Carregar Categorias
+    const cats = await api.getCategories();
+    setCategories(cats);
+
+    // 2. Carregar Produtos
     const products = await api.getProducts(1, 100);
     
     if (products.length > 0) {
-      // Nova Lógica: Agrupar por similar_id
       const groupedMap = new Map<string, any[]>();
       
       products.forEach((p: ApiProduct) => {
-        // Se tiver similar_id, usa ele como chave. Se não, usa o ID do próprio produto (grupo único)
         const groupKey = p.similar_id ? `SIMILAR_${p.similar_id}` : `PROD_${p.id}`;
         
         if (!groupedMap.has(groupKey)) {
@@ -71,7 +72,7 @@ const App: React.FC = () => {
           name: p.name,
           ref: p.sku, 
           brand: p.brand,
-          balance: p.balance, // Agora vem de PRO_EST_ATUAL
+          balance: p.balance, 
           lastCount: null,
           location: p.location,
           similar_id: p.similar_id
@@ -82,9 +83,6 @@ const App: React.FC = () => {
       let idCounter = 1000;
 
       groupedMap.forEach((items, key) => {
-        // Define o título do bloco
-        // Se for grupo similar, usa o nome do primeiro item + Indicador
-        // Se for item único, usa o nome do item
         const isGroup = key.startsWith('SIMILAR_');
         const firstItem = items[0];
         
@@ -92,7 +90,6 @@ const App: React.FC = () => {
            ? `Agrupamento Similar #${firstItem.similar_id}` 
            : firstItem.name;
 
-        // Se o agrupamento tiver apenas 1 item e for similar, pode mostrar o nome do item
         if (isGroup && items.length === 1) {
             headerTitle = firstItem.name;
         }
@@ -125,8 +122,8 @@ const App: React.FC = () => {
     setCurrentScreen('login');
   };
 
-  const handleCategorySelect = (category: string) => {
-    setSelectedCategory(category);
+  const handleCategorySelect = (categoryLabel: string) => {
+    setSelectedCategory(categoryLabel);
     setCurrentScreen('subcategories');
   };
 
@@ -190,6 +187,7 @@ const App: React.FC = () => {
             onCategorySelect={handleCategorySelect}
             currentUser={currentUser}
             onLogout={handleLogout}
+            categories={categories} // Passando dados reais
           />
         );
       case 'list':
@@ -225,7 +223,7 @@ const App: React.FC = () => {
             onNavigate={setCurrentScreen} 
             blocks={blocks}
             onStartBlock={handleStartBlock}
-            currentUser={currentUser} // Passado aqui
+            currentUser={currentUser}
           />
         );
       case 'history':
@@ -237,13 +235,14 @@ const App: React.FC = () => {
           <MissionDetailScreen 
             blockData={activeBlock} 
             onBack={() => setCurrentScreen('reserved')}
-            currentUser={currentUser} // Passado aqui
+            currentUser={currentUser}
           />
         );
       case 'subcategories':
         return (
           <SubcategoriesScreen 
-            category={selectedCategory || ''} 
+            categoryLabel={selectedCategory || ''} 
+            categories={categories} // Passando dados reais
             onBack={() => setCurrentScreen('dashboard')}
             onSelectSegment={handleSegmentSelect}
           />
@@ -266,6 +265,7 @@ const App: React.FC = () => {
             onCategorySelect={handleCategorySelect}
             currentUser={currentUser}
             onLogout={handleLogout}
+            categories={categories}
           />
         );
     }

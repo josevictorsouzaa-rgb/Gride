@@ -1,17 +1,22 @@
 import React from 'react';
 import { Icon } from '../components/Icon';
-import { Screen } from '../types';
-import { CATEGORIES_DATA } from '../data/categories';
+import { ApiCategory } from '../services/api';
 
 interface SubcategoriesScreenProps {
-  category: string;
+  categoryLabel: string;
+  categories: ApiCategory[];
   onBack: () => void;
   onSelectSegment: (segment: string) => void;
 }
 
-export const SubcategoriesScreen: React.FC<SubcategoriesScreenProps> = ({ category, onBack, onSelectSegment }) => {
-  // Find the category object in our centralized data
-  const categoryData = CATEGORIES_DATA.find(c => c.label === category);
+export const SubcategoriesScreen: React.FC<SubcategoriesScreenProps> = ({ 
+  categoryLabel, 
+  categories, 
+  onBack, 
+  onSelectSegment 
+}) => {
+  // Find the category object in our passed props
+  const categoryData = categories.find(c => c.label === categoryLabel);
   const items = categoryData ? categoryData.subcategories : [];
 
   return (
@@ -26,7 +31,7 @@ export const SubcategoriesScreen: React.FC<SubcategoriesScreenProps> = ({ catego
               <Icon name="arrow_back" size={24} />
             </button>
             <div>
-              <h2 className="text-lg font-bold leading-tight">{category}</h2>
+              <h2 className="text-lg font-bold leading-tight">{categoryLabel}</h2>
               <p className="text-xs text-gray-500 dark:text-gray-400">Selecionar Subcategoria</p>
             </div>
          </div>

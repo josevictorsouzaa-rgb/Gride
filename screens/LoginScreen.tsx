@@ -1,43 +1,36 @@
 import React, { useState } from 'react';
 import { Icon } from '../components/Icon';
 import { User } from '../types';
+import { api } from '../services/api';
 
 interface LoginScreenProps {
   onLogin: (user: User) => void;
 }
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
-  const [code, setCode] = useState('18'); // Defaulted to 18 for testing convenience per prompt
+  const [code, setCode] = useState('18'); // Pre-filled for convenience, but editable
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
+    if (!code || !password) {
+      setError('Informe o código e a senha.');
+      return;
+    }
+
     setError('');
-    
-    // Check for Specific User Jose Victor
-    if (code === '18') {
-      if (password === '172500') {
-        onLogin({
-          id: '18',
-          name: 'José Victor',
-          role: 'Gestor de Estoque',
-          avatar: 'https://i.pravatar.cc/150?u=18',
-          isAdmin: true
-        });
-      } else {
-        setError('Senha incorreta para este usuário.');
-      }
+    setIsLoading(true);
+
+    const result = await api.login(code, password);
+
+    setIsLoading(false);
+
+    if (result.success && result.user) {
+      onLogin(result.user);
     } else {
-      // Default login for other users (Simulation)
-      // Any other code logs in as standard user Carlos
-      onLogin({
-        id: code || '849201',
-        name: 'Carlos Silva',
-        role: 'Conferente',
-        avatar: 'https://i.pravatar.cc/150?u=849201',
-        isAdmin: false
-      });
+      setError(result.error || 'Falha na autenticação');
     }
   };
 
@@ -84,13 +77,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
             </div>
           </div>
 
-          {/* User Card Preview */}
+          {/* User Card Preview - Visual only, uses generic info until logged in */}
           <div className="relative overflow-hidden rounded-xl bg-slate-100 dark:bg-surface-dark border border-slate-200 dark:border-card-border p-3 animate-fade-in transition-all">
-            <div className="absolute top-0 right-0 p-2">
-              <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ring-1 ring-inset ${code === '18' ? 'bg-purple-100 text-purple-700 ring-purple-700/20' : 'bg-primary/10 text-primary ring-primary/20'}`}>
-                {code === '18' ? 'Gestor' : 'Conferente'}
-              </span>
-            </div>
             <div className="flex items-center gap-4">
               <div 
                 className="bg-center bg-no-repeat bg-cover rounded-full h-12 w-12 shrink-0 border-2 border-slate-200 dark:border-slate-700"
@@ -98,9 +86,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
               />
               <div className="flex flex-col justify-center">
                 <p className="text-slate-900 dark:text-white text-base font-semibold leading-tight">
-                    {code === '18' ? 'José Victor' : 'Colaborador'}
+                    Usuário {code}
                 </p>
-                <p className="text-slate-500 dark:text-slate-400 text-sm font-normal">ID: {code}</p>
+                <p className="text-slate-500 dark:text-slate-400 text-sm font-normal">Aguardando senha...</p>
               </div>
             </div>
           </div>
@@ -133,9 +121,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
 
           <button 
             onClick={handleLogin}
-            className="w-full rounded-xl bg-primary py-3.5 text-center text-base font-bold text-white shadow-lg shadow-primary/20 hover:bg-primary-dark active:scale-[0.98] transition-all"
+            disabled={isLoading}
+            className={`w-full rounded-xl py-3.5 text-center text-base font-bold text-white shadow-lg shadow-primary/20 transition-all ${
+                isLoading ? 'bg-gray-400 cursor-not-allowed' : 'bg-primary hover:bg-primary-dark active:scale-[0.98]'
+            }`}
           >
-            Entrar
+            {isLoading ? 'Autenticando...' : 'Entrar'}
           </button>
 
           <div className="flex justify-center mt-4">
