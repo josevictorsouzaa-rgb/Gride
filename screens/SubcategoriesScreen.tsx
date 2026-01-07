@@ -16,9 +16,7 @@ export const SubcategoriesScreen: React.FC<SubcategoriesScreenProps> = ({
   onSelectSegment 
 }) => {
   // Safety Check
-  if (!categories || !Array.isArray(categories)) {
-     return null;
-  }
+  if (!categories || !Array.isArray(categories)) return null;
 
   // Find the category object in our passed props
   const categoryData = categories.find(c => c.label === categoryLabel);

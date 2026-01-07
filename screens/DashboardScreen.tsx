@@ -20,8 +20,8 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   categories 
 }) => {
   // Safety Check for Data Loading
-  if (!categories || !Array.isArray(categories)) {
-     return null;
+  if (!categories || categories.length === 0) {
+    return <div className='flex-1 flex items-center justify-center min-h-screen bg-background-dark p-10 text-white font-bold'>Conectando ao banco de dados...</div>;
   }
 
   const [showAllCategories, setShowAllCategories] = useState(false);
