@@ -23,6 +23,12 @@ const options = {
     pageSize: 4096
 };
 
+// Helper para converter Buffer/Null para String com segurança
+const safeString = (value) => {
+    if (value === null || value === undefined) return '';
+    return value.toString().trim();
+};
+
 // --- ROTA DE LOGIN ---
 app.post('/login', (req, res) => {
     const { usuario_id, senha } = req.body;
@@ -34,7 +40,6 @@ app.post('/login', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro de conexão com banco' });
 
-        // 1. Verificar se o usuário existe e está ativo
         const sqlUser = `SELECT USU_COD, USU_NOME, USU_ATIVO FROM USUARIOS WHERE USU_COD = ?`;
         
         db.query(sqlUser, [usuario_id], (err, resultUser) => {
@@ -49,14 +54,13 @@ app.post('/login', (req, res) => {
             }
 
             const user = resultUser[0];
-            const ativo = user.USU_ATIVO ? user.USU_ATIVO.toString() : 'N';
+            const ativo = safeString(user.USU_ATIVO);
 
             if (ativo !== 'S') {
                 db.detach();
                 return res.status(403).json({ error: 'Usuário inativo' });
             }
 
-            // 2. Buscar a última senha cadastrada
             const sqlPwd = `SELECT FIRST 1 PWD_SENHA FROM PASSWORDS WHERE USU_COD = ? ORDER BY PWD_ID DESC`;
 
             db.query(sqlPwd, [usuario_id], (err, resultPwd) => {
@@ -67,21 +71,19 @@ app.post('/login', (req, res) => {
                     return res.status(401).json({ error: 'Senha não cadastrada' });
                 }
 
-                // Node-firebird pode retornar buffer, converte para string
-                const dbSenha = resultPwd[0].PWD_SENHA ? resultPwd[0].PWD_SENHA.toString() : '';
+                const dbSenha = safeString(resultPwd[0].PWD_SENHA);
 
                 if (dbSenha === senha) {
-                    const userName = user.USU_NOME ? user.USU_NOME.toString() : 'Usuário';
+                    const userName = safeString(user.USU_NOME) || 'Usuário';
                     
-                    // Retorna dados do usuário logado (Role fictícia pois não informada na tabela USUARIOS)
                     res.json({
                         success: true,
                         user: {
                             id: user.USU_COD.toString(),
                             name: userName,
-                            role: 'Colaborador', // Default, já que não temos cargo na tabela USUARIOS
+                            role: 'Colaborador', 
                             avatar: `https://i.pravatar.cc/150?u=${user.USU_COD}`,
-                            isAdmin: usuario_id === '18' // Exemplo de regra hardcoded para admin, ajuste conforme necessidade
+                            isAdmin: usuario_id === '18'
                         }
                     });
                 } else {
@@ -116,17 +118,17 @@ app.get('/categories', (req, res) => {
                     // Filtrar subgrupos deste grupo
                     const subs = subgroups.filter(s => s.GR_COD === groupId).map(s => ({
                         id: s.SG_COD.toString(),
-                        name: s.SG_DESCRI ? s.SG_DESCRI.toString() : '',
-                        count: 0, // Mock, pois precisaria de count(*) na tabela produtos
-                        icon: 'circle' // Ícone padrão
+                        name: safeString(s.SG_DESCRI), // Proteção contra NULL/Buffer
+                        count: 0, 
+                        icon: 'circle'
                     }));
 
                     return {
                         id: groupId.toString(),
                         db_id: groupId,
-                        label: g.GR_DESCRI ? g.GR_DESCRI.toString() : '',
-                        icon: 'inventory_2', // Ícone padrão
-                        count: 0, // Mock
+                        label: safeString(g.GR_DESCRI), // Proteção contra NULL/Buffer
+                        icon: 'inventory_2', 
+                        count: 0, 
                         subcategories: subs
                     };
                 });
@@ -177,16 +179,12 @@ app.get('/products', (req, res) => {
             if (err) return res.status(500).json({ error: err.message });
 
             const mapped = result.map(item => {
-                const nome = item.PRO_DESCRI ? item.PRO_DESCRI.toString() : '';
-                const sku = item.PRO_NRFABRICANTE ? item.PRO_NRFABRICANTE.toString().trim() : '';
-                const similarId = item.PRO_COD_SIMILAR ? item.PRO_COD_SIMILAR.toString().trim() : null;
-
                 return {
                     id: item.PRO_COD,
-                    name: nome,
-                    sku: sku,
+                    name: safeString(item.PRO_DESCRI),
+                    sku: safeString(item.PRO_NRFABRICANTE),
                     balance: parseFloat(item.PRO_EST_ATUAL || 0),
-                    similar_id: similarId,
+                    similar_id: safeString(item.PRO_COD_SIMILAR) || null,
                     brand: 'GENÉRICO',
                     location: 'ESTOQUE GERAL',
                     status: 'active'
@@ -253,10 +251,10 @@ app.get('/history', (req, res) => {
             const safeResult = result.map(r => {
                 return {
                     ...r,
-                    NOME_PRODUTO: r.NOME_PRODUTO ? r.NOME_PRODUTO.toString() : '',
-                    USUARIO_NOME: r.USUARIO_NOME ? r.USUARIO_NOME.toString() : '',
-                    STATUS: r.STATUS ? r.STATUS.toString() : '',
-                    LOCALIZACAO: r.LOCALIZACAO ? r.LOCALIZACAO.toString() : 'N/A'
+                    NOME_PRODUTO: safeString(r.NOME_PRODUTO),
+                    USUARIO_NOME: safeString(r.USUARIO_NOME),
+                    STATUS: safeString(r.STATUS),
+                    LOCALIZACAO: safeString(r.LOCALIZACAO) || 'N/A'
                 }
             });
 
