@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Icon } from '../components/Icon';
 import { EntryModal, DamageModal, ConfirmationModal } from '../components/Modals';
 import { ItemDetailModal } from '../components/ItemDetailModal';
+import { User } from '../types';
+import { api } from '../services/api';
 
 interface BlockItem {
   id: number;
@@ -11,7 +13,6 @@ interface BlockItem {
   loc: string;
   expectedQty: number; 
   countedQty?: number;
-  // Updated Status to include divergences
   status: 'pending' | 'counted' | 'not_located' | 'divergence_info';
   divergenceReason?: string;
   lastCount?: {
@@ -24,16 +25,15 @@ interface BlockItem {
 interface MissionDetailScreenProps {
   blockData?: any; 
   onBack?: () => void;
+  currentUser: User | null;
 }
 
-export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockData, onBack }) => {
+export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockData, onBack, currentUser }) => {
   const [items, setItems] = useState<BlockItem[]>([]);
 
-  // Identify context: 'mission' (planned) vs 'product_scan'/'location_scan' (ad-hoc)
   const contextType = blockData?.contextType || 'mission';
   const isAdHoc = contextType === 'product_scan' || contextType === 'location_scan';
 
-  // Inicializa os itens
   useEffect(() => {
     if (blockData && blockData.items) {
       const formattedItems = blockData.items.map((item: any, index: number) => {
@@ -41,8 +41,8 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
         if (lastCountData === undefined) {
            const hasHistory = Math.random() > 0.3;
            lastCountData = hasHistory ? {
-            user: ['Carlos Silva', 'Mariana Santos', 'João Pedro'][Math.floor(Math.random() * 3)],
-            date: ['24/10', '23/10', '20/10'][Math.floor(Math.random() * 3)],
+            user: 'Sistema',
+            date: '24/10',
             qty: item.balance || 10
           } : null;
         }
@@ -60,12 +60,7 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
       });
       setItems(formattedItems);
     } else {
-      setItems([
-        { 
-          id: 1, name: 'Item Exemplo', sku: '000', type: 'Exemplo', loc: 'A-01', expectedQty: 10, status: 'pending',
-          lastCount: { user: 'Admin', date: '01/01', qty: 5 } 
-        }
-      ]);
+      setItems([]);
     }
   }, [blockData]);
 
@@ -75,9 +70,7 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   
-  // Check if all items are processed (counted OR marked with divergence)
   const allItemsCounted = items.length > 0 && items.every(item => item.status !== 'pending');
-  
   const progressPercentage = items.length > 0 ? Math.round((items.filter(i => i.status !== 'pending').length / items.length) * 100) : 0;
 
   const handleItemClick = (item: BlockItem) => {
@@ -86,17 +79,33 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
   };
 
   const handleOpenDetails = () => {
-    setShowEntry(false); // Close entry modal to show details
+    setShowEntry(false);
     setShowDetailModal(true);
   };
 
   const handleCloseDetails = () => {
     setShowDetailModal(false);
-    setShowEntry(true); // Re-open entry modal to continue counting
+    setShowEntry(true);
   };
 
-  const handleConfirmCount = (quantity: number, status: 'counted' | 'not_located' | 'divergence_info' = 'counted', divergenceReason?: string) => {
+  const handleConfirmCount = async (quantity: number, status: 'counted' | 'not_located' | 'divergence_info' = 'counted', divergenceReason?: string) => {
     if (selectedItem) {
+      
+      // PERSISTÊNCIA NO BACKEND (NODE/FIREBIRD)
+      if (currentUser) {
+        await api.saveCount({
+          sku: selectedItem.sku,
+          nome_produto: selectedItem.name,
+          usuario_id: currentUser.id,
+          usuario_nome: currentUser.name,
+          qtd_sistema: selectedItem.expectedQty,
+          qtd_contada: quantity,
+          localizacao: selectedItem.loc,
+          status: status,
+          divergencia_motivo: divergenceReason
+        });
+      }
+
       setItems(prevItems => prevItems.map(item => 
         item.id === selectedItem.id 
           ? { 
@@ -104,9 +113,8 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
               countedQty: quantity, 
               status: status, 
               divergenceReason: divergenceReason,
-              // Update lastCount immediately for visual feedback
               lastCount: {
-                user: 'Você',
+                user: currentUser?.name || 'Você',
                 date: 'Agora',
                 qty: quantity
               }
@@ -119,8 +127,6 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
   };
 
   const handleBack = () => {
-    // Simply go back. No checks for ad-hoc or activity.
-    // User saves per item count.
     if (onBack) onBack();
   };
 
@@ -135,10 +141,6 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
   };
 
   const scanInfo = getScanContextInfo();
-
-  // Logic to determine if footer should be shown
-  // 1. Mission Mode: Always show
-  // 2. AdHoc Mode: Never show
   const showFooter = !isAdHoc;
 
   return (
@@ -153,7 +155,6 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
                 <Icon name="arrow_back" size={24} />
                 </button>
                 <div className="flex flex-col">
-                  {/* The Title is now the Scanned Item or Location Name */}
                   <h2 className="text-lg font-bold leading-tight line-clamp-1 pr-4">
                     {blockData ? blockData.parentRef : 'Carregando...'}
                   </h2>
@@ -167,7 +168,6 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
             </button>
          </div>
 
-         {/* Visual Indicator of what was scanned */}
          {scanInfo && (
             <div className={`mx-4 mb-3 flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold tracking-wide ${scanInfo.color}`}>
                 <Icon name={scanInfo.icon} size={16} />
@@ -178,7 +178,6 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
 
       <main className="flex-1 flex flex-col gap-4 p-4 md:p-6 md:pb-24">
         
-        {/* Progress Info - ONLY SHOW FOR PLANNED MISSIONS, NOT AD-HOC SCANS */}
         {!isAdHoc && (
             <div className="sticky top-[73px] z-10 -mx-4 md:mx-0 bg-background-light/95 dark:bg-background-dark/95 md:bg-white md:dark:bg-surface-dark md:rounded-xl backdrop-blur-md px-4 py-3 border-b md:border border-gray-200 dark:border-gray-800 shadow-sm animate-fade-in">
             <div className="flex flex-col gap-2">
@@ -201,14 +200,12 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
             </div>
         )}
 
-        {/* Helper Text for AdHoc */}
         {isAdHoc && items.length > 1 && (
             <p className="text-xs text-gray-500 dark:text-gray-400 px-1">
                Itens encontrados nesta localização. Conte e o sistema salvará automaticamente.
             </p>
         )}
 
-        {/* List of Items - Grid on Desktop */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
            {items.map((item) => {
              const isProcessed = item.status !== 'pending';
@@ -273,7 +270,6 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
                      </div>
                   </div>
 
-                  {/* Last Count Information - PRIORITY DATE */}
                   <div className="flex items-center gap-2 mt-2 pt-2 border-t border-dashed border-gray-100 dark:border-white/5">
                       <Icon name="history" size={14} className="text-gray-400" />
                       {item.lastCount ? (
@@ -319,7 +315,6 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
         </div>
       </main>
 
-      {/* Footer - Only shown for Missions */}
       {showFooter && (
       <footer className="fixed bottom-0 left-0 right-0 w-full max-w-lg mx-auto md:max-w-none md:static md:bg-transparent md:border-none md:p-6 z-30 bg-white dark:bg-surface-dark border-t border-gray-200 dark:border-gray-800 p-4 pb-8 animate-slide-up">
          <div className="flex gap-3">
@@ -348,7 +343,6 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
       </footer>
       )}
 
-      {/* Enhanced Entry Modal to include access to Details */}
       <EntryModal 
         isOpen={showEntry} 
         itemName={selectedItem?.name}
@@ -363,17 +357,6 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
         onConfirm={handleConfirmCount} 
       />
       
-      {/* ADDED: Button to view details inside EntryModal could be passed as prop if supported, 
-         but for now we can render a separate component or modify EntryModal. 
-         Since EntryModal is standard, let's just use the ItemDetailModal separately. */}
-      
-      {/* If we want the detail modal to be accessible from EntryModal, we need to modify EntryModal.
-          However, based on standard patterns, we can render the DetailModal on top if triggered.
-          Let's assume the user can click a small "info" icon on the card instead? 
-          For now, I'll add a separate trigger or modify EntryModal later. 
-          Actually, let's just render the ItemDetailModal if showDetailModal is true.
-      */}
-
       <ItemDetailModal 
         isOpen={showDetailModal}
         onClose={handleCloseDetails}
@@ -383,7 +366,10 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
       />
 
       <DamageModal isOpen={showDamage} onClose={() => setShowDamage(false)} onAttach={() => setShowDamage(false)} />
-      <ConfirmationModal isOpen={showConfirmation} onClose={() => setShowConfirmation(false)} onConfirm={() => setShowConfirmation(false)} />
+      <ConfirmationModal isOpen={showConfirmation} onClose={() => setShowConfirmation(false)} onConfirm={() => {
+        setShowConfirmation(false);
+        if(onBack) onBack(); 
+      }} />
     </div>
   );
 };

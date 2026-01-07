@@ -13,20 +13,19 @@ import { AnalyticsScreen } from './screens/AnalyticsScreen';
 import { BottomNav } from './components/BottomNav';
 import { Sidebar } from './components/Sidebar'; 
 import { ScannerModal } from './components/Modals';
-import { api, ApiProduct } from './services/api'; // Import API Service
+import { api, ApiProduct } from './services/api'; 
 
-// Initial Data fallback (used while loading or if API fails)
 const initialBlocksData: Block[] = [
   { 
     id: 1, 
     parentRef: 'DEMO / S/REF', 
     location: 'Exemplo: Rua 04', 
     status: 'late', 
-    date: 'Ontem',
+    date: 'Ontem', 
     subcategory: 'Exemplo', 
     items: [
       { 
-        name: 'ITEM DEMO (Conecte o PHP)', ref: '0000', brand: 'GENERIC', balance: 0,
+        name: 'ITEM DEMO (Conecte o Node)', ref: '0000', brand: 'GENERIC', balance: 0,
         lastCount: null 
       }
     ]
@@ -38,7 +37,6 @@ const App: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   
-  // Blocks state initialized with empty/demo, will be updated by API
   const [blocks, setBlocks] = useState<Block[]>(initialBlocksData);
   
   const [segmentFilter, setSegmentFilter] = useState<string | null>(null);
@@ -46,7 +44,6 @@ const App: React.FC = () => {
   const [showScanner, setShowScanner] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  // --- DATA LOADING EFFECT ---
   useEffect(() => {
     if (currentScreen !== 'login') {
       loadRealData();
@@ -55,15 +52,12 @@ const App: React.FC = () => {
 
   const loadRealData = async () => {
     setIsLoading(true);
-    // Fetch first 100 items from Firebird
     const products = await api.getProducts(1, 100);
     
     if (products.length > 0) {
-      // Transformation Logic: Group Products by Location to create "Blocks"
       const groupedMap = new Map<string, any[]>();
       
       products.forEach((p: ApiProduct) => {
-        // Use Location as the key. If empty, group under "ESTOQUE GERAL"
         const locationKey = p.location ? p.location.trim() : 'ESTOQUE GERAL';
         
         if (!groupedMap.has(locationKey)) {
@@ -73,25 +67,24 @@ const App: React.FC = () => {
         groupedMap.get(locationKey)?.push({
           id: p.id,
           name: p.name,
-          ref: p.sku, // Mapping SKU to ref
+          ref: p.sku, 
           brand: p.brand,
           balance: p.balance,
-          lastCount: null // API doesn't provide history yet
+          lastCount: null 
         });
       });
 
-      // Convert Map to Block Array
       const realBlocks: Block[] = [];
       let idCounter = 1000;
 
       groupedMap.forEach((items, loc) => {
         realBlocks.push({
           id: idCounter++,
-          parentRef: loc, // Title of the block is the Location
+          parentRef: loc, 
           location: loc,
-          status: 'pending', // Default status for new daily meta
+          status: 'pending', 
           date: 'Hoje',
-          subcategory: items[0].brand || 'DIVERSOS', // Heuristic for category
+          subcategory: items[0].brand || 'DIVERSOS', 
           items: items
         });
       });
@@ -136,8 +129,6 @@ const App: React.FC = () => {
 
   const handleScanComplete = (code: string) => {
     setShowScanner(false);
-    
-    // Logic to handle scans (could also fetch specific item from API if needed)
     let mockBlock;
     if (code.startsWith('PRD-')) {
        mockBlock = {
@@ -215,6 +206,7 @@ const App: React.FC = () => {
             onNavigate={setCurrentScreen} 
             blocks={blocks}
             onStartBlock={handleStartBlock}
+            currentUser={currentUser} // Passado aqui
           />
         );
       case 'history':
@@ -226,6 +218,7 @@ const App: React.FC = () => {
           <MissionDetailScreen 
             blockData={activeBlock} 
             onBack={() => setCurrentScreen('reserved')}
+            currentUser={currentUser} // Passado aqui
           />
         );
       case 'subcategories':
@@ -275,8 +268,6 @@ const App: React.FC = () => {
 
   return (
     <div className="flex w-full min-h-screen bg-background-light dark:bg-background-dark text-slate-900 dark:text-white">
-      
-      {/* Loading Indicator */}
       {isLoading && (
         <div className="fixed top-0 left-0 right-0 h-1 z-[100] bg-primary/20">
           <div className="h-full bg-primary animate-[shimmer_1s_infinite] w-1/3" />

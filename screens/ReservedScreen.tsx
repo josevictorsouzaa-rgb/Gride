@@ -1,20 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { Icon } from '../components/Icon';
-import { Screen, Block } from '../types';
+import { Screen, Block, User } from '../types';
 import { ItemDetailModal } from '../components/ItemDetailModal';
 import { EntryModal, ConfirmationModal } from '../components/Modals';
+import { api } from '../services/api';
 
 interface ReservedScreenProps {
   onNavigate: (screen: Screen) => void;
   blocks: Block[];
-  onStartBlock: (block: Block) => void; // Kept for signature compatibility but used for finalizing
+  onStartBlock: (block: Block) => void;
+  currentUser: User | null;
 }
 
-export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, blocks, onStartBlock }) => {
-  // Local state to manage counting progress without navigating away
+export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, blocks, onStartBlock, currentUser }) => {
   const [localBlocks, setLocalBlocks] = useState<Block[]>([]);
   
-  // Modals State
   const [selectedItem, setSelectedItem] = useState<any | null>(null);
   const [activeBlockId, setActiveBlockId] = useState<number | null>(null);
   const [showEntryModal, setShowEntryModal] = useState(false);
@@ -22,16 +22,13 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [blockToFinalize, setBlockToFinalize] = useState<Block | null>(null);
 
-  // Initialize local state with props, adding internal status control if needed
   useEffect(() => {
-    // Deep copy to allow local mutation of status/qty
     const initialized = blocks
       .filter(b => b.status === 'progress')
       .map(b => ({
         ...b,
         items: b.items.map(i => ({
             ...i,
-            // If item doesn't have status, default to pending
             status: i.status || 'pending',
             countedQty: i.countedQty || 0
         }))
@@ -50,8 +47,25 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
     setShowDetailModal(true);
   };
 
-  const handleConfirmCount = (qty: number, status: 'counted' | 'not_located' | 'divergence_info', reason?: string) => {
+  const handleConfirmCount = async (qty: number, status: 'counted' | 'not_located' | 'divergence_info', reason?: string) => {
     if (!selectedItem || activeBlockId === null) return;
+
+    // SAVE TO API (BALLAST)
+    if (currentUser) {
+        // Encontrar o bloco para pegar a localização correta
+        const currentBlock = localBlocks.find(b => b.id === activeBlockId);
+        await api.saveCount({
+            sku: selectedItem.ref,
+            nome_produto: selectedItem.name,
+            usuario_id: currentUser.id,
+            usuario_nome: currentUser.name,
+            qtd_sistema: selectedItem.balance || 0,
+            qtd_contada: qty,
+            localizacao: currentBlock?.location || selectedItem.location || 'N/A',
+            status: status,
+            divergencia_motivo: reason
+        });
+    }
 
     setLocalBlocks(prev => prev.map(block => {
         if (block.id !== activeBlockId) return block;
@@ -59,16 +73,14 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
         return {
             ...block,
             items: block.items.map(item => {
-                // FIX: Use ref (SKU) as unique identifier instead of name to prevent updating duplicates
                 if (item.ref === selectedItem.ref) { 
                     return {
                         ...item,
                         status: status,
                         countedQty: qty,
                         divergenceReason: reason,
-                        // Update lastCount immediately for visual feedback
                         lastCount: {
-                            user: 'Você',
+                            user: currentUser?.name || 'Você',
                             date: 'Agora',
                             qty: qty
                         }
@@ -94,12 +106,7 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
 
   const handleFinalizeConfirm = () => {
       if (blockToFinalize) {
-          // In a real app, this would call an API
-          // For now, we simulate success and maybe remove from list or navigate
-          // onStartBlock prop can be used as "onFinalize"
           alert(`Bloco ${blockToFinalize.parentRef} finalizado com sucesso!`);
-          
-          // Remove from local list to simulate completion
           setLocalBlocks(prev => prev.filter(b => b.id !== blockToFinalize.id));
           setShowConfirmModal(false);
       }
@@ -107,7 +114,6 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
 
   return (
     <div className="relative flex flex-col w-full min-h-screen pb-24 bg-background-light dark:bg-background-dark">
-      {/* Header */}
       <div className="sticky top-0 z-20 bg-background-light dark:bg-background-dark/95 backdrop-blur-md border-b border-gray-200 dark:border-card-border">
         <div className="flex items-center p-4 justify-between gap-3">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/30 text-primary">
@@ -122,7 +128,6 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
       </div>
 
       <main className="flex flex-col gap-6 p-4">
-          {/* Foco Banner */}
           <div className="bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 rounded-xl p-4 flex items-start gap-3">
             <div className="bg-blue-100 dark:bg-blue-800 p-2 rounded-full text-blue-600 dark:text-blue-300">
                 <Icon name="priority_high" size={20} />
@@ -157,7 +162,6 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                     return (
                     <div key={block.id} className="flex flex-col animate-fade-in">
                         
-                        {/* Block Header */}
                         <div className="flex items-center justify-between mb-2 px-1">
                             <div className="bg-[#e11d48] text-white text-xs font-bold px-3 py-1 rounded-md uppercase tracking-wider shadow-sm">
                                 {block.parentRef}
@@ -168,7 +172,6 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                             </div>
                         </div>
 
-                        {/* Items List (Card Style Requested) */}
                         <div className="flex flex-col gap-3">
                             {block.items.map((item: any, idx) => {
                                 const isCounted = item.status !== 'pending';
@@ -183,7 +186,6 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                                           : 'bg-white dark:bg-[#1e293b] border-gray-200 dark:border-[#334155]'
                                     }`}
                                 >
-                                    {/* Top Row: Icon + Names */}
                                     <div className="flex items-start gap-4">
                                         <div className={`size-12 rounded-lg flex items-center justify-center shrink-0 border ${
                                             isCounted
@@ -209,7 +211,6 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                                         </div>
                                     </div>
 
-                                    {/* Middle: Dashed Divider & History */}
                                     <div className="my-3 border-t border-dashed border-gray-200 dark:border-[#334155]" />
                                     
                                     <div className="flex items-center gap-2 mb-4">
@@ -223,7 +224,6 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                                         )}
                                     </div>
 
-                                    {/* Bottom: Location & Action Button */}
                                     <div className="flex items-end justify-between gap-4">
                                         <div className="flex flex-col">
                                             <span className="text-[10px] font-bold uppercase text-gray-400 tracking-wider">Localização</span>
@@ -266,7 +266,6 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                             })}
                         </div>
 
-                        {/* Block Footer Actions */}
                         <div className="mt-4 px-1">
                             {isComplete ? (
                                 <button 
@@ -292,7 +291,6 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
           </div>
       </main>
 
-      {/* Entry Modal for Counting */}
       <EntryModal 
         isOpen={showEntryModal}
         onClose={() => setShowEntryModal(false)}
@@ -303,14 +301,12 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
         lastCountInfo={selectedItem?.lastCount}
       />
 
-      {/* Detail Modal (View Only) */}
       <ItemDetailModal 
         isOpen={showDetailModal}
         onClose={() => setShowDetailModal(false)}
         item={selectedItem}
       />
 
-      {/* Confirmation Finalize */}
       <ConfirmationModal 
         isOpen={showConfirmModal}
         onClose={() => setShowConfirmModal(false)}
