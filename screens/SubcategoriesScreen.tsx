@@ -18,6 +18,7 @@ export const SubcategoriesScreen: React.FC<SubcategoriesScreenProps> = ({
   // Trava de segurança solicitada
   if (!categories || !Array.isArray(categories)) return null;
 
+
   // Find the category object in our passed props
   const categoryData = categories.find(c => c.label === categoryLabel);
   const items = categoryData ? categoryData.subcategories : [];
