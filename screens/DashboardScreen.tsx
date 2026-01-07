@@ -19,10 +19,8 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   onLogout, 
   categories 
 }) => {
-  // Safety Check for Data Loading
-  if (!categories || categories.length === 0) {
-    return <div className='flex-1 flex items-center justify-center min-h-screen bg-background-dark p-10 text-white font-bold'>Conectando ao banco de dados...</div>;
-  }
+  // Travas de segurança e Carregamento (Conforme solicitado)
+  if (!categories || categories.length === 0) return <div className='flex-1 bg-background-dark p-10 text-white font-bold'>Carregando categorias do ERP...</div>;
 
   const [showAllCategories, setShowAllCategories] = useState(false);
   

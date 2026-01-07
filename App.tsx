@@ -54,12 +54,12 @@ const App: React.FC = () => {
         const cats = await api.getCategories();
         
         // Verificação de segurança CRÍTICA
-        if (cats && Array.isArray(cats)) {
-            setCategories(cats);
-        } else {
-            console.warn("API retornou categorias inválidas. Usando array vazio.");
-            setCategories([]);
+        if (!cats || !Array.isArray(cats)) {
+             setCategories([]);
+             return; // Interrompe se categorias falharem
         }
+        
+        setCategories(cats);
 
         // 2. Carregar Produtos
         const products = await api.getProducts(1, 100);
