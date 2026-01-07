@@ -26,6 +26,10 @@ const options = {
 // Helper para converter Buffer/Null para String com segurança
 const safeString = (value) => {
     if (value === null || value === undefined) return '';
+    // Se for buffer, converte para string (assumindo utf8 ou latin1 dependendo do banco, aqui default)
+    if (typeof value === 'object' && Buffer.isBuffer(value)) {
+        return value.toString().trim();
+    }
     return value.toString().trim();
 };
 
