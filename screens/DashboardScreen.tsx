@@ -19,8 +19,8 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   onLogout, 
   categories 
 }) => {
-  // Travas de segurança e Carregamento (Conforme solicitado)
-  if (!categories || !Array.isArray(categories) || categories.length === 0) return <div className='flex-1 flex items-center justify-center min-h-screen bg-background-dark p-10 text-white font-bold'>Carregando categorias do ERP...</div>;
+  // Trava de segurança solicitada
+  if (!categories || categories.length === 0) return <div className='flex-1 bg-background-dark p-10 text-white font-bold'>A carregar categorias do ERP...</div>;
 
   const [showAllCategories, setShowAllCategories] = useState(false);
   

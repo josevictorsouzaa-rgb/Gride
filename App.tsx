@@ -53,8 +53,8 @@ const App: React.FC = () => {
         // 1. Carregar Categorias
         const cats = await api.getCategories();
         
-        // Verificação solicitada
-        if (cats && Array.isArray(cats)) {
+        // Verificação exata solicitada
+        if (Array.isArray(cats)) {
              setCategories(cats);
         } else {
              setCategories([]);

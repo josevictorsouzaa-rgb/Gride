@@ -15,7 +15,7 @@ export const SubcategoriesScreen: React.FC<SubcategoriesScreenProps> = ({
   onBack, 
   onSelectSegment 
 }) => {
-  // Safety Check
+  // Trava de segurança solicitada
   if (!categories || !Array.isArray(categories)) return null;
 
   // Find the category object in our passed props
