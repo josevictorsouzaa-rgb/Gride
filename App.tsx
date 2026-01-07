@@ -54,7 +54,7 @@ const App: React.FC = () => {
         const cats = await api.getCategories();
         
         // Verificação exata solicitada
-        if (Array.isArray(cats)) {
+        if (cats && Array.isArray(cats)) {
              setCategories(cats);
         } else {
              setCategories([]);

@@ -19,8 +19,8 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   onLogout, 
   categories 
 }) => {
-  // Trava de segurança solicitada
-  if (!categories || categories.length === 0) return <div className='flex-1 bg-background-dark p-10 text-white font-bold'>A carregar categorias do ERP...</div>;
+  // Trava de segurança solicitada (Bloqueia renderização se não houver array válido)
+  if (!categories || !Array.isArray(categories) || categories.length === 0) return <div className='flex-1 bg-background-dark p-10 text-white font-bold flex items-center justify-center'>A conectar ao banco de dados Firebird...</div>;
 
   const [showAllCategories, setShowAllCategories] = useState(false);
   
@@ -36,10 +36,10 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     return () => window.removeEventListener('resize', checkDesktop);
   }, []);
 
-  // Use props instead of static import
+  // Fallback seguro solicitado
   const displayedCategories = (isDesktop || showAllCategories) 
-    ? categories 
-    : categories.slice(0, 6);
+    ? (categories || []) 
+    : (categories || []).slice(0, 6);
 
   // Mock Issue Count
   const pendingIssuesCount = 3;
