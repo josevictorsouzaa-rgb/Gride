@@ -53,13 +53,12 @@ const App: React.FC = () => {
         // 1. Carregar Categorias
         const cats = await api.getCategories();
         
-        // Verificação de segurança CRÍTICA
-        if (!cats || !Array.isArray(cats)) {
+        // Verificação solicitada
+        if (cats && Array.isArray(cats)) {
+             setCategories(cats);
+        } else {
              setCategories([]);
-             return; // Interrompe se categorias falharem
         }
-        
-        setCategories(cats);
 
         // 2. Carregar Produtos
         const products = await api.getProducts(1, 100);
