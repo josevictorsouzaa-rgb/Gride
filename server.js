@@ -24,9 +24,10 @@ const options = {
 };
 
 // Helper para converter Buffer/Null para String com segurança
+// ISSO É CRUCIAL PARA EVITAR ERROS NO REACT
 const safeString = (value) => {
     if (value === null || value === undefined) return '';
-    // Se for buffer, converte para string (assumindo utf8 ou latin1 dependendo do banco, aqui default)
+    // Se for buffer, converte para string
     if (typeof value === 'object' && Buffer.isBuffer(value)) {
         return value.toString().trim();
     }
@@ -119,10 +120,10 @@ app.get('/categories', (req, res) => {
                 const categoryTree = groups.map(g => {
                     const groupId = g.GR_COD;
                     
-                    // Filtrar subgrupos deste grupo
+                    // Filtrar subgrupos deste grupo e usar safeString
                     const subs = subgroups.filter(s => s.GR_COD === groupId).map(s => ({
                         id: s.SG_COD.toString(),
-                        name: safeString(s.SG_DESCRI), // Proteção contra NULL/Buffer
+                        name: safeString(s.SG_DESCRI), // Proteção CRÍTICA
                         count: 0, 
                         icon: 'circle'
                     }));
@@ -130,7 +131,7 @@ app.get('/categories', (req, res) => {
                     return {
                         id: groupId.toString(),
                         db_id: groupId,
-                        label: safeString(g.GR_DESCRI), // Proteção contra NULL/Buffer
+                        label: safeString(g.GR_DESCRI), // Proteção CRÍTICA
                         icon: 'inventory_2', 
                         count: 0, 
                         subcategories: subs
@@ -185,8 +186,8 @@ app.get('/products', (req, res) => {
             const mapped = result.map(item => {
                 return {
                     id: item.PRO_COD,
-                    name: safeString(item.PRO_DESCRI),
-                    sku: safeString(item.PRO_NRFABRICANTE),
+                    name: safeString(item.PRO_DESCRI), // Proteção
+                    sku: safeString(item.PRO_NRFABRICANTE), // Proteção
                     balance: parseFloat(item.PRO_EST_ATUAL || 0),
                     similar_id: safeString(item.PRO_COD_SIMILAR) || null,
                     brand: 'GENÉRICO',

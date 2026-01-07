@@ -19,8 +19,10 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   onLogout, 
   categories 
 }) => {
-  // Trava de segurança solicitada (Bloqueia renderização se não houver array válido)
-  if (!categories || !Array.isArray(categories) || categories.length === 0) return <div className='flex-1 bg-background-dark p-10 text-white font-bold flex items-center justify-center'>A conectar ao banco de dados Firebird...</div>;
+  // --- TRAVA DE SEGURANÇA OBRIGATÓRIA ---
+  if (!categories || !Array.isArray(categories) || categories.length === 0) { 
+      return <div className='flex-1 bg-background-dark p-10 text-white font-bold flex items-center justify-center text-center'>Conectando ao banco de dados Firebird...<br/>Aguarde um instante.</div>; 
+  }
 
   const [showAllCategories, setShowAllCategories] = useState(false);
   
@@ -36,7 +38,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     return () => window.removeEventListener('resize', checkDesktop);
   }, []);
 
-  // Fallback seguro solicitado
+  // Lógica segura de array com Fallback
   const displayedCategories = (isDesktop || showAllCategories) 
     ? (categories || []) 
     : (categories || []).slice(0, 6);

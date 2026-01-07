@@ -33,7 +33,7 @@ const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   
   const [blocks, setBlocks] = useState<Block[]>(initialBlocksData);
-  const [categories, setCategories] = useState<ApiCategory[]>([]); // Categorias do Banco
+  const [categories, setCategories] = useState<ApiCategory[]>([]); // Categorias do Banco inicializadas com array vazio
   
   const [segmentFilter, setSegmentFilter] = useState<string | null>(null);
   const [activeBlock, setActiveBlock] = useState<any | null>(null);
@@ -53,7 +53,7 @@ const App: React.FC = () => {
         // 1. Carregar Categorias
         const cats = await api.getCategories();
         
-        // Verificação exata solicitada
+        // --- TRAVA DE SEGURANÇA OBRIGATÓRIA ---
         if (cats && Array.isArray(cats)) {
              setCategories(cats);
         } else {
