@@ -55,36 +55,55 @@ const App: React.FC = () => {
     const products = await api.getProducts(1, 100);
     
     if (products.length > 0) {
+      // Nova Lógica: Agrupar por similar_id
       const groupedMap = new Map<string, any[]>();
       
       products.forEach((p: ApiProduct) => {
-        const locationKey = p.location ? p.location.trim() : 'ESTOQUE GERAL';
+        // Se tiver similar_id, usa ele como chave. Se não, usa o ID do próprio produto (grupo único)
+        const groupKey = p.similar_id ? `SIMILAR_${p.similar_id}` : `PROD_${p.id}`;
         
-        if (!groupedMap.has(locationKey)) {
-          groupedMap.set(locationKey, []);
+        if (!groupedMap.has(groupKey)) {
+          groupedMap.set(groupKey, []);
         }
         
-        groupedMap.get(locationKey)?.push({
+        groupedMap.get(groupKey)?.push({
           id: p.id,
           name: p.name,
           ref: p.sku, 
           brand: p.brand,
-          balance: p.balance,
-          lastCount: null 
+          balance: p.balance, // Agora vem de PRO_EST_ATUAL
+          lastCount: null,
+          location: p.location,
+          similar_id: p.similar_id
         });
       });
 
       const realBlocks: Block[] = [];
       let idCounter = 1000;
 
-      groupedMap.forEach((items, loc) => {
+      groupedMap.forEach((items, key) => {
+        // Define o título do bloco
+        // Se for grupo similar, usa o nome do primeiro item + Indicador
+        // Se for item único, usa o nome do item
+        const isGroup = key.startsWith('SIMILAR_');
+        const firstItem = items[0];
+        
+        let headerTitle = isGroup 
+           ? `Agrupamento Similar #${firstItem.similar_id}` 
+           : firstItem.name;
+
+        // Se o agrupamento tiver apenas 1 item e for similar, pode mostrar o nome do item
+        if (isGroup && items.length === 1) {
+            headerTitle = firstItem.name;
+        }
+
         realBlocks.push({
           id: idCounter++,
-          parentRef: loc, 
-          location: loc,
+          parentRef: headerTitle, 
+          location: firstItem.location || 'GERAL',
           status: 'pending', 
           date: 'Hoje',
-          subcategory: items[0].brand || 'DIVERSOS', 
+          subcategory: firstItem.brand || 'DIVERSOS', 
           items: items
         });
       });

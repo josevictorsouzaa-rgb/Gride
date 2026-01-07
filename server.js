@@ -23,7 +23,7 @@ const options = {
     pageSize: 4096
 };
 
-// Rota: Listar Produtos (Substitui get_produtos.php)
+// Rota: Listar Produtos
 app.get('/products', (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
@@ -36,22 +36,25 @@ app.get('/products', (req, res) => {
             return res.status(500).json({ error: 'Erro ao conectar no banco' });
         }
 
+        // QUERY ATUALIZADA: Colunas específicas, Estoque Atual e Filtro Ativo
         let sql = `
             SELECT FIRST ? SKIP ? 
-                P.PRO_COD as ID, 
-                P.PRO_DESCRI as NOME, 
-                P.PRO_REFERENCIA as SKU, 
-                P.PRO_MARCA as MARCA, 
-                P.PRO_SALDO as SALDO,
-                P.PRO_LOCALIZACAO as LOCAL
+                P.PRO_COD, 
+                P.PRO_DESCRI, 
+                P.PRO_NRFABRICANTE, 
+                P.PRO_EST_ATUAL,
+                P.PRO_COD_SIMILAR,
+                P.GR_COD,
+                P.SG_COD,
+                P.MAR_COD
             FROM PRODUTOS P 
-            WHERE 1=1
+            WHERE P.PRO_ATIVO = 'S'
         `;
 
         const params = [limit, skip];
 
         if (search) {
-            sql += ` AND (P.PRO_DESCRI CONTAINING ? OR P.PRO_REFERENCIA CONTAINING ?)`;
+            sql += ` AND (P.PRO_DESCRI CONTAINING ? OR P.PRO_NRFABRICANTE CONTAINING ?)`;
             params.push(search);
             params.push(search);
         }
@@ -60,16 +63,24 @@ app.get('/products', (req, res) => {
             db.detach();
             if (err) return res.status(500).json({ error: err.message });
 
-            // Mapeamento para o formato do Frontend
-            const mapped = result.map(item => ({
-                id: item.ID,
-                name: item.NOME,
-                sku: item.SKU ? item.SKU.toString().trim() : '',
-                brand: item.MARCA,
-                balance: parseFloat(item.SALDO),
-                location: item.LOCAL,
-                status: parseFloat(item.SALDO) > 0 ? 'active' : 'inactive'
-            }));
+            // Mapeamento atualizado conforme solicitado
+            const mapped = result.map(item => {
+                // Tratamento básico para strings que podem vir como buffer no node-firebird
+                const nome = item.PRO_DESCRI ? item.PRO_DESCRI.toString() : '';
+                const sku = item.PRO_NRFABRICANTE ? item.PRO_NRFABRICANTE.toString().trim() : '';
+                const similarId = item.PRO_COD_SIMILAR ? item.PRO_COD_SIMILAR.toString().trim() : null;
+
+                return {
+                    id: item.PRO_COD,
+                    name: nome,
+                    sku: sku,
+                    balance: parseFloat(item.PRO_EST_ATUAL || 0), // Saldo vindo de PRO_EST_ATUAL
+                    similar_id: similarId,
+                    brand: 'GENÉRICO', // Ajuste se houver tabela de MARCAS para fazer join
+                    location: 'ESTOQUE GERAL', // Ajuste se houver campo de localização específico
+                    status: 'active'
+                };
+            });
 
             res.json(mapped);
         });
@@ -117,7 +128,6 @@ app.get('/history', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro ao conectar no banco' });
 
-        // Traz os últimos 200 registros ordenados por data
         const sql = `
             SELECT FIRST 200
                 ID, SKU, NOME_PRODUTO, USUARIO_NOME, QTD_CONTADA, LOCALIZACAO, STATUS, DATA_HORA
@@ -129,13 +139,12 @@ app.get('/history', (req, res) => {
             db.detach();
             if (err) return res.status(500).json({ error: err.message });
             
-            // Converter BLOBs ou Buffers se necessário (dependendo do driver, strings podem vir como buffer)
             const safeResult = result.map(r => {
                 return {
                     ...r,
-                    NOME_PRODUTO: r.NOME_PRODUTO.toString(),
-                    USUARIO_NOME: r.USUARIO_NOME.toString(),
-                    STATUS: r.STATUS.toString(),
+                    NOME_PRODUTO: r.NOME_PRODUTO ? r.NOME_PRODUTO.toString() : '',
+                    USUARIO_NOME: r.USUARIO_NOME ? r.USUARIO_NOME.toString() : '',
+                    STATUS: r.STATUS ? r.STATUS.toString() : '',
                     LOCALIZACAO: r.LOCALIZACAO ? r.LOCALIZACAO.toString() : 'N/A'
                 }
             });

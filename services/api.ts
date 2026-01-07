@@ -6,6 +6,7 @@ export interface ApiProduct {
   brand: string;
   balance: number;
   location: string;
+  similar_id?: string; // Campo novo para agrupamento
   status: 'active' | 'inactive';
 }
 
