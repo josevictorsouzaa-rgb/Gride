@@ -150,4 +150,195 @@ const App: React.FC = () => {
   };
 
   const handleStartBlock = (block: any) => {
-    setActiveBlock(
+    setActiveBlock(block);
+    setCurrentScreen('mission_detail');
+  };
+
+  const handleScanComplete = (code: string) => {
+    setShowScanner(false);
+    let mockBlock;
+    if (code.startsWith('PRD-')) {
+       mockBlock = {
+          id: 901,
+          contextType: 'product_scan',
+          parentRef: 'ITEM ESCANEADO',
+          location: 'Item Avulso',
+          status: 'progress',
+          items: [
+            { 
+              name: 'ITEM IDENTIFICADO', 
+              ref: code, 
+              brand: 'AUTO', 
+              balance: 1,
+              lastCount: null
+            }
+          ]
+       };
+    } else {
+       mockBlock = {
+          id: 903,
+          contextType: 'location_scan',
+          parentRef: 'LOCALIZAÇÃO ESCANEADA',
+          location: 'Corredor Central',
+          status: 'progress',
+          items: []
+       };
+    }
+    handleStartBlock(mockBlock);
+  };
+
+  const renderScreen = () => {
+    switch (currentScreen) {
+      case 'login':
+        return <LoginScreen onLogin={handleLogin} />;
+      case 'dashboard':
+        return (
+          <DashboardScreen 
+            onNavigate={setCurrentScreen} 
+            onCategorySelect={handleCategorySelect}
+            currentUser={currentUser}
+            onLogout={handleLogout}
+            categories={categories}
+          />
+        );
+      case 'list':
+        return (
+          <ListScreen 
+            key="meta-list" 
+            onNavigate={setCurrentScreen} 
+            blocks={blocks}
+            segmentFilter={null}
+            onReserveBlock={handleReserveBlock}
+            onClearFilter={() => {}}
+            mode="daily_meta"
+          />
+        );
+      case 'filtered_list':
+        return (
+          <ListScreen 
+            key="browse-list" 
+            onNavigate={setCurrentScreen} 
+            blocks={blocks}
+            segmentFilter={segmentFilter}
+            onReserveBlock={handleReserveBlock}
+            onClearFilter={() => {
+              setSegmentFilter(null);
+              setCurrentScreen('dashboard'); 
+            }}
+            mode="browse"
+          />
+        );
+      case 'reserved':
+        return (
+          <ReservedScreen 
+            onNavigate={setCurrentScreen} 
+            blocks={blocks}
+            onStartBlock={handleStartBlock}
+            currentUser={currentUser}
+          />
+        );
+      case 'history':
+        return <HistoryScreen />;
+      case 'analytics':
+        return <AnalyticsScreen onNavigate={setCurrentScreen} />;
+      case 'mission_detail':
+        return (
+          <MissionDetailScreen 
+            blockData={activeBlock} 
+            onBack={() => setCurrentScreen('reserved')}
+            currentUser={currentUser}
+          />
+        );
+      case 'subcategories':
+        return (
+          <SubcategoriesScreen 
+            categoryLabel={selectedCategory || ''} 
+            categories={categories}
+            onBack={() => setCurrentScreen('dashboard')}
+            onSelectSegment={handleSegmentSelect}
+          />
+        );
+      case 'treatment':
+        return (
+           <TreatmentScreen onNavigate={setCurrentScreen} />
+        );
+      case 'settings':
+        return (
+           <SettingsScreen 
+             onBack={() => setCurrentScreen('dashboard')} 
+             currentUser={currentUser}
+           />
+        );
+      default:
+        return (
+          <DashboardScreen 
+            onNavigate={setCurrentScreen} 
+            onCategorySelect={handleCategorySelect}
+            currentUser={currentUser}
+            onLogout={handleLogout}
+            categories={categories}
+          />
+        );
+    }
+  };
+
+  const showNav = currentScreen !== 'login' && 
+                  currentScreen !== 'mission_detail' && 
+                  currentScreen !== 'settings' && 
+                  currentScreen !== 'treatment' &&
+                  currentScreen !== 'analytics';
+  
+  if (currentScreen === 'login') {
+    return <LoginScreen onLogin={handleLogin} />;
+  }
+
+  const activeNavTab = (currentScreen === 'subcategories' || currentScreen === 'filtered_list') 
+    ? 'dashboard' 
+    : currentScreen;
+
+  return (
+    <div className="flex w-full min-h-screen bg-background-light dark:bg-background-dark text-slate-900 dark:text-white">
+      {isLoading && (
+        <div className="fixed top-0 left-0 right-0 h-1 z-[100] bg-primary/20">
+          <div className="h-full bg-primary animate-[shimmer_1s_infinite] w-1/3" />
+        </div>
+      )}
+
+      <Sidebar 
+        currentScreen={activeNavTab}
+        onNavigate={setCurrentScreen}
+        currentUser={currentUser}
+        onLogout={handleLogout}
+        reservedCount={reservedCount}
+      />
+
+      <div className="flex-1 flex flex-col h-screen overflow-hidden">
+        <div className="flex-1 overflow-y-auto no-scrollbar relative w-full">
+           <div className="w-full min-h-full">
+             {renderScreen()}
+           </div>
+        </div>
+
+        {showNav && (
+          <BottomNav 
+            currentScreen={activeNavTab} 
+            onNavigate={setCurrentScreen}
+            onScanClick={() => setShowScanner(true)}
+            isAdmin={currentUser?.isAdmin} 
+            reservedCount={reservedCount}
+          />
+        )}
+      </div>
+
+      <ScannerModal 
+        isOpen={showScanner}
+        onClose={() => setShowScanner(false)}
+        onScanComplete={handleScanComplete}
+        title="Escanear Código"
+        instruction="Aponte para o QR Code de um Produto, Prateleira ou Estante"
+      />
+    </div>
+  );
+};
+
+export default App;

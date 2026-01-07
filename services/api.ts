@@ -38,8 +38,18 @@ export interface ApiCategory {
   }[];
 }
 
-// ATENÇÃO: Troque pelo IP da sua máquina na rede local para funcionar no celular
-const API_BASE_URL = 'http://localhost:8000'; 
+// Dynamically determine the API URL based on the current hostname
+// This allows the app to work on mobile devices connected to the same WiFi (LAN)
+const getApiBaseUrl = () => {
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    // Default to port 8000 on the same host
+    return `http://${hostname}:8000`;
+  }
+  return 'http://localhost:8000';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 export const api = {
   /**
@@ -47,11 +57,18 @@ export const api = {
    */
   login: async (usuario_id: string, senha: string): Promise<{ success: boolean; user?: User; error?: string }> => {
     try {
+      // Timeout to prevent hanging indefinetely if server is unreachable
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
       const response = await fetch(`${API_BASE_URL}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ usuario_id, senha })
+        body: JSON.stringify({ usuario_id, senha }),
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
 
       const data = await response.json();
       
@@ -62,7 +79,27 @@ export const api = {
       return { success: true, user: data.user };
     } catch (error) {
       console.error("Erro no login:", error);
-      return { success: false, error: 'Erro de conexão com o servidor' };
+      
+      // FALLBACK MOCK PARA DESENVOLVIMENTO (Caso o server não esteja rodando)
+      // Remove this block in production
+      if (usuario_id === '18' && senha === '123') {
+         console.warn("Using Mock Login Fallback");
+         return {
+            success: true,
+            user: {
+                id: '18',
+                name: 'Usuário Mock (Offline)',
+                role: 'Desenvolvedor',
+                avatar: 'https://i.pravatar.cc/150?u=18',
+                isAdmin: true
+            }
+         };
+      }
+
+      return { 
+        success: false, 
+        error: 'Não foi possível conectar ao servidor (Porta 8000). Verifique se o server.js está rodando.' 
+      };
     }
   },
 
@@ -75,7 +112,8 @@ export const api = {
       if (!response.ok) throw new Error('Erro ao buscar categorias');
       return await response.json();
     } catch (error) {
-      console.error("Erro categorias:", error);
+      console.error("Erro categorias (API Offline?):", error);
+      // Retorna array vazio para não quebrar a UI
       return [];
     }
   },

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { Icon } from '../components/Icon';
@@ -19,6 +20,16 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   onLogout, 
   categories 
 }) => {
+  // Safety Check for Data Loading
+  if (!categories || !Array.isArray(categories)) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-background-light dark:bg-background-dark text-gray-500 animate-pulse">
+        <Icon name="cloud_sync" size={48} className="mb-4 text-primary" />
+        <p>Carregando dados do servidor...</p>
+      </div>
+    );
+  }
+
   const [showAllCategories, setShowAllCategories] = useState(false);
   
   // Detection for Desktop View

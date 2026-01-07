@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Icon } from '../components/Icon';
 import { ApiCategory } from '../services/api';
@@ -15,6 +16,11 @@ export const SubcategoriesScreen: React.FC<SubcategoriesScreenProps> = ({
   onBack, 
   onSelectSegment 
 }) => {
+  // Safety Check
+  if (!categories || !Array.isArray(categories)) {
+     return <div className="flex justify-center items-center h-full p-10 text-gray-500">Carregando subcategorias...</div>;
+  }
+
   // Find the category object in our passed props
   const categoryData = categories.find(c => c.label === categoryLabel);
   const items = categoryData ? categoryData.subcategories : [];
