@@ -26,13 +26,13 @@ const options = {
     pageSize: 4096
 };
 
-// --- INIT DB: Create WMS Table ---
+// --- INIT DB: Create Tables ---
 const initDb = () => {
     Firebird.attach(options, (err, db) => {
         if (err) return;
         
         // Tabela de Endereços WMS
-        const createTable = `
+        const createTableEnderecos = `
             CREATE TABLE GRIDE_ENDERECOS (
                 ID INTEGER NOT NULL PRIMARY KEY,
                 CODIGO VARCHAR(50) NOT NULL,
@@ -41,9 +41,22 @@ const initDb = () => {
                 PRO_COD VARCHAR(20)
             )
         `;
-        // Generator para ID
-        const createGen = `CREATE GENERATOR GEN_GRIDE_ENDERECOS_ID`;
-        const createTrigger = `
+        
+        // Tabela de Galpões
+        const createTableGalpoes = `
+            CREATE TABLE GRIDE_GALPOES (
+                ID INTEGER NOT NULL PRIMARY KEY,
+                SIGLA VARCHAR(10) NOT NULL,
+                DESCRICAO VARCHAR(50)
+            )
+        `;
+
+        // Generators
+        const createGenEnd = `CREATE GENERATOR GEN_GRIDE_ENDERECOS_ID`;
+        const createGenGal = `CREATE GENERATOR GEN_GRIDE_GALPOES_ID`;
+
+        // Triggers
+        const createTriggerEnd = `
             CREATE TRIGGER TR_GRIDE_ENDERECOS FOR GRIDE_ENDERECOS
             ACTIVE BEFORE INSERT POSITION 0
             AS
@@ -53,15 +66,32 @@ const initDb = () => {
             END
         `;
 
-        // Executa criações (ignora erros se já existir)
-        db.query(createTable, [], () => {
-            db.query(createGen, [], () => {
-                db.query(createTrigger, [], () => {
-                    console.log('WMS Tables Checked/Created');
-                    db.detach();
-                });
-            });
-        });
+        const createTriggerGal = `
+            CREATE TRIGGER TR_GRIDE_GALPOES FOR GRIDE_GALPOES
+            ACTIVE BEFORE INSERT POSITION 0
+            AS
+            BEGIN
+              IF (NEW.ID IS NULL) THEN
+                NEW.ID = GEN_ID(GEN_GRIDE_GALPOES_ID, 1);
+            END
+        `;
+
+        // Executa criações (ignora erros se já existir - "brute force init")
+        const runQuery = (sql) => {
+            db.query(sql, [], () => {}); 
+        };
+
+        runQuery(createTableEnderecos);
+        runQuery(createTableGalpoes);
+        runQuery(createGenEnd);
+        runQuery(createGenGal);
+        runQuery(createTriggerEnd);
+        runQuery(createTriggerGal);
+        
+        setTimeout(() => {
+            console.log('Database Schema Checked');
+            db.detach();
+        }, 1000);
     });
 };
 setTimeout(initDb, 2000);
@@ -383,7 +413,6 @@ app.post('/save-addresses', (req, res) => {
         let processed = 0;
         let skipped = 0;
         
-        // Loop recursivo para garantir ordem e conexão
         const processNext = (idx) => {
             if (idx >= addresses.length) {
                 db.detach();
@@ -392,13 +421,12 @@ app.post('/save-addresses', (req, res) => {
             
             const item = addresses[idx];
             
-            // Check if exists to avoid duplicates on CODIGO
             const sqlCheck = 'SELECT ID FROM GRIDE_ENDERECOS WHERE CODIGO = ?';
             
             db.query(sqlCheck, [item.code], (err, exists) => {
                 if (err) {
                     console.error('Erro ao checar existência:', err);
-                    processNext(idx + 1); // Continua mesmo com erro
+                    processNext(idx + 1); 
                     return;
                 }
 
@@ -417,6 +445,51 @@ app.post('/save-addresses', (req, res) => {
         };
         
         processNext(0);
+    });
+});
+
+// --- GALPÕES (WMS WAREHOUSES) ---
+
+app.get('/warehouses', (req, res) => {
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.status(500).json([]);
+        db.query('SELECT ID, SIGLA, DESCRICAO FROM GRIDE_GALPOES ORDER BY SIGLA', [], (err, result) => {
+            db.detach();
+            if (err) return res.json([]);
+            res.json(result.map(r => ({ id: r.ID, sigla: safeString(r.SIGLA), descricao: safeString(r.DESCRICAO) })));
+        });
+    });
+});
+
+app.post('/save-warehouse', (req, res) => {
+    const { sigla, descricao } = req.body;
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.status(500).json({error: 'DB Error'});
+        
+        db.query('SELECT ID FROM GRIDE_GALPOES WHERE SIGLA = ?', [sigla], (err, result) => {
+            if (result && result.length > 0) {
+                db.detach();
+                return res.json({ success: false, message: 'Sigla já existe' });
+            }
+            
+            db.query('INSERT INTO GRIDE_GALPOES (SIGLA, DESCRICAO) VALUES (?, ?)', [sigla, descricao], (err) => {
+                db.detach();
+                if (err) return res.status(500).json({error: err.message});
+                res.json({ success: true });
+            });
+        });
+    });
+});
+
+app.post('/delete-warehouse', (req, res) => {
+    const { id } = req.body;
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.status(500).json({error: 'DB Error'});
+        db.query('DELETE FROM GRIDE_GALPOES WHERE ID = ?', [id], (err) => {
+            db.detach();
+            if (err) return res.status(500).json({error: err.message});
+            res.json({ success: true });
+        });
     });
 });
 

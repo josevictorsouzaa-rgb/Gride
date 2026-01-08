@@ -38,6 +38,12 @@ export interface ApiCategory {
   }[];
 }
 
+export interface Warehouse {
+    id: number;
+    sigla: string;
+    descricao: string;
+}
+
 const getApiBaseUrl = () => {
   if (typeof window !== 'undefined') {
     return `http://${window.location.hostname}:8000`;
@@ -185,6 +191,43 @@ export const api = {
           return await response.json();
       } catch (e) {
           return { success: false };
+      }
+  },
+
+  // --- WAREHOUSE MANAGEMENT ---
+  getWarehouses: async (): Promise<Warehouse[]> => {
+      try {
+          const response = await fetch(`${API_BASE_URL}/warehouses`);
+          if (response.ok) return await response.json();
+          return [];
+      } catch (e) {
+          return [];
+      }
+  },
+
+  saveWarehouse: async (warehouse: Partial<Warehouse>) => {
+      try {
+          const response = await fetch(`${API_BASE_URL}/save-warehouse`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(warehouse)
+          });
+          return await response.json();
+      } catch (e) {
+          return { success: false };
+      }
+  },
+
+  deleteWarehouse: async (id: number) => {
+      try {
+          await fetch(`${API_BASE_URL}/delete-warehouse`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id })
+          });
+          return true;
+      } catch (e) {
+          return false;
       }
   },
 
