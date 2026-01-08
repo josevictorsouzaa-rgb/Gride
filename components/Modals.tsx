@@ -61,229 +61,199 @@ interface HistoryFilterModalProps extends ModalProps {
   onClear: () => void;
 }
 
-// --- NEW MODALS ---
+// --- NEW MODALS (ADDED TO FIX MISSING EXPORTS) ---
 
-export const EntryModal: React.FC<EntryModalProps> = ({ isOpen, onClose, itemName, itemSku, initialQuantity = 1, lastCountInfo, onConfirm }) => {
+export const EntryModal: React.FC<EntryModalProps> = ({ 
+  isOpen, 
+  onClose, 
+  itemName, 
+  itemSku, 
+  initialQuantity = 0, 
+  lastCountInfo, 
+  onConfirm 
+}) => {
   const [quantity, setQuantity] = useState(initialQuantity);
   const [divergenceReason, setDivergenceReason] = useState('');
-  const [view, setView] = useState<'main' | 'divergence'>('main');
+  const [showDivergenceInput, setShowDivergenceInput] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
-        setQuantity(initialQuantity || 1);
-        setDivergenceReason('');
-        setView('main');
+      setQuantity(initialQuantity || 0);
+      setDivergenceReason('');
+      setShowDivergenceInput(false);
     }
   }, [isOpen, initialQuantity]);
 
   if (!isOpen) return null;
 
   const handleConfirm = () => {
-      onConfirm(quantity, 'counted');
-      onClose();
+    onConfirm(quantity, 'counted');
+    onClose();
   };
 
   const handleNotLocated = () => {
-      if(window.confirm('Marcar como Não Localizado?')) {
-          onConfirm(0, 'not_located');
-          onClose();
-      }
+    onConfirm(0, 'not_located');
+    onClose();
   };
 
   const handleDivergence = () => {
-      if (!divergenceReason) return alert('Informe o motivo.');
-      onConfirm(quantity, 'divergence_info', divergenceReason);
-      onClose();
+    if (!showDivergenceInput) {
+        setShowDivergenceInput(true);
+        return;
+    }
+    onConfirm(quantity, 'divergence_info', divergenceReason);
+    onClose();
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
-        <div className="relative z-10 w-full max-w-md bg-white dark:bg-surface-dark rounded-2xl shadow-2xl overflow-hidden animate-scale-up">
-            
-            {view === 'main' && (
-                <>
-                    <div className="p-6">
-                        <div className="flex justify-between items-start mb-4">
-                            <div>
-                                <h3 className="text-lg font-bold text-gray-900 dark:text-white leading-tight">{itemName || 'Item sem nome'}</h3>
-                                <p className="text-sm text-gray-500">{itemSku}</p>
-                            </div>
-                            <button onClick={onClose}><Icon name="close" className="text-gray-400" /></button>
-                        </div>
-
-                        {lastCountInfo && (
-                            <div className="mb-6 p-3 bg-blue-50 dark:bg-blue-900/10 rounded-lg flex items-center gap-3 border border-blue-100 dark:border-blue-800">
-                                <div className="size-8 rounded-full bg-blue-200 dark:bg-blue-800 flex items-center justify-center text-blue-700 dark:text-blue-200 font-bold text-xs">
-                                    {lastCountInfo.user.charAt(0)}
-                                </div>
-                                <div className="flex-1">
-                                    <p className="text-xs text-blue-800 dark:text-blue-300">
-                                        Última contagem: <strong>{lastCountInfo.quantity} un</strong>
-                                    </p>
-                                    <p className="text-[10px] text-blue-600 dark:text-blue-400">
-                                        por {lastCountInfo.user} em {lastCountInfo.date}
-                                    </p>
-                                </div>
-                            </div>
-                        )}
-
-                        <div className="flex items-center justify-center gap-6 mb-8">
-                            <button 
-                                onClick={() => setQuantity(Math.max(0, quantity - 1))}
-                                className="size-14 rounded-full bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 flex items-center justify-center transition-colors"
-                            >
-                                <Icon name="remove" size={24} />
-                            </button>
-                            <div className="flex flex-col items-center w-24">
-                                <input 
-                                    type="number" 
-                                    value={quantity}
-                                    onChange={(e) => setQuantity(Number(e.target.value))}
-                                    className="w-full text-center text-4xl font-bold bg-transparent border-none focus:ring-0 text-gray-900 dark:text-white p-0"
-                                />
-                                <span className="text-xs text-gray-400 uppercase font-bold">Unidades</span>
-                            </div>
-                            <button 
-                                onClick={() => setQuantity(quantity + 1)}
-                                className="size-14 rounded-full bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 flex items-center justify-center transition-colors"
-                            >
-                                <Icon name="add" size={24} />
-                            </button>
-                        </div>
-
-                        <button 
-                            onClick={handleConfirm}
-                            className="w-full py-4 bg-primary hover:bg-primary-dark text-white rounded-xl font-bold text-lg shadow-lg shadow-primary/20 transition-all mb-3 flex items-center justify-center gap-2"
-                        >
-                            <Icon name="check" />
-                            Confirmar Contagem
-                        </button>
-
-                        <div className="grid grid-cols-2 gap-3">
-                            <button 
-                                onClick={handleNotLocated}
-                                className="py-3 bg-red-50 dark:bg-red-900/10 text-red-600 dark:text-red-400 border border-red-100 dark:border-red-900/30 rounded-xl font-bold text-sm hover:bg-red-100 transition-colors"
-                            >
-                                Não Localizado
-                            </button>
-                            <button 
-                                onClick={() => setView('divergence')}
-                                className="py-3 bg-orange-50 dark:bg-orange-900/10 text-orange-600 dark:text-orange-400 border border-orange-100 dark:border-orange-900/30 rounded-xl font-bold text-sm hover:bg-orange-100 transition-colors"
-                            >
-                                Informar Divergência
-                            </button>
-                        </div>
-                    </div>
-                </>
-            )}
-
-            {view === 'divergence' && (
-                <div className="p-6">
-                    <div className="flex items-center gap-2 mb-4 text-orange-500">
-                        <Icon name="warning" />
-                        <h3 className="font-bold text-lg">Informar Divergência</h3>
-                    </div>
-                    
-                    <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
-                        Descreva o problema encontrado com este item (ex: embalagem danificada, SKU incorreto, etc).
-                    </p>
-
-                    <textarea
-                        value={divergenceReason}
-                        onChange={(e) => setDivergenceReason(e.target.value)}
-                        placeholder="Descreva o motivo..."
-                        className="w-full h-32 p-3 bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-xl resize-none mb-6 focus:ring-2 focus:ring-orange-500 outline-none"
-                    />
-
-                    <div className="flex gap-3">
-                        <button 
-                            onClick={() => setView('main')}
-                            className="flex-1 py-3 bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 font-bold rounded-xl"
-                        >
-                            Cancelar
-                        </button>
-                        <button 
-                            onClick={handleDivergence}
-                            className="flex-1 py-3 bg-orange-500 text-white font-bold rounded-xl hover:bg-orange-600 shadow-lg shadow-orange-500/20"
-                        >
-                            Salvar
-                        </button>
-                    </div>
-                </div>
-            )}
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-sm bg-white dark:bg-surface-dark rounded-2xl shadow-xl overflow-hidden animate-scale-up">
+        {/* Header */}
+        <div className="bg-primary p-4 text-white">
+          <h3 className="text-lg font-bold">{itemName || 'Item'}</h3>
+          <p className="text-sm opacity-90">{itemSku || 'SKU'}</p>
         </div>
+        
+        <div className="p-6 space-y-4">
+           {lastCountInfo && (
+             <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm text-blue-800 dark:text-blue-200">
+                <div className="size-8 rounded-full bg-blue-200 dark:bg-blue-800 flex items-center justify-center font-bold">
+                    {lastCountInfo.user.charAt(0)}
+                </div>
+                <div>
+                    <p className="font-bold">Última contagem: {lastCountInfo.quantity}</p>
+                    <p className="text-xs">{lastCountInfo.date} por {lastCountInfo.user}</p>
+                </div>
+             </div>
+           )}
+
+           <div className="flex flex-col items-center">
+              <label className="text-sm font-bold text-gray-500 uppercase mb-2">Quantidade Física</label>
+              <div className="flex items-center gap-4">
+                 <button onClick={() => setQuantity(Math.max(0, quantity - 1))} className="size-12 rounded-xl bg-gray-100 dark:bg-white/10 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-white/20 transition-colors">
+                    <Icon name="remove" size={24} />
+                 </button>
+                 <input 
+                    type="number" 
+                    value={quantity} 
+                    onChange={(e) => setQuantity(Number(e.target.value))}
+                    className="w-24 text-center text-3xl font-bold bg-transparent border-b-2 border-gray-200 focus:border-primary outline-none py-2 text-gray-900 dark:text-white"
+                 />
+                 <button onClick={() => setQuantity(quantity + 1)} className="size-12 rounded-xl bg-gray-100 dark:bg-white/10 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-white/20 transition-colors">
+                    <Icon name="add" size={24} />
+                 </button>
+              </div>
+           </div>
+           
+           {showDivergenceInput && (
+             <div className="animate-fade-in">
+                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Motivo da Divergência</label>
+                <textarea 
+                  value={divergenceReason}
+                  onChange={(e) => setDivergenceReason(e.target.value)}
+                  className="w-full p-3 rounded-lg bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 text-sm resize-none h-20"
+                  placeholder="Descreva o problema..."
+                />
+             </div>
+           )}
+
+           <div className="grid grid-cols-2 gap-3 pt-2">
+              <button 
+                onClick={handleNotLocated}
+                className="col-span-1 py-3 px-4 rounded-xl border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 font-bold text-xs uppercase hover:bg-gray-50 dark:hover:bg-white/5"
+              >
+                Não Localizado
+              </button>
+              <button 
+                onClick={handleDivergence}
+                className={`col-span-1 py-3 px-4 rounded-xl border font-bold text-xs uppercase transition-colors ${
+                    showDivergenceInput 
+                    ? 'bg-orange-500 text-white border-orange-500 hover:bg-orange-600' 
+                    : 'border-orange-200 dark:border-orange-900/30 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/10'
+                }`}
+              >
+                {showDivergenceInput ? 'Salvar Div.' : 'Divergência'}
+              </button>
+              <button 
+                onClick={handleConfirm}
+                className="col-span-2 py-4 rounded-xl bg-primary text-white font-bold text-lg shadow-lg hover:bg-primary-dark active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+              >
+                <Icon name="check_circle" />
+                Confirmar
+              </button>
+           </div>
+        </div>
+      </div>
     </div>
   );
 };
 
 export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, onClose, onConfirm }) => {
-    if (!isOpen) return null;
-    return (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <div className="bg-white dark:bg-surface-dark rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-scale-up">
-                <div className="flex flex-col items-center text-center mb-6">
-                    <div className="size-16 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 rounded-full flex items-center justify-center mb-4">
-                        <Icon name="check" size={32} />
-                    </div>
-                    <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Finalizar Tarefa?</h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                        Certifique-se de que todos os itens foram contados corretamente.
-                    </p>
-                </div>
-                <div className="flex gap-3">
-                    <button onClick={onClose} className="flex-1 py-3 bg-gray-100 dark:bg-white/5 text-gray-700 dark:text-gray-300 rounded-xl font-bold">Cancelar</button>
-                    <button onClick={onConfirm} className="flex-1 py-3 bg-primary text-white rounded-xl font-bold shadow-lg">Confirmar</button>
-                </div>
-            </div>
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-sm bg-white dark:bg-surface-dark rounded-2xl shadow-xl p-6 text-center animate-scale-up">
+        <div className="size-16 rounded-full bg-green-100 dark:bg-green-900/20 text-green-600 dark:text-green-400 flex items-center justify-center mx-auto mb-4">
+            <Icon name="check" size={32} />
         </div>
-    );
+        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Finalizar Contagem?</h3>
+        <p className="text-gray-500 dark:text-gray-400 mb-6 text-sm">
+            Confirma que todos os itens deste bloco foram verificados? Essa ação não pode ser desfeita.
+        </p>
+        <div className="flex gap-3">
+            <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 font-bold">
+                Cancelar
+            </button>
+            <button onClick={onConfirm} className="flex-1 py-3 rounded-xl bg-green-600 text-white font-bold shadow-lg hover:bg-green-700">
+                Finalizar
+            </button>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 export const DamageModal: React.FC<DamageModalProps> = ({ isOpen, onClose, onAttach }) => {
-    if (!isOpen) return null;
-    return (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <div className="bg-white dark:bg-surface-dark rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-scale-up">
-                <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                        <Icon name="broken_image" className="text-red-500" />
-                        Reportar Avaria
-                    </h3>
-                    <button onClick={onClose}><Icon name="close" /></button>
-                </div>
-                <div className="space-y-4">
-                    <button className="w-full py-4 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl flex flex-col items-center justify-center text-gray-500 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
-                        <Icon name="add_a_photo" size={32} className="mb-2" />
-                        <span className="text-xs font-bold uppercase">Tirar Foto</span>
-                    </button>
-                    <textarea 
-                        className="w-full h-24 p-3 bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-xl resize-none text-sm"
-                        placeholder="Descreva o dano encontrado..."
-                    />
-                    <button onClick={onAttach} className="w-full py-3 bg-red-600 text-white rounded-xl font-bold shadow-lg">
-                        Registrar Avaria
-                    </button>
-                </div>
-            </div>
+  if (!isOpen) return null;
+  
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-sm bg-white dark:bg-surface-dark rounded-2xl shadow-xl p-6 animate-scale-up">
+        <div className="flex items-center gap-3 mb-4 text-red-600 dark:text-red-400">
+            <Icon name="report_problem" size={24} />
+            <h3 className="text-lg font-bold">Reportar Avaria</h3>
         </div>
-    );
-};
+        
+        <div className="space-y-4">
+            <div>
+                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Descrição do Problema</label>
+                <textarea 
+                    className="w-full p-3 rounded-lg bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 text-sm resize-none h-24"
+                    placeholder="Ex: Embalagem rasgada, peça amassada..."
+                />
+            </div>
+            
+            <button className="w-full py-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl text-gray-500 dark:text-gray-400 font-bold text-sm flex items-center justify-center gap-2 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
+                <Icon name="camera_alt" />
+                Anexar Foto
+            </button>
 
-export const AbandonModal: React.FC<AbandonModalProps> = ({ isOpen, onClose, onConfirm }) => {
-    if (!isOpen) return null;
-    return (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <div className="bg-white dark:bg-surface-dark rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-scale-up">
-                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Abandonar Contagem?</h3>
-                <p className="text-sm text-gray-500 mb-6">O progresso não salvo será perdido.</p>
-                <div className="flex gap-3">
-                    <button onClick={onClose} className="flex-1 py-3 bg-gray-100 rounded-xl font-bold">Cancelar</button>
-                    <button onClick={onConfirm} className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold">Abandonar</button>
-                </div>
+            <div className="flex gap-3 pt-2">
+                <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 font-bold">
+                    Cancelar
+                </button>
+                <button onClick={onAttach} className="flex-1 py-3 rounded-xl bg-red-600 text-white font-bold shadow-lg hover:bg-red-700">
+                    Registrar
+                </button>
             </div>
         </div>
-    );
+      </div>
+    </div>
+  );
 };
 
 // --- History Filter Modal ---
@@ -650,7 +620,7 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
 // --- Print Label Modal ---
 export const PrintLabelModal: React.FC<PrintLabelModalProps> = ({ isOpen, onClose, data }) => {
     const [labelType, setLabelType] = useState<'ESTANTE' | 'PRATELEIRA'>(data?.type || 'ESTANTE');
-    const [printSize, setPrintSize] = useState<'60x30' | '60x40'>('60x40');
+    const [printSize, setPrintSize] = useState<'60x30' | '60x20'>('60x30');
 
     useEffect(() => {
         if(data) setLabelType(data.type);
@@ -667,21 +637,61 @@ export const PrintLabelModal: React.FC<PrintLabelModalProps> = ({ isOpen, onClos
                 document.head.appendChild(style);
             }
             
-            const heightMm = printSize === '60x30' ? '30mm' : '40mm';
-            // Safe zone reduces 1mm from edges to prevent cutting
-            const safeWidth = '58mm';
-            const safeHeight = printSize === '60x30' ? '28mm' : '38mm';
+            // Adjust dimensions based on selection
+            const heightMm = printSize === '60x30' ? '30mm' : '20mm';
+            const qrSize = printSize === '60x30' ? '22mm' : '16mm';
+            const titleSize = printSize === '60x30' ? '7pt' : '6pt';
+            const numSize = printSize === '60x30' ? '24pt' : '16pt';
+            const codeSize = printSize === '60x30' ? '9pt' : '8pt';
+            const barPadding = printSize === '60x30' ? '1mm 2mm' : '0.5mm 1mm';
 
             style.innerHTML = `
                 @media print {
                     @page { size: 60mm ${heightMm}; margin: 0; }
                     body { margin: 0; padding: 0; }
+                    
                     #print-area-modal { 
                         display: flex !important; 
-                        width: ${safeWidth};
-                        height: ${safeHeight};
-                        margin: 1mm auto; /* Center with 1mm margin */
+                        width: 60mm;
+                        height: ${heightMm};
                         box-sizing: border-box;
+                        overflow: hidden;
+                        padding: 1mm;
+                        align-items: center;
+                    }
+
+                    .qr-box {
+                        width: ${qrSize} !important;
+                        height: ${qrSize} !important;
+                        flex-shrink: 0;
+                        margin-right: 1mm;
+                    }
+
+                    .info-column {
+                        flex: 1;
+                        height: 100%;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
+                        gap: 0.5mm;
+                    }
+
+                    .black-bar {
+                        padding: ${barPadding};
+                    }
+
+                    .label-type {
+                        font-size: ${titleSize} !important;
+                    }
+
+                    .label-number {
+                        font-size: ${numSize} !important;
+                        margin-left: 2mm;
+                    }
+
+                    .code-text {
+                        font-size: ${codeSize} !important;
+                        margin-top: 0.5mm;
                     }
                 }
             `;
@@ -692,9 +702,10 @@ export const PrintLabelModal: React.FC<PrintLabelModalProps> = ({ isOpen, onClos
 
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${data.fullCode}`;
     const displayLabel = labelType === 'ESTANTE' ? 'ESTANTE' : 'PRATELEIRA';
-    // Se for PRATELEIRA e a etiqueta for pequena (30mm), usa uma fonte menor ou abrevia se necessário
-    const isSmall = printSize === '60x30';
-    const labelFontSize = (displayLabel === 'PRATELEIRA' && isSmall) ? 'text-lg' : 'text-2xl';
+    
+    // Preview Styles (approximate)
+    const previewHeight = printSize === '60x30' ? '120px' : '80px';
+    const previewQrSize = printSize === '60x30' ? '80px' : '60px';
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4">
@@ -708,8 +719,8 @@ export const PrintLabelModal: React.FC<PrintLabelModalProps> = ({ isOpen, onClos
                             onChange={(e) => setPrintSize(e.target.value as any)}
                             className="bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-primary focus:border-primary block p-2"
                         >
-                            <option value="60x40">60mm x 40mm</option>
-                            <option value="60x30">60mm x 30mm</option>
+                            <option value="60x30">60mm x 30mm (Padrão)</option>
+                            <option value="60x20">60mm x 20mm (Compacto)</option>
                         </select>
                         <button onClick={onClose} className="text-gray-500 hover:text-gray-800 p-1">
                             <Icon name="close" size={24} />
@@ -734,47 +745,39 @@ export const PrintLabelModal: React.FC<PrintLabelModalProps> = ({ isOpen, onClos
                 </div>
 
                 {/* Print Area Container (Preview Wrapper) */}
-                <div className="p-8 bg-gray-200 flex justify-center overflow-auto">
+                <div className="p-8 bg-gray-200 flex justify-center overflow-auto items-center min-h-[200px]">
                     
                     {/* THE LABEL (Visible in Print) */}
                     <div 
                         id="print-area-modal" 
-                        className="bg-white border border-dashed border-gray-400 flex gap-2 shrink-0 box-border overflow-hidden p-1 relative"
+                        className="bg-white border border-dashed border-gray-400 flex items-center box-border p-1 relative shadow-sm"
                         style={{ 
-                            width: '60mm', 
-                            height: printSize === '60x30' ? '30mm' : '40mm',
-                            // On screen, we show exact MM size. In print, @media controls margins.
+                            width: '240px', // Scale approx 4x
+                            height: previewHeight,
                         }}
                     >
-                        {/* Margins Guide (Visual Only) */}
-                        <div className="absolute inset-[1mm] border border-blue-100 pointer-events-none z-0 opacity-50 no-print" title="Margem de Segurança"></div>
+                        {/* Left: QR Code */}
+                        <div className="flex items-center justify-center shrink-0 mr-2 qr-box" style={{width: previewQrSize, height: previewQrSize}}>
+                            <img src={qrUrl} alt="QR Code" className="w-full h-full object-contain" style={{imageRendering: 'pixelated'}} />
+                        </div>
 
-                        {/* Content Container with Z-Index to stay above guide */}
-                        <div className="flex w-full h-full z-10 items-center justify-between pl-1 pr-1">
-                            
-                            {/* Left: QR Code */}
-                            <div className="h-full aspect-square flex items-center justify-center p-1">
-                                <img src={qrUrl} alt="QR Code" className="h-full w-full object-contain" style={{imageRendering: 'pixelated'}} />
+                        {/* Right: Info */}
+                        <div className="flex-1 flex flex-col justify-center h-full info-column">
+                            {/* Black Bar Header */}
+                            <div className="w-full bg-black text-white flex items-center justify-between rounded px-2 py-1 black-bar">
+                                <span className="font-bold uppercase tracking-tight label-type" style={{fontSize: '10px'}}>
+                                    {displayLabel}
+                                </span>
+                                <span className="font-black tracking-tighter leading-none label-number" style={{fontSize: '24px'}}>
+                                    {data.number}
+                                </span>
                             </div>
 
-                            {/* Right: Info */}
-                            <div className="flex-1 flex flex-col justify-center gap-1 pl-1 h-full">
-                                {/* Black Bar Header */}
-                                <div className="w-full bg-black text-white py-1 px-2 flex items-center justify-between rounded">
-                                    <span className={`${labelFontSize} font-bold uppercase tracking-tight truncate`}>
-                                        {displayLabel}
-                                    </span>
-                                    <span className="text-4xl font-black tracking-tighter leading-none ml-1">
-                                        {data.number}
-                                    </span>
-                                </div>
-
-                                {/* Full Coordinate Code */}
-                                <div className="text-center w-full mt-1">
-                                    <p className="text-sm font-black text-black tracking-wider leading-none whitespace-nowrap overflow-visible">
-                                        {data.fullCode}
-                                    </p>
-                                </div>
+                            {/* Full Coordinate Code */}
+                            <div className="text-center w-full mt-1 code-text">
+                                <p className="font-black text-black tracking-wider leading-none whitespace-nowrap overflow-visible" style={{fontSize: '12px'}}>
+                                    {data.fullCode}
+                                </p>
                             </div>
                         </div>
                     </div>

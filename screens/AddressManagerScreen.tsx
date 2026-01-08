@@ -12,7 +12,7 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
   const [addresses, setAddresses] = useState<WMSAddress[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [loading, setLoading] = useState(false);
-  const [printSize, setPrintSize] = useState<'60x30' | '60x40'>('60x40');
+  const [printSize, setPrintSize] = useState<'60x30' | '60x20'>('60x30');
   
   // States do Gerador (Modal)
   const [isGeneratorModalOpen, setIsGeneratorModalOpen] = useState(false);
@@ -244,16 +244,12 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
         const isShelfLabel = !item.p;
 
         // Logic: 
-        // Se for Prateleira (Nivel), o título é "PRATELEIRA" (ajustado de NÍVEL)
+        // Se for Prateleira (Nivel), o título é "PRATELEIRA"
         // Se for Estante, o título é "ESTANTE".
         
         const labelTitle = isShelfLabel ? 'ESTANTE' : 'PRATELEIRA';
         const labelNum = isShelfLabel ? estanteNum : nivelNum;
         
-        // CSS class for font size adjustment if word is long
-        const titleClass = (labelTitle.length > 8) ? 'text-sm' : 'text-xl';
-
-        // Unified Design: QR Left, Info Right (Bar + Big Code at Bottom)
         return `
         <div class="label-item">
             <div class="label-inner">
@@ -262,7 +258,7 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
                 </div>
                 <div class="info-column">
                     <div class="black-bar">
-                        <span class="label-type ${titleClass}">${labelTitle}</span>
+                        <span class="label-type">${labelTitle}</span>
                         <span class="label-number">${labelNum}</span>
                     </div>
                     <div class="code-text">${item.code}</div>
@@ -281,22 +277,26 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
     const style = document.createElement('style');
     style.id = styleId;
     
-    // Page Dimensions based on selection
-    const pageHeight = printSize === '60x30' ? '30mm' : '40mm';
-    // Safe dimensions to prevent cutting (1-2mm margin)
-    const safeWidth = '58mm';
-    const safeHeight = printSize === '60x30' ? '28mm' : '38mm';
+    // Configurações baseadas no tamanho selecionado
+    const heightMm = printSize === '60x30' ? '30mm' : '20mm';
+    const qrSize = printSize === '60x30' ? '22mm' : '16mm';
+    
+    // Fontes
+    const titleSize = printSize === '60x30' ? '7pt' : '5pt';
+    const numSize = printSize === '60x30' ? '24pt' : '16pt';
+    const codeSize = printSize === '60x30' ? '9pt' : '8pt';
+    const barPadding = printSize === '60x30' ? '1mm 2mm' : '0.5mm 1mm';
 
     style.innerHTML = `
         @media print {
-            @page { size: 60mm ${pageHeight}; margin: 0; }
+            @page { size: 60mm ${heightMm}; margin: 0; }
             body { margin: 0 !important; padding: 0 !important; font-family: 'Inter', sans-serif; -webkit-print-color-adjust: exact; }
             body > *:not(#print-area) { display: none !important; }
             #print-area { display: block !important; position: absolute; top: 0; left: 0; width: 60mm; }
             
             .label-item {
                 width: 60mm; 
-                height: ${pageHeight};
+                height: ${heightMm};
                 page-break-after: always; 
                 break-after: page;
                 box-sizing: border-box; 
@@ -304,23 +304,22 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
                 display: flex;
                 align-items: center;
                 justify-content: center;
+                padding: 1mm; /* Margem de segurança externa */
             }
 
             .label-inner {
-                width: ${safeWidth};
-                height: ${safeHeight};
+                width: 100%;
+                height: 100%;
                 display: flex;
                 flex-direction: row;
                 align-items: center;
-                /* Optional Border for debug, remove in prod or make very light */
-                /* border: 1px dotted #ccc; */ 
             }
 
             .qr-box {
-                height: 100%;
-                aspect-ratio: 1/1;
+                width: ${qrSize};
+                height: ${qrSize};
                 flex-shrink: 0;
-                padding: 1mm;
+                margin-right: 1.5mm;
                 display: flex;
                 align-items: center;
                 justify-content: center;
@@ -338,19 +337,17 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
                 display: flex;
                 flex-direction: column;
                 justify-content: center; /* Center vertically */
-                gap: 1mm;
-                padding-left: 1mm;
-                padding-right: 1mm;
+                gap: 0.5mm;
             }
 
             .black-bar {
                 background: #000;
                 color: #fff;
-                padding: 1mm 2mm;
+                padding: ${barPadding};
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
-                border-radius: 1.5mm;
+                border-radius: 1mm;
                 width: 100%;
             }
             
@@ -358,23 +355,21 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
                 font-weight: bold;
                 letter-spacing: 0.5px;
                 text-transform: uppercase;
+                font-size: ${titleSize};
             }
-            .label-type.text-sm { font-size: 8pt; } /* For PRATELEIRA */
-            .label-type.text-xl { font-size: 10pt; } /* For ESTANTE */
 
             .label-number {
-                font-size: 20pt;
                 font-weight: 900;
                 line-height: 1;
+                font-size: ${numSize};
             }
 
             .code-text {
-                font-size: 10pt;
                 font-weight: 900;
                 color: #000;
                 text-align: center;
                 white-space: nowrap;
-                margin-top: 1mm;
+                font-size: ${codeSize};
             }
         }
     `;
@@ -443,8 +438,8 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
                         onChange={(e) => setPrintSize(e.target.value as any)}
                         className="bg-white dark:bg-black/20 border border-gray-200 dark:border-white/10 text-gray-900 dark:text-white text-xs rounded focus:ring-primary focus:border-primary block p-1.5 font-bold"
                     >
-                        <option value="60x40">60mm x 40mm</option>
-                        <option value="60x30">60mm x 30mm</option>
+                        <option value="60x30">60mm x 30mm (Padrão)</option>
+                        <option value="60x20">60mm x 20mm (Compacto)</option>
                     </select>
                  </div>
 
