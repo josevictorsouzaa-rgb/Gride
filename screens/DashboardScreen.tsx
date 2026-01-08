@@ -19,15 +19,16 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   onLogout, 
   categories 
 }) => {
-  // --- TRAVA DE SEGURANÇA OBRIGATÓRIA ---
+  // --- COLE ESTE BLOCO EXATAMENTE AQUI (LINHA 19) ---
   if (!categories || !Array.isArray(categories) || categories.length === 0) { 
-        return (
-          <div className='flex-1 bg-background-dark p-10 text-white font-bold flex items-center justify-center text-center'>
-            Conectando ao banco de dados Firebird...<br/>
-            Aguarde um instante enquanto carregamos as categorias.
-          </div>
-        ); 
-    }
+      return (
+        <div className='flex-1 bg-background-dark p-10 text-white font-bold flex items-center justify-center text-center'>
+          Conectando ao banco de dados Firebird...<br/>
+          Aguarde um instante enquanto carregamos as categorias.
+        </div>
+      ); 
+  }
+  // ------------------------------------------------
 
   const [showAllCategories, setShowAllCategories] = useState(false);
   
