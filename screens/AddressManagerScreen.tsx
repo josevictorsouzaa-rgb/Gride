@@ -43,6 +43,8 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
     const handleResize = () => setIsDesktop(window.innerWidth >= 1024);
     window.addEventListener('resize', handleResize);
     refreshData();
+    // Reset selection on mount/refresh
+    setSelectedIds(new Set());
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
@@ -172,7 +174,7 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
       setExpandedShelves(newSet);
   };
 
-  // --- CASCADING SELECTION LOGIC ---
+  // --- SELECTION LOGIC ---
   const handleSelectId = (id: number) => {
       const newSet = new Set(selectedIds);
       if (newSet.has(id)) newSet.delete(id);
@@ -208,7 +210,16 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
       setSelectedIds(newSet);
   };
 
-  // --- PRINT LOGIC (Standard: Levels) ---
+  const handleSelectAll = () => {
+      const allIds = new Set(addresses.map(a => a.id));
+      setSelectedIds(allIds);
+  };
+
+  const handleDeselectAll = () => {
+      setSelectedIds(new Set());
+  };
+
+  // --- PRINT LOGIC ---
   const executePrint = async (items: { code: string, g: string, e: string, p?: string }[]) => {
     const printArea = document.getElementById('print-area');
     if (!printArea) return;
@@ -217,7 +228,7 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
     const qrMap = new Map<string, string>();
     try {
         const promises = items.map(async (item) => {
-            const url = await QRCode.toDataURL(item.code, { margin: 0, width: 200 });
+            const url = await QRCode.toDataURL(item.code, { margin: 0, width: 250 });
             return { code: item.code, url };
         });
         const results = await Promise.all(promises);
@@ -229,19 +240,50 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
 
     const labelsHtml = items.map(item => {
         const qrSrc = qrMap.get(item.code);
-        return `
-        <div class="label-item">
-            <div class="qr-container">
-                <img src="${qrSrc}" />
-            </div>
-            <div class="info-container">
-                <div class="info-row"><span class="key">G:</span><span class="val">${item.g}</span></div>
-                <div class="info-row"><span class="key">E:</span><span class="val">${item.e.replace(/\D/g, '')}</span></div>
-                ${item.p ? `<div class="info-row"><span class="key">P:</span><span class="val">${item.p.replace(/\D/g, '')}</span></div>` : ''}
-                ${!item.p ? `<div class="info-row"><span class="key-lg">ESTANTE</span></div>` : ''}
-            </div>
-        </div>
-    `;}).join('');
+        const estanteNum = item.e.replace(/\D/g, '');
+        const nivelNum = item.p ? item.p.replace(/\D/g, '') : '';
+        const isShelfLabel = !item.p;
+
+        if (isShelfLabel) {
+            // --- DESIGN ETIQUETA ESTANTE (Simples, Galpão Discreto, Estante Grande) ---
+            return `
+            <div class="label-item shelf-label">
+                <div class="header-discrete">GALPÃO: ${item.g}</div>
+                <div class="content-row">
+                    <div class="qr-box">
+                        <img src="${qrSrc}" />
+                    </div>
+                    <div class="text-box">
+                        <span class="label-title">ESTANTE</span>
+                        <span class="label-huge">${estanteNum}</span>
+                    </div>
+                </div>
+            </div>`;
+        } else {
+            // --- DESIGN ETIQUETA PRATELEIRA (Coordenadas Completas) ---
+            return `
+            <div class="label-item level-label">
+                <div class="qr-left">
+                    <img src="${qrSrc}" />
+                </div>
+                <div class="info-right">
+                    <div class="info-group">
+                        <span class="lbl">GALPÃO</span>
+                        <span class="val">${item.g}</span>
+                    </div>
+                    <div class="info-group highlight">
+                        <span class="lbl">ESTANTE</span>
+                        <span class="val">${estanteNum}</span>
+                    </div>
+                    <div class="info-group">
+                        <span class="lbl">NÍVEL / POS.</span>
+                        <span class="val">${nivelNum}</span>
+                    </div>
+                </div>
+                <div class="code-footer">${item.code}</div>
+            </div>`;
+        }
+    }).join('');
 
     printArea.innerHTML = labelsHtml;
 
@@ -258,27 +300,129 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
     style.innerHTML = `
         @media print {
             @page { size: ${width} ${height}; margin: 0; }
-            body { margin: 0 !important; padding: 0 !important; }
+            body { margin: 0 !important; padding: 0 !important; font-family: 'Inter', sans-serif; -webkit-print-color-adjust: exact; }
             body > *:not(#print-area) { display: none !important; }
             #print-area { display: block !important; position: absolute; top: 0; left: 0; width: ${width}; }
+            
             .label-item {
                 width: ${width}; height: ${height};
                 page-break-after: always; break-after: page;
-                display: flex; align-items: center; justify-content: flex-start;
-                padding: 1mm 2mm; box-sizing: border-box; overflow: hidden;
-                font-family: sans-serif;
+                box-sizing: border-box; overflow: hidden;
+                position: relative;
+                background: white;
+                border: 1px solid #ddd; /* Helper border used only if printer doesn't cut */
+                display: flex;
             }
-            .qr-container { width: 25mm; height: 25mm; display: flex; align-items: center; justify-content: center; margin-right: 2mm; }
-            .qr-container img { width: 100%; height: 100%; object-fit: contain; }
-            .info-container { flex: 1; display: flex; flex-direction: column; justify-content: center; }
-            .info-row { display: flex; align-items: baseline; line-height: 1.0; margin-bottom: 1px; }
-            .key { font-size: 16px; font-weight: 800; margin-right: 3px; color: #000; }
-            .val { font-size: 28px; font-weight: 900; color: #000; letter-spacing: -1px; }
-            .key-lg { font-size: 18px; font-weight: 900; text-transform: uppercase; color: #000; margin-top: 5px; }
+
+            /* --- SHELF LABEL STYLES --- */
+            .shelf-label {
+                flex-direction: column;
+                padding: 1mm;
+            }
+            .header-discrete {
+                font-size: 8pt;
+                font-weight: bold;
+                text-align: center;
+                color: #555;
+                text-transform: uppercase;
+                margin-bottom: 1mm;
+                border-bottom: 1px solid #000;
+            }
+            .content-row {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                flex: 1;
+                gap: 2mm;
+            }
+            .shelf-label .qr-box {
+                width: 24mm;
+                height: 24mm;
+            }
+            .shelf-label .qr-box img {
+                width: 100%; height: 100%;
+            }
+            .shelf-label .text-box {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                line-height: 1;
+            }
+            .shelf-label .label-title {
+                font-size: 10pt;
+                font-weight: bold;
+                letter-spacing: 1px;
+            }
+            .shelf-label .label-huge {
+                font-size: 42pt;
+                font-weight: 900;
+                color: #000;
+            }
+
+            /* --- LEVEL LABEL STYLES --- */
+            .level-label {
+                flex-direction: row;
+                padding: 1mm;
+                align-items: center;
+            }
+            .qr-left {
+                width: 22mm;
+                height: 22mm;
+                margin-right: 1mm;
+            }
+            .qr-left img {
+                width: 100%; height: 100%;
+            }
+            .info-right {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                border-left: 2px solid #000;
+                padding-left: 1.5mm;
+                height: 90%;
+            }
+            .info-group {
+                display: flex;
+                justify-content: space-between;
+                align-items: baseline;
+                margin-bottom: 1px;
+                border-bottom: 1px dashed #ccc;
+            }
+            .info-group:last-child {
+                border-bottom: none;
+            }
+            .info-group.highlight {
+                background: #000;
+                color: #fff;
+                padding: 0 1mm;
+                border-radius: 2px;
+            }
+            .info-group.highlight .lbl, .info-group.highlight .val {
+                color: #fff;
+            }
+            .lbl {
+                font-size: 7pt;
+                font-weight: 600;
+                text-transform: uppercase;
+            }
+            .val {
+                font-size: 14pt;
+                font-weight: 800;
+            }
+            .code-footer {
+                position: absolute;
+                bottom: 1mm;
+                left: 1mm;
+                font-size: 6pt;
+                font-family: monospace;
+                color: #555;
+            }
         }
     `;
     document.head.appendChild(style);
-    setTimeout(() => window.print(), 250);
+    setTimeout(() => window.print(), 300);
   };
 
   const handlePrintSelected = () => {
@@ -305,7 +449,7 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
           code: code,
           g: galpao,
           e: estante,
-          p: undefined // No Prateleira
+          p: undefined // No Prateleira = Shelf Label
       };
       executePrint([item]);
   };
@@ -324,7 +468,7 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
         {/* Header */}
         <header className="flex items-center justify-between px-6 py-4 bg-white dark:bg-surface-dark border-b border-gray-200 dark:border-white/5 shadow-sm z-10">
              <div className="flex items-center gap-4">
-                 <button onClick={onBack} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full"><Icon name="arrow_back" size={24} /></button>
+                 {/* Removed Back Button */}
                  <div>
                      <h1 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
                         <Icon name="warehouse" className="text-primary" />
@@ -335,13 +479,29 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
              </div>
              
              <div className="flex items-center gap-3">
+                 <div className="flex items-center bg-gray-100 dark:bg-white/5 rounded-lg p-1 mr-2">
+                    <button 
+                        onClick={handleSelectAll}
+                        className="px-3 py-1.5 text-xs font-bold text-gray-600 dark:text-gray-300 hover:bg-white dark:hover:bg-white/10 hover:shadow-sm rounded-md transition-all"
+                    >
+                        Marcar Tudo
+                    </button>
+                    <div className="w-px h-4 bg-gray-300 dark:bg-gray-600 mx-1"></div>
+                    <button 
+                        onClick={handleDeselectAll}
+                        className="px-3 py-1.5 text-xs font-bold text-gray-600 dark:text-gray-300 hover:bg-white dark:hover:bg-white/10 hover:shadow-sm rounded-md transition-all"
+                    >
+                        Desmarcar Tudo
+                    </button>
+                 </div>
+
                  <button 
                     onClick={handlePrintSelected}
                     disabled={selectedIds.size === 0}
                     className={`flex items-center gap-2 px-5 py-2 rounded-lg font-bold bg-gray-900 dark:bg-white dark:text-black text-white transition-all ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 shadow-lg'}`}
                  >
                     <Icon name="print" size={20} />
-                    <span>Imprimir Selecionados ({selectedIds.size})</span>
+                    <span>Imprimir ({selectedIds.size})</span>
                  </button>
              </div>
         </header>
@@ -433,10 +593,11 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
                                                                 e.stopPropagation();
                                                                 handlePrintShelfLabel(galpao, estante);
                                                             }}
-                                                            title="Imprimir QR Code da Estante"
-                                                            className="p-2 text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-200 dark:hover:bg-white/20 rounded transition-colors"
+                                                            title="Imprimir Etiqueta da Estante"
+                                                            className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 text-gray-600 dark:text-gray-300 rounded text-xs font-bold transition-colors"
                                                         >
-                                                            <Icon name="print" size={18} />
+                                                            <Icon name="print" size={16} />
+                                                            Etiqueta Estante
                                                         </button>
                                                     </div>
 
