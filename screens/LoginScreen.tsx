@@ -20,10 +20,15 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
 
   // Handle Input Blur to fetch Name
   const handleCodeBlur = async () => {
-    if (code.length >= 2) {
+    // CORREÇÃO: Aceitar código com pelo menos 1 caractere (antes era >= 2)
+    if (code.length > 0) {
         setIsCheckingName(true);
-        const name = await api.getUserName(code);
-        setDetectedName(name);
+        try {
+            const name = await api.getUserName(code);
+            setDetectedName(name);
+        } catch (e) {
+            setDetectedName(null);
+        }
         setIsCheckingName(false);
     } else {
         setDetectedName(null);
@@ -81,10 +86,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
               Código de Usuário
             </label>
             <div className="relative flex w-full items-center rounded-xl bg-white dark:bg-surface-dark border border-slate-200 dark:border-card-border focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 transition-all shadow-sm">
+              {/* ALTERAÇÃO: type="text" + inputMode="numeric" remove as setas laterais e mantém teclado numérico */}
               <input
-                type="number"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 value={code}
-                onChange={(e) => setCode(e.target.value)}
+                onChange={(e) => {
+                    // Garante que apenas números sejam digitados
+                    const val = e.target.value.replace(/\D/g, '');
+                    setCode(val);
+                }}
                 onBlur={handleCodeBlur}
                 placeholder="Informe seu ID"
                 className="flex w-full min-w-0 bg-transparent py-4 pl-4 pr-12 text-lg text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none border-none focus:ring-0 rounded-xl"

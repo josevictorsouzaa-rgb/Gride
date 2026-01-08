@@ -58,7 +58,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (currentScreen === 'login') return;
 
-    let timeoutId: NodeJS.Timeout;
+    let timeoutId: any;
 
     const resetTimer = () => {
       clearTimeout(timeoutId);
