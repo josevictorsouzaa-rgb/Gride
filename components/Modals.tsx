@@ -244,6 +244,7 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const [error, setError] = useState<string>('');
   const [isPermDenied, setIsPermDenied] = useState(false);
+  const [retryTrigger, setRetryTrigger] = useState(0); // Usado para forçar re-render
 
   useEffect(() => {
     let html5QrCode: Html5Qrcode;
@@ -302,7 +303,7 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
          scannerRef.current = null;
       }
     };
-  }, [isOpen, onScanComplete]);
+  }, [isOpen, onScanComplete, retryTrigger]);
 
   const handleClose = () => {
     if (scannerRef.current) {
@@ -313,6 +314,13 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
     } else {
         onClose();
     }
+  };
+
+  const handleRetryPermission = () => {
+      // Tentamos reiniciar o fluxo. Se o navegador bloqueou permanentemente,
+      // a nova tentativa falhará novamente, mantendo a tela de erro,
+      // mas se foi temporário ou usuário mudou config, funcionará.
+      setRetryTrigger(prev => prev + 1);
   };
 
   if (!isOpen) return null;
@@ -337,18 +345,40 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
 
          {/* Fallback Error UI */}
          {(error || isPermDenied) && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 p-8 text-center z-30">
-                <Icon name="no_photography" size={48} className="text-gray-500 mb-4" />
-                <h3 className="text-white font-bold text-lg mb-2">Câmera Indisponível</h3>
-                <p className="text-gray-400 text-sm mb-6">{error}</p>
-                <button onClick={handleClose} className="bg-white text-black px-6 py-2 rounded-full font-bold text-sm">
-                    Fechar
-                </button>
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 p-8 text-center z-30 animate-fade-in">
+                <div className="size-20 rounded-full bg-red-900/30 text-red-500 flex items-center justify-center mb-6 border border-red-500/30">
+                    <Icon name={isPermDenied ? "no_photography" : "error"} size={40} />
+                </div>
+                
+                <h3 className="text-white font-bold text-xl mb-3">
+                    {isPermDenied ? "Acesso Negado" : "Erro na Câmera"}
+                </h3>
+                
+                <p className="text-gray-400 text-sm mb-8 max-w-xs leading-relaxed">
+                    {isPermDenied 
+                        ? "O aplicativo precisa da câmera para ler códigos QR. Verifique se você bloqueou o acesso nas configurações do navegador." 
+                        : error}
+                </p>
+
+                <div className="flex flex-col gap-3 w-full max-w-xs">
+                    <button 
+                        onClick={handleRetryPermission} 
+                        className="w-full bg-primary hover:bg-primary-dark text-white px-6 py-3.5 rounded-xl font-bold text-sm transition-colors shadow-lg shadow-primary/20"
+                    >
+                        Tentar Habilitar Novamente
+                    </button>
+                    <button 
+                        onClick={handleClose} 
+                        className="w-full bg-white/10 hover:bg-white/20 text-white px-6 py-3.5 rounded-xl font-bold text-sm transition-colors"
+                    >
+                        Fechar e Digitar Código
+                    </button>
+                </div>
             </div>
          )}
          
          {/* Overlay Guide (Only visible if no error) */}
-         {!error && (
+         {!error && !isPermDenied && (
              <>
                 <div className="absolute inset-0 pointer-events-none border-[40px] border-black/50 z-10 flex items-center justify-center">
                    {/* Corners */}
