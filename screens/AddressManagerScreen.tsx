@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { Icon } from '../components/Icon';
 import { WMSAddress } from '../types';
@@ -185,20 +184,35 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
     if (!printArea) return;
 
     // 1. Gerar HTML das etiquetas
-    const labelsHtml = itemsToPrint.map(addr => `
-        <div class="label-${printSize}">
-            <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${addr.code}" style="width: 22mm; height: 22mm;" />
-            <div class="label-content">
-                <div class="label-code" style="font-size: 14px; font-weight: 800;">${addr.code}</div>
-                <div class="label-desc" style="font-size: 10px; margin-top: 2px;">${addr.description}</div>
-                <div class="label-brand" style="margin-top: 4px; font-size: 8px;">GRIDE WMS</div>
+    const labelsHtml = itemsToPrint.map(addr => {
+        // Extração dos códigos usando Regex para pegar o que vem depois de G, E, P
+        // Ex: LOC-G01-E05-P02 -> G=01, E=05, P=02
+        const code = addr.code.toUpperCase();
+        
+        const gMatch = code.match(/G(\d+)/);
+        const eMatch = code.match(/E(\d+)/);
+        const pMatch = code.match(/P(\d+)/);
+
+        const g = gMatch ? gMatch[1] : null;
+        const e = eMatch ? eMatch[1] : null;
+        const p = pMatch ? pMatch[1] : null;
+
+        return `
+        <div class="label-item">
+            <div class="qr-container">
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${addr.code}" />
+            </div>
+            <div class="info-container">
+                ${g ? `<div class="info-row"><span class="key">G:</span><span class="val">${g}</span></div>` : ''}
+                ${e ? `<div class="info-row"><span class="key">E:</span><span class="val">${e}</span></div>` : ''}
+                ${p ? `<div class="info-row"><span class="key">P:</span><span class="val">${p}</span></div>` : ''}
             </div>
         </div>
-    `).join('');
+    `}).join('');
 
     printArea.innerHTML = labelsHtml;
 
-    // 2. Injetar Estilo de Página Dinâmico (Força o tamanho correto na impressora)
+    // 2. Injetar Estilo de Página Dinâmico
     const styleId = 'dynamic-page-size';
     const oldStyle = document.getElementById(styleId);
     if (oldStyle) oldStyle.remove();
@@ -206,39 +220,94 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
     const style = document.createElement('style');
     style.id = styleId;
     
-    // Define o tamanho exato da página (60mm x 40mm ou 30mm)
+    // Dimensões exatas
     const width = '60mm';
     const height = printSize === '6040' ? '40mm' : '30mm';
     
-    // CSS reforçado para garantir que o navegador respeite o tamanho
+    // CSS Agressivo para layout limpo e vertical
     style.innerHTML = `
         @media print {
             @page {
                 size: ${width} ${height};
-                margin: 0;
+                margin: 0mm; 
             }
-            html, body {
-                width: ${width} !important;
-                height: ${height} !important;
-                min-width: ${width} !important;
-                min-height: ${height} !important;
+            body {
                 margin: 0 !important;
                 padding: 0 !important;
-                overflow: hidden !important;
-            }
-            #print-area {
-                width: ${width} !important;
-                display: block !important;
             }
             body > *:not(#print-area) {
                 display: none !important;
+            }
+            #print-area {
+                display: block !important;
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: ${width};
+                margin: 0;
+                padding: 0;
+            }
+            
+            .label-item {
+                width: ${width};
+                height: ${height};
+                page-break-after: always;
+                break-after: page;
+                display: flex;
+                align-items: center;
+                justify-content: flex-start; /* Alinhado a esquerda */
+                padding: 2mm;
+                box-sizing: border-box;
+                overflow: hidden;
+                font-family: sans-serif;
+            }
+
+            .qr-container {
+                width: 26mm; /* Tamanho fixo para o QR */
+                height: 26mm;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin-right: 2mm;
+            }
+            
+            .qr-container img {
+                width: 100%;
+                height: 100%;
+                object-fit: contain;
+            }
+
+            .info-container {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                gap: 0mm; /* Espaçamento justo */
+            }
+
+            .info-row {
+                display: flex;
+                align-items: baseline;
+                line-height: 1.1;
+            }
+
+            .key {
+                font-size: 14px;
+                font-weight: 700;
+                margin-right: 2px;
+                color: #000;
+            }
+
+            .val {
+                font-size: 26px; /* Números bem grandes */
+                font-weight: 900;
+                color: #000;
             }
         }
     `;
     document.head.appendChild(style);
 
     // 3. Imprimir
-    // Pequeno delay para garantir renderização do CSS
     setTimeout(() => window.print(), 100);
   };
 
@@ -271,7 +340,7 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
                  </div>
              </div>
              
-             {/* Print Actions - Only Visible when Items Selected */}
+             {/* Print Actions */}
              <div className={`flex items-center gap-3 transition-all duration-300 ${selectedIds.size > 0 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-[-10px] pointer-events-none'}`}>
                  <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 dark:bg-white/5 rounded-lg border border-gray-200 dark:border-white/10">
                     <span className="text-xs font-bold text-gray-500">Etiqueta:</span>

@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR" class="dark">
   <head>
@@ -74,68 +73,18 @@
 
       /* ESTILOS DE IMPRESSÃO TÉRMICA */
       @media print {
-        /* O @page é injetado via JS para ser dinâmico (60x40 ou 60x30) */
+        /* Oculta tudo exceto a área de impressão */
+        body > *:not(#print-area) {
+           display: none !important;
+        }
         
-        body * {
-           visibility: hidden;
-           height: 0;
-           overflow: hidden;
-        }
-        #print-area, #print-area * {
-           visibility: visible;
-           height: auto;
-           overflow: visible;
-        }
         #print-area {
+           display: block !important;
            position: absolute;
-           left: 0;
            top: 0;
+           left: 0;
            width: 100%;
         }
-
-        /* FORMATO 60x30mm */
-        .label-6030 {
-            width: 60mm;
-            height: 30mm;
-            page-break-after: always;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 2mm;
-            border: 1px dashed #ccc; /* Remove in production if printed on real labels */
-            box-sizing: border-box;
-            background: white;
-            color: black;
-        }
-
-        /* FORMATO 60x40mm */
-        .label-6040 {
-            width: 60mm;
-            height: 40mm;
-            page-break-after: always;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 2mm;
-            border: 1px dashed #ccc; 
-            box-sizing: border-box;
-            background: white;
-            color: black;
-        }
-
-        .label-content {
-           flex: 1;
-           padding-left: 2mm;
-           font-family: sans-serif;
-           font-weight: bold;
-           display: flex;
-           flex-col: column;
-           justify-content: center;
-        }
-        
-        .label-code { font-size: 16px; line-height: 1.1; }
-        .label-desc { font-size: 10px; margin-top: 2px; font-weight: normal; }
-        .label-brand { font-size: 8px; margin-top: 4px; text-transform: uppercase; }
       }
     </style>
 <script type="importmap">
