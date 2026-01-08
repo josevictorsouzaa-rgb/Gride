@@ -958,19 +958,19 @@ export const PrintLabelModal: React.FC<PrintLabelModalProps> = ({ isOpen, onClos
                         </div>
 
                         {/* Right: Info */}
-                        <div className="flex-1 flex flex-col justify-between pl-2 py-2">
+                        <div className="flex-1 flex flex-col justify-center gap-4 pl-4">
                              {/* Black Bar Header */}
-                             <div className="w-full bg-black text-white p-2 flex items-center justify-between">
+                             <div className="w-full bg-black text-white py-3 px-4 flex items-center justify-between rounded-lg">
                                  <span className="text-2xl font-bold uppercase tracking-wide">
                                      {displayLabel}
                                  </span>
-                                 <span className="text-5xl font-black tracking-tighter leading-none">
+                                 <span className="text-6xl font-black tracking-tighter leading-none">
                                      {data.number}
                                  </span>
                              </div>
 
-                             {/* Full Coordinate Code (At the bottom, BIG) */}
-                             <div className="text-center mt-auto pt-4">
+                             {/* Full Coordinate Code */}
+                             <div className="text-center">
                                  <p className="text-4xl font-black text-black tracking-widest leading-none">
                                      {data.fullCode}
                                  </p>

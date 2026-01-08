@@ -315,19 +315,19 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
                 height: 100%;
                 display: flex;
                 flex-direction: column;
-                justify-content: space-between;
-                padding-top: 1mm;
-                padding-bottom: 1mm;
+                justify-content: center; /* Changed from space-between for centering */
+                gap: 3mm; /* Gap between bar and code */
+                padding-left: 2mm;
             }
 
             .black-bar {
                 background: #000;
                 color: #fff;
-                padding: 1mm 2mm;
+                padding: 2mm 3mm;
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
-                border-radius: 1mm;
+                border-radius: 2mm;
             }
             
             .label-type {
@@ -344,14 +344,12 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
             }
 
             .code-text {
-                font-size: 10pt; /* Increased size significantly */
+                font-size: 14pt; /* Increased size significantly */
                 font-weight: 900;
                 color: #000;
                 text-align: center;
-                letter-spacing: 0.5px;
+                letter-spacing: 1px;
                 white-space: nowrap;
-                margin-top: auto; /* Push to bottom */
-                padding-bottom: 2mm;
             }
         }
     `;
