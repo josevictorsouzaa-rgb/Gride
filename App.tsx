@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Screen, User, Block } from './types';
 import { LoginScreen } from './screens/LoginScreen';
 import { DashboardScreen } from './screens/DashboardScreen';
@@ -27,18 +27,68 @@ const initialBlocksData: Block[] = [
   }
 ];
 
+// Tempo de inatividade em milissegundos (15 minutos)
+const INACTIVITY_LIMIT = 15 * 60 * 1000;
+
 const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<Screen>('login');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   
   const [blocks, setBlocks] = useState<Block[]>(initialBlocksData);
-  const [categories, setCategories] = useState<ApiCategory[]>([]); // Categorias do Banco inicializadas com array vazio
+  const [categories, setCategories] = useState<ApiCategory[]>([]); 
   
   const [segmentFilter, setSegmentFilter] = useState<string | null>(null);
   const [activeBlock, setActiveBlock] = useState<any | null>(null);
   const [showScanner, setShowScanner] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  // --- LOGICA DE AUTO-LOGOUT ---
+  const handleLogout = useCallback(() => {
+    setCurrentUser(null);
+    setCurrentScreen('login');
+    // Opcional: Limpar dados sensíveis se necessário
+  }, []);
+
+  const handleLogin = (user: User) => {
+    setCurrentUser(user);
+    setCurrentScreen('dashboard');
+  };
+
+  useEffect(() => {
+    if (currentScreen === 'login') return;
+
+    let timeoutId: NodeJS.Timeout;
+
+    const resetTimer = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        console.log("Sessão expirada por inatividade.");
+        handleLogout();
+        alert("Sua sessão expirou por inatividade (15min).");
+      }, INACTIVITY_LIMIT);
+    };
+
+    // Eventos para monitorar atividade
+    const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart'];
+    
+    // Inicia o timer
+    resetTimer();
+
+    // Adiciona listeners
+    events.forEach(event => {
+      window.addEventListener(event, resetTimer);
+    });
+
+    // Cleanup
+    return () => {
+      clearTimeout(timeoutId);
+      events.forEach(event => {
+        window.removeEventListener(event, resetTimer);
+      });
+    };
+  }, [currentScreen, handleLogout]);
+  // -----------------------------
 
   // Load Categories & Products on Login
   useEffect(() => {
@@ -53,7 +103,6 @@ const App: React.FC = () => {
         // 1. Carregar Categorias
         const cats = await api.getCategories();
         
-        // --- TRAVA DE SEGURANÇA OBRIGATÓRIA ---
         if (cats && Array.isArray(cats)) {
              setCategories(cats);
         } else {
@@ -123,16 +172,6 @@ const App: React.FC = () => {
 
   const reservedCount = blocks.filter(b => b.status === 'progress').length;
   
-  const handleLogin = (user: User) => {
-    setCurrentUser(user);
-    setCurrentScreen('dashboard');
-  };
-
-  const handleLogout = () => {
-    setCurrentUser(null);
-    setCurrentScreen('login');
-  };
-
   const handleCategorySelect = (categoryLabel: string) => {
     setSelectedCategory(categoryLabel);
     setCurrentScreen('subcategories');
@@ -297,7 +336,7 @@ const App: React.FC = () => {
     : currentScreen;
 
   return (
-    <div className="flex w-full min-h-screen bg-background-light dark:bg-background-dark text-slate-900 dark:text-white">
+    <div className="flex w-full min-h-screen bg-background-light dark:bg-background-dark text-slate-900 dark:text-white transition-opacity duration-300">
       {isLoading && (
         <div className="fixed top-0 left-0 right-0 h-1 z-[100] bg-primary/20">
           <div className="h-full bg-primary animate-[shimmer_1s_infinite] w-1/3" />
@@ -314,7 +353,7 @@ const App: React.FC = () => {
 
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
         <div className="flex-1 overflow-y-auto no-scrollbar relative w-full">
-           <div className="w-full min-h-full">
+           <div className="w-full min-h-full animate-fade-in">
              {renderScreen()}
            </div>
         </div>

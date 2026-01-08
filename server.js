@@ -35,6 +35,31 @@ const safeString = (value) => {
     return value.toString().trim();
 };
 
+// --- ROTA DE PRÉ-VISUALIZAÇÃO DE NOME (SEM SENHA) ---
+app.get('/user-name/:id', (req, res) => {
+    const { id } = req.params;
+
+    // Mock Users
+    if (id === '9999') return res.json({ name: 'Gestor de Teste' });
+    if (id === '8888') return res.json({ name: 'Colaborador Teste' });
+
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.status(500).json({ error: 'Erro db' });
+
+        const sql = `SELECT USU_NOME FROM USUARIOS WHERE USU_COD = ? AND USU_ATIVO = 'S'`;
+        db.query(sql, [id], (err, result) => {
+            db.detach();
+            if (err) return res.status(500).json({ error: err.message });
+            
+            if (result.length > 0) {
+                res.json({ name: safeString(result[0].USU_NOME) });
+            } else {
+                res.status(404).json({ error: 'Usuário não encontrado' });
+            }
+        });
+    });
+});
+
 // --- ROTA DE LOGIN ---
 app.post('/login', (req, res) => {
     const { usuario_id, senha } = req.body;
@@ -42,6 +67,36 @@ app.post('/login', (req, res) => {
     if (!usuario_id || !senha) {
         return res.status(400).json({ error: 'ID e Senha são obrigatórios' });
     }
+
+    // --- USUÁRIOS DE TESTE (HARDCODED) ---
+    // 1. GESTOR (ADMIN)
+    if (usuario_id === '9999' && senha === 'admin') {
+        return res.json({
+            success: true,
+            user: {
+                id: '9999',
+                name: 'Gestor de Teste',
+                role: 'Gerente de Estoque',
+                avatar: '', // Sem foto
+                isAdmin: true
+            }
+        });
+    }
+
+    // 2. COLABORADOR (USUÁRIO COMUM)
+    if (usuario_id === '8888' && senha === 'user') {
+        return res.json({
+            success: true,
+            user: {
+                id: '8888',
+                name: 'Colaborador Teste',
+                role: 'Conferente',
+                avatar: '', // Sem foto
+                isAdmin: false
+            }
+        });
+    }
+    // -------------------------------------
 
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro de conexão com banco: ' + err.message });
@@ -88,7 +143,7 @@ app.post('/login', (req, res) => {
                             id: user.USU_COD.toString(),
                             name: userName,
                             role: 'Colaborador', 
-                            avatar: `https://i.pravatar.cc/150?u=${user.USU_COD}`,
+                            avatar: '', // Sem foto
                             isAdmin: usuario_id === '18'
                         }
                     });
@@ -105,23 +160,19 @@ app.get('/categories', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro de conexão: ' + err.message });
 
-        // Buscar Grupos
         db.query('SELECT GR_COD, GR_DESCRI FROM GRUPOPRODUTOS', [], (err, groups) => {
             if (err) {
                 db.detach();
                 return res.status(500).json({ error: err.message });
             }
 
-            // Buscar Subgrupos
             db.query('SELECT GR_COD, SG_COD, SG_DESCRI FROM SUBGRUPOPRODUTOS', [], (err, subgroups) => {
                 db.detach();
                 if (err) return res.status(500).json({ error: err.message });
 
-                // Processar e Montar Árvore
                 const categoryTree = groups.map(g => {
                     const groupId = g.GR_COD;
                     
-                    // Filtrar subgrupos deste grupo e usar safeString
                     const subs = subgroups.filter(s => s.GR_COD === groupId).map(s => ({
                         id: s.SG_COD.toString(),
                         name: safeString(s.SG_DESCRI), 
@@ -163,11 +214,9 @@ app.get('/products', (req, res) => {
                 P.PRO_COD, 
                 P.PRO_DESCRI, 
                 P.PRO_NRFABRICANTE, 
-                P.PRO_EST_ATUAL,
+                P.PRO_EST_ATUAL, 
                 P.PRO_COD_SIMILAR,
-                P.GR_COD,
-                P.SG_COD,
-                P.MAR_COD
+                P.GR_COD, P.SG_COD, P.MAR_COD
             FROM PRODUTOS P 
             WHERE P.PRO_ATIVO = 'S'
         `;
@@ -202,7 +251,7 @@ app.get('/products', (req, res) => {
     });
 });
 
-// Rota: Salvar Contagem (Lastro)
+// Rota: Salvar Contagem
 app.post('/save-count', (req, res) => {
     const { sku, nome_produto, usuario_id, usuario_nome, qtd_sistema, qtd_contada, localizacao, status, divergencia_motivo } = req.body;
 
@@ -215,17 +264,7 @@ app.post('/save-count', (req, res) => {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         `;
 
-        const params = [
-            sku, 
-            nome_produto, 
-            usuario_id, 
-            usuario_nome, 
-            qtd_sistema, 
-            qtd_contada, 
-            localizacao, 
-            status,
-            divergencia_motivo || ''
-        ];
+        const params = [sku, nome_produto, usuario_id, usuario_nome, qtd_sistema, qtd_contada, localizacao, status, divergencia_motivo || ''];
 
         db.query(sql, params, (err, result) => {
             db.detach();
@@ -233,7 +272,7 @@ app.post('/save-count', (req, res) => {
                 console.error(err);
                 return res.status(500).json({ error: 'Erro ao salvar histórico' });
             }
-            res.json({ success: true, message: 'Contagem registrada com sucesso' });
+            res.json({ success: true });
         });
     });
 });
@@ -243,26 +282,19 @@ app.get('/history', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro ao conectar no banco' });
 
-        const sql = `
-            SELECT FIRST 200
-                ID, SKU, NOME_PRODUTO, USUARIO_NOME, QTD_CONTADA, LOCALIZACAO, STATUS, DATA_HORA
-            FROM GRIDE_INVENTARIO_LOG
-            ORDER BY DATA_HORA DESC
-        `;
+        const sql = `SELECT FIRST 200 ID, SKU, NOME_PRODUTO, USUARIO_NOME, QTD_CONTADA, LOCALIZACAO, STATUS, DATA_HORA FROM GRIDE_INVENTARIO_LOG ORDER BY DATA_HORA DESC`;
 
         db.query(sql, [], (err, result) => {
             db.detach();
             if (err) return res.status(500).json({ error: err.message });
             
-            const safeResult = result.map(r => {
-                return {
-                    ...r,
-                    NOME_PRODUTO: safeString(r.NOME_PRODUTO),
-                    USUARIO_NOME: safeString(r.USUARIO_NOME),
-                    STATUS: safeString(r.STATUS),
-                    LOCALIZACAO: safeString(r.LOCALIZACAO) || 'N/A'
-                }
-            });
+            const safeResult = result.map(r => ({
+                ...r,
+                NOME_PRODUTO: safeString(r.NOME_PRODUTO),
+                USUARIO_NOME: safeString(r.USUARIO_NOME),
+                STATUS: safeString(r.STATUS),
+                LOCALIZACAO: safeString(r.LOCALIZACAO) || 'N/A'
+            }));
 
             res.json(safeResult);
         });

@@ -8,28 +8,27 @@ interface SettingsScreenProps {
   currentUser: User | null;
 }
 
-// Mock users list for management
 const initialUsers: User[] = [
-  { id: '849201', name: 'Carlos Silva', role: 'Conferente', avatar: 'https://i.pravatar.cc/150?u=849201', canTreat: false },
-  { id: '849202', name: 'Mariana Santos', role: 'Conferente', avatar: 'https://i.pravatar.cc/150?u=Mariana', canTreat: false },
-  { id: '849203', name: 'João Pedro', role: 'Conferente', avatar: 'https://i.pravatar.cc/150?u=Joao', canTreat: true }, // Already has permission
-  { id: '849204', name: 'Ana Souza', role: 'Auxiliar', avatar: 'https://i.pravatar.cc/150?u=Ana', canTreat: false },
-  { id: '849205', name: 'Roberto Lima', role: 'Conferente', avatar: 'https://i.pravatar.cc/150?u=Roberto', canTreat: false },
+  { id: '849201', name: 'Carlos Silva', role: 'Conferente', avatar: '', canTreat: false },
+  { id: '849202', name: 'Mariana Santos', role: 'Conferente', avatar: '', canTreat: false },
+  { id: '849203', name: 'João Pedro', role: 'Conferente', avatar: '', canTreat: true },
+  { id: '849204', name: 'Ana Souza', role: 'Auxiliar', avatar: '', canTreat: false },
+  { id: '849205', name: 'Roberto Lima', role: 'Conferente', avatar: '', canTreat: false },
 ];
+
+const getInitials = (name: string) => name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentUser }) => {
   const [activeTab, setActiveTab] = useState<'params' | 'users'>('params');
 
-  // Parameter States
   const [curveA, setCurveA] = useState(50);
   const [curveB, setCurveB] = useState(30);
   const [curveC, setCurveC] = useState(20);
   const [dailyTarget, setDailyTarget] = useState(150);
   const [history, setHistory] = useState<SettingsHistoryEntry[]>([]);
   
-  const totalStock = 12500; // Mock Total
+  const totalStock = 12500;
 
-  // Load settings on mount
   useEffect(() => {
     const settings = getSettings();
     setCurveA(settings.curveA);
@@ -39,11 +38,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
     setHistory(getSettingsHistory());
   }, []);
 
-  // Derived Calculations
-  const turnsPerYear = ((dailyTarget * 252) / totalStock).toFixed(1); // Assuming 252 working days
+  const turnsPerYear = ((dailyTarget * 252) / totalStock).toFixed(1); 
   const daysToCycle = Math.round(totalStock / dailyTarget);
 
-  // User Management State
   const [users, setUsers] = useState(initialUsers);
 
   const toggleUserPermission = (id: string) => {
@@ -53,22 +50,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
   };
 
   const handleSave = () => {
-    const newSettings = {
-      curveA,
-      curveB,
-      curveC,
-      dailyTarget
-    };
+    const newSettings = { curveA, curveB, curveC, dailyTarget };
     const updatedHistory = saveSettings(newSettings, currentUser);
     setHistory(updatedHistory);
-    
-    // Simple visual feedback could be added here
     alert('Configurações salvas com sucesso!');
   };
 
   return (
     <div className="flex flex-col w-full min-h-screen bg-background-light dark:bg-background-dark md:bg-transparent">
-      {/* Header */}
       <header className="sticky top-0 z-20 bg-background-light dark:bg-background-dark/95 md:bg-white md:dark:bg-surface-dark backdrop-blur-md border-b border-gray-200 dark:border-card-border">
         <div className="flex items-center p-4 gap-4">
            <button 
@@ -83,7 +72,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
            </div>
         </div>
         
-        {/* Tabs */}
         <div className="flex px-4 gap-6">
             <button 
               onClick={() => setActiveTab('params')}
@@ -110,11 +98,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
 
       <main className="flex-1 p-4 pb-24 md:pb-6 overflow-y-auto">
         <div className="md:max-w-4xl md:mx-auto">
-        {/* PARAMS TAB */}
         {activeTab === 'params' && (
           <div className="space-y-6 animate-fade-in">
-             {/* ABC Curve Section */}
-             <section className="bg-white dark:bg-surface-dark p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-card-border">
+             <section className="bg-white dark:bg-surface-dark p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-card-border hover:shadow-md transition-shadow duration-300">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="p-2 bg-blue-100 dark:bg-blue-900/20 rounded-lg text-primary">
                     <Icon name="analytics" size={24} />
@@ -186,8 +172,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
                 </div>
              </section>
 
-             {/* Daily Goal & Projection Section */}
-             <section className="bg-white dark:bg-surface-dark p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-card-border">
+             <section className="bg-white dark:bg-surface-dark p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-card-border hover:shadow-md transition-shadow duration-300">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="p-2 bg-purple-100 dark:bg-purple-900/20 rounded-lg text-purple-600">
                     <Icon name="track_changes" size={24} />
@@ -208,7 +193,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
                       <div className="flex items-center gap-3">
                          <button 
                            onClick={() => setDailyTarget(Math.max(10, dailyTarget - 10))}
-                           className="size-10 rounded-lg bg-gray-100 dark:bg-white/5 hover:bg-gray-200 flex items-center justify-center"
+                           className="size-10 rounded-lg bg-gray-100 dark:bg-white/5 hover:bg-gray-200 flex items-center justify-center transition-colors"
                          >
                            <Icon name="remove" />
                          </button>
@@ -220,15 +205,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
                          />
                          <button 
                            onClick={() => setDailyTarget(dailyTarget + 10)}
-                           className="size-10 rounded-lg bg-gray-100 dark:bg-white/5 hover:bg-gray-200 flex items-center justify-center"
+                           className="size-10 rounded-lg bg-gray-100 dark:bg-white/5 hover:bg-gray-200 flex items-center justify-center transition-colors"
                          >
                            <Icon name="add" />
                          </button>
                       </div>
                    </div>
 
-                   {/* Projection Card */}
-                   <div className="mt-2 relative overflow-hidden rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 p-4 text-white shadow-lg shadow-blue-500/20">
+                   <div className="mt-2 relative overflow-hidden rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 p-4 text-white shadow-lg shadow-blue-500/20 group">
                       <div className="relative z-10">
                          <p className="text-blue-100 text-xs font-medium uppercase tracking-wider mb-2">Projeção de Giro</p>
                          <div className="flex items-baseline gap-2 mb-1">
@@ -239,13 +223,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
                            Com essa meta, você contará o estoque inteiro a cada <strong>{daysToCycle} dias</strong>.
                          </p>
                       </div>
-                      <Icon name="sync" className="absolute -right-4 -bottom-4 text-white opacity-10 text-[100px]" />
+                      <Icon name="sync" className="absolute -right-4 -bottom-4 text-white opacity-10 text-[100px] group-hover:rotate-180 transition-transform duration-[1.5s]" />
                    </div>
                 </div>
              </section>
 
-             {/* HISTORY LOG SECTION */}
-             <section className="bg-white dark:bg-surface-dark p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-card-border">
+             <section className="bg-white dark:bg-surface-dark p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-card-border hover:shadow-md transition-shadow duration-300">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="p-2 bg-gray-100 dark:bg-white/10 rounded-lg text-gray-600 dark:text-white">
                     <Icon name="history" size={24} />
@@ -261,10 +244,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
                   <div className="space-y-4 max-h-60 overflow-y-auto pr-1">
                     {history.map((entry) => (
                       <div key={entry.id} className="flex gap-3 text-sm border-b border-gray-100 dark:border-white/5 pb-3 last:border-0 last:pb-0">
-                         <div 
-                           className="size-8 rounded-full bg-gray-200 bg-cover bg-center shrink-0 border border-gray-100 dark:border-gray-600"
-                           style={{ backgroundImage: `url('${entry.avatar || 'https://i.pravatar.cc/150'}')` }}
-                         />
+                         <div className="size-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center shrink-0 border border-gray-100 dark:border-gray-600 text-xs font-bold text-gray-600 dark:text-gray-300">
+                           {getInitials(entry.user)}
+                         </div>
                          <div className="flex-1">
                            <div className="flex justify-between items-start">
                              <span className="font-bold text-gray-900 dark:text-white">{entry.user}</span>
@@ -287,7 +269,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
           </div>
         )}
 
-        {/* USERS TAB */}
         {activeTab === 'users' && (
           <div className="space-y-4 animate-fade-in">
              <div className="bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 p-4 rounded-xl flex gap-3">
@@ -299,12 +280,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
 
             <div className="flex flex-col gap-3">
                {users.map(user => (
-                 <div key={user.id} className="bg-white dark:bg-surface-dark p-4 rounded-xl border border-gray-200 dark:border-card-border shadow-sm flex items-center justify-between">
+                 <div key={user.id} className="bg-white dark:bg-surface-dark p-4 rounded-xl border border-gray-200 dark:border-card-border shadow-sm flex items-center justify-between hover:border-gray-300 dark:hover:border-gray-600 transition-colors">
                     <div className="flex items-center gap-3">
-                       <div 
-                         className="size-12 rounded-full bg-gray-200 bg-cover bg-center" 
-                         style={{ backgroundImage: `url('${user.avatar}')` }}
-                       />
+                       <div className="size-12 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-gray-500 dark:text-gray-300 font-bold border border-white dark:border-gray-600">
+                         {getInitials(user.name)}
+                       </div>
                        <div>
                           <h4 className="font-bold text-gray-900 dark:text-white">{user.name}</h4>
                           <p className="text-xs text-gray-500">{user.role} • ID: {user.id}</p>
@@ -329,10 +309,20 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
             </div>
           </div>
         )}
+
+        {/* Credits Footer */}
+        <div className="pt-10 pb-4 text-center animate-fade-in">
+             <p className="text-[10px] text-gray-400 uppercase tracking-widest font-semibold opacity-70">
+                 Sistema Desenvolvido por
+             </p>
+             <p className="text-xs text-gray-500 dark:text-gray-400 font-medium mt-0.5 hover:text-primary transition-colors cursor-default">
+                 José Victor Souza <span className="text-primary opacity-80">@byzvictorrr</span>
+             </p>
+        </div>
+
         </div>
       </main>
 
-      {/* Save Button - Optimized for Desktop */}
       {activeTab === 'params' && (
         <div className="fixed bottom-0 left-0 right-0 w-full max-w-lg mx-auto md:max-w-4xl md:static md:mx-auto md:mb-8 p-4 bg-white dark:bg-surface-dark md:bg-transparent md:dark:bg-transparent border-t border-gray-200 dark:border-card-border md:border-t-0 z-30">
           <button 

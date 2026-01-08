@@ -8,11 +8,27 @@ interface LoginScreenProps {
 }
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
-  const [code, setCode] = useState('18'); // Pre-filled for convenience, but editable
+  const [code, setCode] = useState('8888'); // Default test user
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  
+  // State for Name Preview
+  const [detectedName, setDetectedName] = useState<string | null>(null);
+  const [isCheckingName, setIsCheckingName] = useState(false);
+
+  // Handle Input Blur to fetch Name
+  const handleCodeBlur = async () => {
+    if (code.length >= 2) {
+        setIsCheckingName(true);
+        const name = await api.getUserName(code);
+        setDetectedName(name);
+        setIsCheckingName(false);
+    } else {
+        setDetectedName(null);
+    }
+  };
 
   const handleLogin = async () => {
     if (!code || !password) {
@@ -35,106 +51,125 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   };
 
   return (
-    <div className="flex flex-col min-h-screen w-full bg-background-light dark:bg-background-dark overflow-x-hidden">
-      {/* Header */}
-      <div className="flex items-center px-4 py-4 justify-between sticky top-0 z-10 bg-background-light/95 dark:bg-background-dark/95 backdrop-blur-sm">
-        <div className="flex size-10 shrink-0 items-center justify-center rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors cursor-pointer">
-          <Icon name="arrow_back" className="text-slate-900 dark:text-white" size={24} />
-        </div>
-        <h2 className="text-lg font-bold leading-tight tracking-tight flex-1 text-center pr-10">Login Inteligente</h2>
+    // Usa min-h-[100dvh] para lidar melhor com o teclado virtual em navegadores mobile
+    <div className="flex flex-col min-h-[100dvh] w-full bg-background-light dark:bg-background-dark overflow-y-auto animate-fade-in">
+      
+      {/* Header Minimalista (Apenas Logo, sem botão voltar) */}
+      <div className="flex items-center justify-center pt-8 pb-4">
+           <div className="h-8 px-2 bg-[#182335] rounded flex items-center shadow-sm">
+              <img src="/logo.png" alt="Lubel" className="h-6 w-auto object-contain" />
+           </div>
       </div>
 
-      <main className="flex-1 flex flex-col px-4 pt-4 pb-8 max-w-md mx-auto w-full">
+      <main className="flex-1 flex flex-col justify-center px-6 pb-8 max-w-md mx-auto w-full">
         {/* Headline */}
-        <div className="flex flex-col items-center justify-center pt-4 pb-8">
-          <div className="size-16 bg-primary/20 rounded-2xl flex items-center justify-center mb-4 text-primary">
-            <Icon name="inventory_2" size={32} />
+        <div className="flex flex-col items-center justify-center pb-8 animate-slide-up" style={{ animationDelay: '0.1s' }}>
+          <div className="w-full max-w-[200px] bg-[#182335] rounded-xl flex items-center justify-center mb-6 shadow-xl p-4 hover:scale-105 transition-transform duration-500">
+             <img src="/logo.png" alt="Lubel Auto Peças" className="w-full h-auto object-contain" />
           </div>
-          <h1 className="text-3xl font-bold leading-tight text-center">Bem-vindo</h1>
-          <p className="text-slate-500 dark:text-slate-400 text-base font-normal leading-normal pt-2 text-center">
-            Identifique-se para acessar o inventário
+          <h1 className="text-2xl font-bold leading-tight text-center text-slate-900 dark:text-white">Sistema GRIDE</h1>
+          <p className="text-slate-500 dark:text-slate-400 text-sm font-medium pt-2 text-center">
+            Gestão Rotativa Inteligente de Estoque
           </p>
         </div>
 
         {/* Form */}
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-5 animate-slide-up" style={{ animationDelay: '0.2s' }}>
           {/* Code Input */}
           <div className="flex flex-col gap-2">
-            <label className="text-sm font-medium leading-normal text-slate-900 dark:text-white">
+            <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 ml-1">
               Código de Usuário
             </label>
-            <div className="relative flex w-full items-center rounded-xl bg-white dark:bg-surface-dark border border-slate-200 dark:border-card-border focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-all shadow-sm">
+            <div className="relative flex w-full items-center rounded-xl bg-white dark:bg-surface-dark border border-slate-200 dark:border-card-border focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 transition-all shadow-sm">
               <input
                 type="number"
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
-                placeholder="000000"
-                className="flex w-full min-w-0 bg-transparent py-3.5 pl-4 pr-12 text-base text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none border-none focus:ring-0 rounded-xl"
+                onBlur={handleCodeBlur}
+                placeholder="Seu ID (ex: 8888)"
+                className="flex w-full min-w-0 bg-transparent py-4 pl-4 pr-12 text-lg text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none border-none focus:ring-0 rounded-xl"
               />
-              <div className="absolute right-3 flex items-center justify-center text-emerald-500 pointer-events-none">
-                <Icon name="check_circle" size={24} />
+              <div className="absolute right-3 flex items-center justify-center pointer-events-none">
+                 {isCheckingName ? (
+                     <Icon name="sync" className="animate-spin text-gray-400" size={24} />
+                 ) : detectedName ? (
+                     <Icon name="check_circle" className="text-green-500" size={24} />
+                 ) : (
+                     <Icon name="badge" className="text-gray-400" size={24} />
+                 )}
               </div>
             </div>
           </div>
 
-          {/* User Card Preview - Visual only, uses generic info until logged in */}
-          <div className="relative overflow-hidden rounded-xl bg-slate-100 dark:bg-surface-dark border border-slate-200 dark:border-card-border p-3 animate-fade-in transition-all">
-            <div className="flex items-center gap-4">
-              <div 
-                className="bg-center bg-no-repeat bg-cover rounded-full h-12 w-12 shrink-0 border-2 border-slate-200 dark:border-slate-700"
-                style={{ backgroundImage: `url('https://i.pravatar.cc/150?u=${code}')` }}
-              />
-              <div className="flex flex-col justify-center">
-                <p className="text-slate-900 dark:text-white text-base font-semibold leading-tight">
-                    Usuário {code}
-                </p>
-                <p className="text-slate-500 dark:text-slate-400 text-sm font-normal">Aguardando senha...</p>
-              </div>
+          {/* User Name Preview */}
+          <div className={`transition-all duration-300 overflow-hidden ease-out ${detectedName ? 'max-h-24 opacity-100 translate-y-0' : 'max-h-0 opacity-0 -translate-y-2'}`}>
+            <div className="rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 p-3 flex items-center gap-3">
+               <div className="size-10 rounded-full bg-blue-200 dark:bg-blue-800 text-blue-700 dark:text-blue-100 flex items-center justify-center font-bold text-lg animate-pulse">
+                  {detectedName ? detectedName.charAt(0) : '?'}
+               </div>
+               <div className="flex flex-col">
+                  <span className="text-[10px] text-blue-600 dark:text-blue-300 font-bold uppercase tracking-wider">Identificado</span>
+                  <span className="text-sm font-bold text-gray-900 dark:text-white leading-tight">
+                    {detectedName}
+                  </span>
+               </div>
             </div>
           </div>
 
           {/* Password */}
           <div className="flex flex-col gap-2">
-            <label className="text-sm font-medium leading-normal text-slate-900 dark:text-white">
+            <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 ml-1">
               Senha
             </label>
-            <div className="relative flex w-full items-center rounded-xl bg-white dark:bg-surface-dark border border-slate-200 dark:border-card-border focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-all shadow-sm">
-              <div className="absolute left-3 flex items-center justify-center text-slate-400">
+            <div className="relative flex w-full items-center rounded-xl bg-white dark:bg-surface-dark border border-slate-200 dark:border-card-border focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 transition-all shadow-sm">
+              <div className="absolute left-4 flex items-center justify-center text-slate-400">
                 <Icon name="lock" size={20} />
               </div>
               <input
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="flex w-full min-w-0 bg-transparent py-3.5 pl-10 pr-12 text-base text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none border-none focus:ring-0 rounded-xl"
+                placeholder="Sua senha"
+                className="flex w-full min-w-0 bg-transparent py-4 pl-12 pr-12 text-lg text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none border-none focus:ring-0 rounded-xl"
               />
               <button 
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                className="absolute right-3 p-1 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
               >
                 <Icon name={showPassword ? "visibility_off" : "visibility"} size={24} />
               </button>
             </div>
-            {error && <p className="text-red-500 text-xs mt-1">{error}</p>}
+            {error && <p className="text-red-500 text-sm mt-1 bg-red-50 dark:bg-red-900/20 p-2.5 rounded-lg animate-shake font-medium flex items-center gap-2"><Icon name="error" size={18}/> {error}</p>}
           </div>
 
-          <button 
-            onClick={handleLogin}
-            disabled={isLoading}
-            className={`w-full rounded-xl py-3.5 text-center text-base font-bold text-white shadow-lg shadow-primary/20 transition-all ${
-                isLoading ? 'bg-gray-400 cursor-not-allowed' : 'bg-primary hover:bg-primary-dark active:scale-[0.98]'
-            }`}
-          >
-            {isLoading ? 'Autenticando...' : 'Entrar'}
-          </button>
+          <div className="pt-4">
+            <button 
+                onClick={handleLogin}
+                disabled={isLoading}
+                className={`w-full rounded-xl py-4 text-center text-lg font-bold text-white shadow-xl shadow-primary/20 transition-all duration-200 ${
+                    isLoading ? 'bg-gray-400 cursor-not-allowed scale-[0.98]' : 'bg-primary hover:bg-primary-dark hover:scale-[1.02] active:scale-[0.98]'
+                }`}
+            >
+                {isLoading ? 'Autenticando...' : 'Entrar no Sistema'}
+            </button>
+          </div>
 
-          <div className="flex justify-center mt-4">
-            <a href="#" className="text-sm text-slate-500 dark:text-slate-400 hover:text-primary transition-colors flex items-center gap-1.5">
-              <Icon name="help" size={18} />
+          <div className="flex justify-center mt-2">
+            <a href="#" className="text-sm text-slate-500 dark:text-slate-400 hover:text-primary transition-colors flex items-center gap-1.5 group p-2">
+              <Icon name="help" size={18} className="group-hover:rotate-12 transition-transform" />
               Problemas com acesso?
             </a>
           </div>
+        </div>
+        
+        {/* Credits Footer */}
+        <div className="mt-8 text-center animate-fade-in" style={{ animationDelay: '0.5s' }}>
+             <p className="text-[10px] text-gray-400 uppercase tracking-widest font-semibold opacity-70">
+                 Desenvolvido por
+             </p>
+             <p className="text-xs text-gray-500 dark:text-gray-400 font-medium mt-0.5 hover:text-primary transition-colors cursor-default">
+                 José Victor Souza <span className="text-primary opacity-80">@byzvictorrr</span>
+             </p>
         </div>
       </main>
     </div>

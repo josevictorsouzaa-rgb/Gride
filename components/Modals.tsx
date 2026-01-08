@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Icon } from './Icon';
+import { Html5Qrcode } from "html5-qrcode";
 
 // --- Types ---
 interface ModalProps {
@@ -232,57 +233,151 @@ export const HistoryFilterModal: React.FC<HistoryFilterModalProps> = ({
   );
 };
 
-// --- Scanner Modal ---
+// --- REAL SCANNER MODAL with html5-qrcode ---
 export const ScannerModal: React.FC<ScannerModalProps> = ({ 
   isOpen, 
   onClose, 
   onScanComplete, 
   title = "Ler QR Code", 
-  instruction = "Aponte a câmera para o código da Estante ou Produto" 
+  instruction = "Aponte a câmera para o código" 
 }) => {
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const [error, setError] = useState<string>('');
+  const [isPermDenied, setIsPermDenied] = useState(false);
+
   useEffect(() => {
+    let html5QrCode: Html5Qrcode;
+
+    const startScanner = async () => {
+      if (isOpen) {
+        setIsPermDenied(false);
+        setError('');
+        
+        // Pequeno delay para garantir que o DOM (div id="reader") foi renderizado
+        await new Promise(r => setTimeout(r, 100));
+
+        try {
+          html5QrCode = new Html5Qrcode("reader");
+          scannerRef.current = html5QrCode;
+          
+          await html5QrCode.start(
+            { facingMode: "environment" }, 
+            {
+              fps: 10,
+              qrbox: { width: 250, height: 250 },
+              aspectRatio: 1.0
+            },
+            (decodedText) => {
+              // Sucesso
+              html5QrCode.stop().then(() => {
+                scannerRef.current = null;
+                onScanComplete(decodedText);
+              }).catch(err => console.error(err));
+            },
+            (errorMessage) => {
+              // Erro de leitura a cada frame, ignorar para não spammar
+              // console.log(errorMessage);
+            }
+          );
+        } catch (err: any) {
+          console.error("Erro ao iniciar câmera", err);
+          if (err?.name === 'NotAllowedError' || err?.message?.includes('permission')) {
+             setIsPermDenied(true);
+             setError('Permissão de câmera negada.');
+          } else {
+             setError('Não foi possível iniciar a câmera.');
+          }
+        }
+      }
+    };
+
     if (isOpen) {
-      const timer = setTimeout(() => {
-        const isProduct = Math.random() > 0.5;
-        const mockResult = isProduct ? 'PRD-12345' : 'LOC-RUA04';
-        onScanComplete(mockResult);
-      }, 2500);
-      return () => clearTimeout(timer);
+      startScanner();
     }
+
+    return () => {
+      // Cleanup ao desmontar ou fechar
+      if (scannerRef.current) {
+         scannerRef.current.stop().catch(err => console.error("Falha ao parar scanner", err));
+         scannerRef.current = null;
+      }
+    };
   }, [isOpen, onScanComplete]);
+
+  const handleClose = () => {
+    if (scannerRef.current) {
+        scannerRef.current.stop().then(() => {
+            scannerRef.current = null;
+            onClose();
+        }).catch(() => onClose());
+    } else {
+        onClose();
+    }
+  };
 
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-black">
-      <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start z-20 pt-safe">
-        <button onClick={onClose} className="p-2 rounded-full bg-black/40 text-white backdrop-blur-md">
+      {/* Top Bar */}
+      <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start z-20 pt-safe bg-gradient-to-b from-black/80 to-transparent">
+        <button onClick={handleClose} className="p-2 rounded-full bg-black/40 text-white backdrop-blur-md border border-white/10">
           <Icon name="close" size={24} />
         </button>
-        <div className="px-3 py-1 rounded-full bg-black/40 text-white text-xs font-bold backdrop-blur-md border border-white/10">
+        <div className="px-3 py-1.5 rounded-full bg-black/40 text-white text-xs font-bold backdrop-blur-md border border-white/10 uppercase tracking-wide">
           {title}
         </div>
-        <button className="p-2 rounded-full bg-black/40 text-white backdrop-blur-md">
-          <Icon name="flash_on" size={24} />
-        </button>
+        <div className="w-10"></div> 
       </div>
 
-      <div className="relative flex-1 flex flex-col items-center justify-center overflow-hidden">
-        <div 
-          className="absolute inset-0 bg-cover bg-center opacity-60" 
-          style={{ backgroundImage: 'url("https://images.unsplash.com/photo-1553413077-190dd305871c?q=80&w=1000&auto=format&fit=crop")' }} 
-        />
-        <div className="relative z-10 size-72 border-2 border-white/50 rounded-3xl overflow-hidden shadow-[0_0_0_100vmax_rgba(0,0,0,0.6)]">
-          <div className="absolute top-0 left-0 right-0 h-1 bg-primary shadow-[0_0_15px_rgba(19,127,236,0.8)] animate-[slideUp_2s_ease-in-out_infinite]" />
-          <div className="absolute top-0 left-0 p-4 border-l-4 border-t-4 border-primary size-16 rounded-tl-xl" />
-          <div className="absolute top-0 right-0 p-4 border-r-4 border-t-4 border-primary size-16 rounded-tr-xl" />
-          <div className="absolute bottom-0 left-0 p-4 border-l-4 border-b-4 border-primary size-16 rounded-bl-xl" />
-          <div className="absolute bottom-0 right-0 p-4 border-r-4 border-b-4 border-primary size-16 rounded-br-xl" />
-        </div>
-        <p className="relative z-10 text-white/90 mt-8 text-sm font-medium bg-black/60 px-6 py-3 rounded-full backdrop-blur-md border border-white/10 text-center max-w-[80%]">
-          {instruction}
-        </p>
+      <div className="flex-1 flex flex-col items-center justify-center relative bg-black">
+         
+         {/* Reader Element for Library */}
+         <div id="reader" className="w-full h-full object-cover"></div>
+
+         {/* Fallback Error UI */}
+         {(error || isPermDenied) && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 p-8 text-center z-30">
+                <Icon name="no_photography" size={48} className="text-gray-500 mb-4" />
+                <h3 className="text-white font-bold text-lg mb-2">Câmera Indisponível</h3>
+                <p className="text-gray-400 text-sm mb-6">{error}</p>
+                <button onClick={handleClose} className="bg-white text-black px-6 py-2 rounded-full font-bold text-sm">
+                    Fechar
+                </button>
+            </div>
+         )}
+         
+         {/* Overlay Guide (Only visible if no error) */}
+         {!error && (
+             <>
+                <div className="absolute inset-0 pointer-events-none border-[40px] border-black/50 z-10 flex items-center justify-center">
+                   {/* Corners */}
+                   <div className="relative w-64 h-64 border-2 border-white/20 rounded-lg">
+                      <div className="absolute top-0 left-0 w-6 h-6 border-l-4 border-t-4 border-primary rounded-tl-lg" />
+                      <div className="absolute top-0 right-0 w-6 h-6 border-r-4 border-t-4 border-primary rounded-tr-lg" />
+                      <div className="absolute bottom-0 left-0 w-6 h-6 border-l-4 border-b-4 border-primary rounded-bl-lg" />
+                      <div className="absolute bottom-0 right-0 w-6 h-6 border-r-4 border-b-4 border-primary rounded-br-lg" />
+                      
+                      {/* Scanning Line Animation */}
+                      <div className="absolute top-0 left-0 right-0 h-0.5 bg-primary/80 shadow-[0_0_15px_rgba(19,127,236,0.8)] animate-[slideUp_2s_ease-in-out_infinite]" />
+                   </div>
+                </div>
+
+                <div className="absolute bottom-10 left-0 right-0 z-20 flex justify-center pb-safe">
+                    <p className="text-white/90 text-sm font-medium bg-black/60 px-6 py-3 rounded-full backdrop-blur-md border border-white/10 text-center">
+                    {instruction}
+                    </p>
+                </div>
+             </>
+         )}
       </div>
+      
+      {/* Hide library default unwanted elements via CSS injected directly */}
+      <style>{`
+         #reader__scan_region img { display: none; }
+         #reader__dashboard_section_csr button { display: none; }
+         #reader video { object-fit: cover; width: 100% !important; height: 100% !important; }
+      `}</style>
     </div>
   );
 };
@@ -330,9 +425,11 @@ export const EntryModal: React.FC<EntryModalProps> = ({
   };
 
   const handleScanSuccess = (code: string) => {
+    // Aqui você validaria o código real. Por enquanto, aceitamos qualquer string.
+    // Ex: Verificar se code == 'LOC-RUA04'
     setLocationData({
         galpao: 'Galpão Principal',
-        estante: 'Corredor A',
+        estante: 'Local Valido: ' + code,
         prateleira: 'Nível 1'
     });
     setShowScanner(false);

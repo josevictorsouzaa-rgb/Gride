@@ -9,8 +9,12 @@ interface DashboardScreenProps {
   onCategorySelect: (category: string) => void;
   currentUser: User | null;
   onLogout?: () => void;
-  categories: ApiCategory[]; // Receives data from App.tsx
+  categories: ApiCategory[]; 
 }
+
+const getInitials = (name: string) => {
+    return name ? name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() : 'US';
+};
 
 export const DashboardScreen: React.FC<DashboardScreenProps> = ({ 
   onNavigate, 
@@ -19,50 +23,37 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   onLogout, 
   categories 
 }) => {
-  // --- COLE ESTE BLOCO EXATAMENTE AQUI (LINHA 19) ---
   if (!categories || !Array.isArray(categories) || categories.length === 0) { 
-      return (
-        <div className='flex-1 bg-background-dark p-10 text-white font-bold flex items-center justify-center text-center'>
-          Conectando ao banco de dados Firebird...<br/>
-          Aguarde um instante enquanto carregamos as categorias.
-        </div>
-      ); 
+      return <div className='flex-1 bg-background-dark p-10 text-white font-bold flex items-center justify-center text-center'>Conectando ao banco de dados Firebird...<br/>Aguarde um instante.</div>; 
   }
-  // ------------------------------------------------
 
   const [showAllCategories, setShowAllCategories] = useState(false);
-  
-  // Detection for Desktop View
   const [isDesktop, setIsDesktop] = useState(false);
 
   useEffect(() => {
     const checkDesktop = () => {
-      setIsDesktop(window.innerWidth >= 1024); // lg breakpoint
+      setIsDesktop(window.innerWidth >= 1024);
     };
     checkDesktop();
     window.addEventListener('resize', checkDesktop);
     return () => window.removeEventListener('resize', checkDesktop);
   }, []);
 
-  // Lógica segura de array com Fallback
   const displayedCategories = (isDesktop || showAllCategories) 
     ? (categories || []) 
     : (categories || []).slice(0, 6);
 
-  // Mock Issue Count
   const pendingIssuesCount = 3;
-
-  // Mock Goal Data
   const dailyTarget = 150;
   const countedToday = 98;
-  const lateCount = 12; // New mock data for Late items
+  const lateCount = 12; 
   const totalYearCounted = 24500;
   const progressPercent = Math.min(100, Math.round((countedToday / dailyTarget) * 100));
 
   const goalData = [
-    { name: 'Contado', value: countedToday, color: '#137fec' }, // Blue
-    { name: 'Atrasado', value: lateCount, color: '#ef4444' }, // Red
-    { name: 'Restante', value: Math.max(0, dailyTarget - countedToday), color: '#33415520' } // Low opacity slate
+    { name: 'Contado', value: countedToday, color: '#137fec' },
+    { name: 'Atrasado', value: lateCount, color: '#ef4444' },
+    { name: 'Restante', value: Math.max(0, dailyTarget - countedToday), color: '#33415520' }
   ];
 
   return (
@@ -71,14 +62,12 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
       <header className="flex items-center justify-between bg-background-light dark:bg-background-dark md:bg-transparent p-4 sticky top-0 md:static z-30 border-b md:border-b-0 border-gray-200 dark:border-card-border/30 backdrop-blur-md md:backdrop-blur-none bg-opacity-90 dark:bg-opacity-90">
         <div className="flex items-center gap-3">
           <div className="relative md:hidden">
-            <div 
-              className="bg-center bg-no-repeat bg-cover rounded-full size-10 border-2 border-primary" 
-              style={{ backgroundImage: `url('${currentUser?.avatar || 'https://picsum.photos/100/100'}')` }} 
-            />
-            <div className="absolute bottom-0 right-0 size-3 bg-green-500 rounded-full border-2 border-background-dark" />
+            <div className="size-10 rounded-full bg-primary text-white font-bold flex items-center justify-center border-2 border-white dark:border-surface-dark shadow-sm">
+               {getInitials(currentUser?.name || '')}
+            </div>
+            <div className="absolute bottom-0 right-0 size-3 bg-green-500 rounded-full border-2 border-background-dark animate-pulse" />
           </div>
           <div className="flex flex-col">
-            {/* Mobile: Bold Name, Lighter Role */}
             <span className="text-lg font-bold text-gray-900 dark:text-white leading-tight md:hidden">
                 Olá, {currentUser?.name.split(' ')[0] || 'Usuário'}
             </span>
@@ -86,7 +75,6 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
                 {currentUser?.role || 'Colaborador'}
             </span>
 
-            {/* Desktop: Standard Header */}
             <div className="hidden md:flex items-center gap-1">
               <h2 className="text-2xl font-bold leading-tight md:text-gray-900 md:dark:text-white">
                 {currentUser?.role || 'Colaborador'}
@@ -96,7 +84,6 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           </div>
         </div>
         
-        {/* Mobile Actions: Settings & Logout (Bell Removed) */}
         <div className="flex items-center gap-2 md:hidden">
            {currentUser?.isAdmin && (
              <button 
@@ -114,13 +101,12 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
            </button>
         </div>
         
-        {/* Desktop Header Actions */}
         <div className="hidden md:flex items-center gap-4">
             <div className="text-right">
                 <p className="text-sm font-bold text-gray-900 dark:text-white">Armazém 04</p>
                 <p className="text-xs text-gray-500">Zona B • Setor 2</p>
             </div>
-            <button className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary-dark transition-colors shadow-lg shadow-primary/20">
+            <button className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary-dark transition-all hover:scale-105 shadow-lg shadow-primary/20">
                 <Icon name="qr_code_scanner" size={20} />
                 <span>Scan Rápido</span>
             </button>
@@ -129,14 +115,13 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
       <main className="flex flex-col gap-6 p-4 md:p-8">
         
-        {/* Manager "Treatment" Widget - Visible only for Admin */}
         {currentUser?.isAdmin && (
             <div 
               onClick={() => onNavigate('treatment')}
-              className="w-full bg-gradient-to-r from-orange-500 to-red-500 rounded-xl p-4 text-white shadow-lg shadow-orange-500/20 cursor-pointer active:scale-[0.98] transition-all flex items-center justify-between animate-fade-in"
+              className="w-full bg-gradient-to-r from-orange-500 to-red-500 rounded-xl p-4 text-white shadow-lg shadow-orange-500/20 cursor-pointer active:scale-[0.98] hover:scale-[1.01] transition-all flex items-center justify-between animate-fade-in"
             >
               <div className="flex items-center gap-3">
-                 <div className="size-10 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm">
+                 <div className="size-10 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm animate-pulse">
                     <Icon name="warning" size={24} className="text-white" />
                  </div>
                  <div>
@@ -155,14 +140,13 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
-            {/* GOAL CHART SECTION (Updated) */}
             <section className="lg:col-span-1 lg:order-2">
             <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-bold">Meta Diária</h2>
                 <div className="text-xs font-medium text-text-secondary bg-surface-dark/5 dark:bg-white/5 px-2 py-1 rounded">Hoje</div>
             </div>
             
-            <div className="rounded-xl bg-white dark:bg-surface-dark border border-gray-200 dark:border-card-border p-5 flex flex-col justify-between shadow-sm h-[320px] relative">
+            <div className="rounded-xl bg-white dark:bg-surface-dark border border-gray-200 dark:border-card-border p-5 flex flex-col justify-between shadow-sm h-[320px] relative hover:shadow-md transition-shadow duration-300">
                 
                 <div className="flex-1 flex flex-col justify-center items-center relative">
                     <div className="w-full h-[200px]">
@@ -186,16 +170,15 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
                             </PieChart>
                         </ResponsiveContainer>
                         
-                        {/* Center Label */}
                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                            <span className="text-3xl font-bold text-gray-900 dark:text-white">{progressPercent}%</span>
+                            <span className="text-3xl font-bold text-gray-900 dark:text-white animate-fade-in">{progressPercent}%</span>
                             <span className="text-xs text-gray-500 font-medium">Concluído</span>
                         </div>
                     </div>
                 </div>
 
                 <div className="grid grid-cols-3 gap-2 mt-2">
-                    <div className="flex flex-col items-center p-2 bg-gray-50 dark:bg-white/5 rounded-xl border border-gray-100 dark:border-white/5">
+                    <div className="flex flex-col items-center p-2 bg-gray-50 dark:bg-white/5 rounded-xl border border-gray-100 dark:border-white/5 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">
                         <span className="text-[10px] text-gray-500 dark:text-gray-400 mb-1 whitespace-nowrap">Meta Hoje</span>
                         <div className="flex items-baseline gap-0.5">
                             <span className="text-lg font-bold text-primary">{countedToday}</span>
@@ -203,12 +186,12 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
                         </div>
                     </div>
 
-                     <div className="flex flex-col items-center p-2 bg-red-50 dark:bg-red-900/10 rounded-xl border border-red-100 dark:border-red-900/20">
+                     <div className="flex flex-col items-center p-2 bg-red-50 dark:bg-red-900/10 rounded-xl border border-red-100 dark:border-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/20 transition-colors">
                         <span className="text-[10px] text-red-600 dark:text-red-400 mb-1 whitespace-nowrap">Atrasados</span>
                         <span className="text-lg font-bold text-red-600 dark:text-red-400">{lateCount}</span>
                     </div>
                     
-                    <div className="flex flex-col items-center p-2 bg-gray-50 dark:bg-white/5 rounded-xl border border-gray-100 dark:border-white/5">
+                    <div className="flex flex-col items-center p-2 bg-gray-50 dark:bg-white/5 rounded-xl border border-gray-100 dark:border-white/5 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">
                         <span className="text-[10px] text-gray-500 dark:text-gray-400 mb-1 whitespace-nowrap">Qtd Total Ano</span>
                         <span className="text-lg font-bold text-gray-900 dark:text-white">{ (totalYearCounted / 1000).toFixed(1) }k</span>
                     </div>
@@ -217,11 +200,9 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             </div>
             </section>
 
-            {/* Categories Grid - Takes 2 cols on LG */}
             <section className="lg:col-span-2 lg:order-1 flex flex-col">
             <div className="flex items-center justify-between mb-3 h-8">
                 <h2 className="text-lg font-bold">Categorias</h2>
-                {/* Hide "See all" on desktop because we show all by default */}
                 {!isDesktop && (
                   <button 
                   onClick={() => setShowAllCategories(!showAllCategories)}
@@ -231,23 +212,22 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
                   </button>
                 )}
             </div>
-            {/* Responsive Grid: 3 cols mobile, 4 cols tablet, 6 cols desktop */}
             <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-6 gap-3">
                 {displayedCategories.length === 0 ? (
-                  <div className="col-span-full py-10 text-center text-gray-400 text-sm">Carregando categorias...</div>
+                  <div className="col-span-full py-10 text-center text-gray-400 text-sm animate-pulse">Carregando categorias...</div>
                 ) : (
                   displayedCategories.map((cat, idx) => {
-                    const isActive = cat.label === 'MOTOR'; // Mock active state or pass from props
+                    const isActive = cat.label === 'MOTOR'; 
                     return (
                       <button 
                           key={idx} 
                           onClick={() => onCategorySelect(cat.label)}
-                          className={`flex flex-col items-center justify-center aspect-square rounded-xl gap-1 group active:scale-95 hover:scale-105 transition-all ${
+                          className={`flex flex-col items-center justify-center aspect-square rounded-xl gap-1 group active:scale-95 hover:scale-105 hover:-translate-y-1 transition-all duration-300 ${
                           isActive 
                           ? 'bg-surface-dark border border-primary/50 shadow-[0_0_10px_rgba(19,127,236,0.15)]' 
-                          : 'bg-surface-dark border border-card-border hover:border-gray-500 hover:shadow-md'
+                          : 'bg-surface-dark border border-card-border hover:border-gray-500 hover:shadow-lg'
                       }`}>
-                          <Icon name={cat.icon} className={`text-3xl mb-1 ${isActive ? 'text-primary group-hover:scale-110' : 'text-text-secondary group-hover:text-white'} transition-all`} />
+                          <Icon name={cat.icon} className={`text-3xl mb-1 ${isActive ? 'text-primary group-hover:scale-110' : 'text-text-secondary group-hover:text-white'} transition-all duration-300`} />
                           
                           <div className="flex flex-col items-center leading-none gap-1">
                           <span className={`text-[10px] md:text-xs font-bold text-center px-1 ${isActive ? 'text-white' : 'text-slate-300 group-hover:text-white'}`}>
