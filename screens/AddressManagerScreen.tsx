@@ -210,22 +210,36 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
     const width = '60mm';
     const height = printSize === '6040' ? '40mm' : '30mm';
     
+    // CSS reforçado para garantir que o navegador respeite o tamanho
     style.innerHTML = `
         @media print {
             @page {
                 size: ${width} ${height};
                 margin: 0;
             }
-            body {
-                margin: 0;
-                padding: 0;
+            html, body {
+                width: ${width} !important;
+                height: ${height} !important;
+                min-width: ${width} !important;
+                min-height: ${height} !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                overflow: hidden !important;
+            }
+            #print-area {
+                width: ${width} !important;
+                display: block !important;
+            }
+            body > *:not(#print-area) {
+                display: none !important;
             }
         }
     `;
     document.head.appendChild(style);
 
     // 3. Imprimir
-    window.print();
+    // Pequeno delay para garantir renderização do CSS
+    setTimeout(() => window.print(), 100);
   };
 
   if (!isDesktop) {
