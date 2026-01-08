@@ -54,7 +54,6 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
     ]);
     setAddresses(addrData);
     setWarehouses(warData);
-    // Auto-select first warehouse if none selected yet
     if (warData.length > 0 && !genGalpaoSigla) {
         setGenGalpaoSigla(warData[0].sigla);
     }
@@ -66,7 +65,6 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
       const groups = new Map<string, Map<string, WMSAddress[]>>();
 
       addresses.forEach(addr => {
-          // Format: LOC-AT-E01-P01
           const parts = addr.code.split('-');
           let g = 'GERAL';
           let e = '00';
@@ -87,6 +85,7 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
       // Ordenar chaves
       const sortedGroups = new Map([...groups.entries()].sort());
       for (const [g, shelfMap] of sortedGroups) {
+          // Ordenar estantes (E01, E02...)
           sortedGroups.set(g, new Map([...shelfMap.entries()].sort()));
       }
 
@@ -103,10 +102,8 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
       if (res.success) {
           setNewWarehouseSigla('');
           setNewWarehouseDesc('');
-          // Refresh but keep modals open appropriately
           const newWars = await api.getWarehouses();
           setWarehouses(newWars);
-          // Se estava gerando endereços, já seleciona o novo
           setGenGalpaoSigla(newWarehouseSigla.toUpperCase());
       } else {
           alert('Erro: ' + (res.message || 'Falha ao salvar'));
@@ -114,7 +111,7 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
   };
 
   const handleDeleteWarehouse = async (id: number) => {
-      if(confirm('Tem certeza? Isso não apaga os endereços já criados, apenas a sigla do cadastro.')) {
+      if(confirm('Tem certeza? Isso remove apenas o cadastro do galpão, não os endereços.')) {
           await api.deleteWarehouse(id);
           const newWars = await api.getWarehouses();
           setWarehouses(newWars);
@@ -125,13 +122,13 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
 
   // --- GENERATOR ---
   const handleGenerate = async () => {
-    if (!genGalpaoSigla) return alert("Selecione um galpão. Se não houver, crie um primeiro.");
+    if (!genGalpaoSigla) return alert("Selecione um galpão.");
 
     const finalEstanteEnd = isSingleShelf ? genEstanteStart : genEstanteEnd;
     const finalNivelEnd = isSingleLevel ? genNivelStart : genNivelEnd;
 
     if (finalEstanteEnd < genEstanteStart || finalNivelEnd < genNivelStart) {
-        return alert('Intervalo final não pode ser menor que o inicial.');
+        return alert('Intervalo inválido.');
     }
 
     const newAddresses: Partial<WMSAddress>[] = [];
@@ -140,38 +137,27 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
         const estanteStr = `E${e.toString().padStart(2, '0')}`;
         for (let p = genNivelStart; p <= finalNivelEnd; p++) {
             const prateleiraStr = `P${p.toString().padStart(2, '0')}`;
-            // Formato limpo: LOC-AT-E01-P01
             const code = `LOC-${genGalpaoSigla}-${estanteStr}-${prateleiraStr}`;
             const desc = `Galpão ${genGalpaoSigla}, Estante ${e}, Nível ${p}`;
-
             newAddresses.push({ code, description: desc, type: 'shelf' });
         }
     }
 
-    const confirmMsg = `Você está prestes a processar ${newAddresses.length} endereços.\n\n` +
-                       `O sistema verificará automaticamente duplicidades e NÃO criará códigos repetidos.`;
-
-    if (confirm(confirmMsg)) {
+    if (confirm(`Gerar ${newAddresses.length} endereços? Duplicados serão ignorados.`)) {
         setLoading(true);
         const res = await api.saveAddresses(newAddresses);
         setLoading(false);
-
         if (res.success) {
             await refreshData();
-            
-            let resultMsg = `Processo Finalizado!\n\n`;
-            resultMsg += `✅ Criados: ${res.count}\n`;
-            resultMsg += `⚠️ Ignorados (já existiam): ${res.skipped}\n`;
-            
-            alert(resultMsg);
+            alert(`Criados: ${res.count}\nIgnorados: ${res.skipped}`);
             setIsGeneratorModalOpen(false);
         } else {
-            alert('Erro ao salvar endereços.');
+            alert('Erro ao salvar.');
         }
     }
   };
 
-  // --- ACCORDION LOGIC ---
+  // --- EXPANSION LOGIC ---
   const toggleWarehouse = (g: string) => {
       const newSet = new Set(expandedWarehouses);
       if (newSet.has(g)) newSet.delete(g);
@@ -186,71 +172,80 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
       setExpandedShelves(newSet);
   };
 
-  // --- SELECTION LOGIC ---
-  const toggleSelectId = (id: number) => {
+  // --- CASCADING SELECTION LOGIC ---
+  const handleSelectId = (id: number) => {
       const newSet = new Set(selectedIds);
       if (newSet.has(id)) newSet.delete(id);
       else newSet.add(id);
       setSelectedIds(newSet);
   };
 
-  const selectShelf = (addrs: WMSAddress[], select: boolean) => {
+  const handleSelectShelf = (items: WMSAddress[]) => {
+      const allIds = items.map(i => i.id);
+      const allSelected = allIds.every(id => selectedIds.has(id));
+      
       const newSet = new Set(selectedIds);
-      addrs.forEach(a => {
-          if (select) newSet.add(a.id);
-          else newSet.delete(a.id);
-      });
+      if (allSelected) {
+          allIds.forEach(id => newSet.delete(id));
+      } else {
+          allIds.forEach(id => newSet.add(id));
+      }
       setSelectedIds(newSet);
   };
 
-  // --- PRINT LOGIC ---
-  const handlePrint = async () => {
-    const itemsToPrint = addresses.filter(a => selectedIds.has(a.id));
-    if (itemsToPrint.length === 0) return;
+  const handleSelectWarehouse = (shelfMap: Map<string, WMSAddress[]>) => {
+      const allIds: number[] = [];
+      shelfMap.forEach(items => items.forEach(i => allIds.push(i.id)));
+      
+      const allSelected = allIds.every(id => selectedIds.has(id));
+      const newSet = new Set(selectedIds);
+      
+      if (allSelected) {
+          allIds.forEach(id => newSet.delete(id));
+      } else {
+          allIds.forEach(id => newSet.add(id));
+      }
+      setSelectedIds(newSet);
+  };
 
+  // --- PRINT LOGIC (Standard: Levels) ---
+  const executePrint = async (items: { code: string, g: string, e: string, p?: string }[]) => {
     const printArea = document.getElementById('print-area');
     if (!printArea) return;
 
     // Gerar QR Codes
-    const qrMap = new Map<number, string>();
+    const qrMap = new Map<string, string>();
     try {
-        const promises = itemsToPrint.map(async (addr) => {
-            const url = await QRCode.toDataURL(addr.code, { margin: 0, width: 200 });
-            return { id: addr.id, url };
+        const promises = items.map(async (item) => {
+            const url = await QRCode.toDataURL(item.code, { margin: 0, width: 200 });
+            return { code: item.code, url };
         });
         const results = await Promise.all(promises);
-        results.forEach(r => qrMap.set(r.id, r.url));
+        results.forEach(r => qrMap.set(r.code, r.url));
     } catch (err) {
         console.error(err);
         return alert("Erro ao gerar QR Codes.");
     }
 
-    const labelsHtml = itemsToPrint.map(addr => {
-        const parts = addr.code.split('-');
-        let g = '', e = '', p = '';
-        if (parts.length >= 4) {
-            g = parts[1];
-            e = parts[2].replace(/\D/g, ''); 
-            p = parts[3].replace(/\D/g, '');
-        }
-
-        const qrSrc = qrMap.get(addr.id);
-
+    const labelsHtml = items.map(item => {
+        const qrSrc = qrMap.get(item.code);
         return `
         <div class="label-item">
             <div class="qr-container">
                 <img src="${qrSrc}" />
             </div>
             <div class="info-container">
-                <div class="info-row"><span class="key">G:</span><span class="val">${g}</span></div>
-                <div class="info-row"><span class="key">E:</span><span class="val">${e}</span></div>
-                <div class="info-row"><span class="key">P:</span><span class="val">${p}</span></div>
+                <div class="info-row"><span class="key">G:</span><span class="val">${item.g}</span></div>
+                <div class="info-row"><span class="key">E:</span><span class="val">${item.e.replace(/\D/g, '')}</span></div>
+                ${item.p ? `<div class="info-row"><span class="key">P:</span><span class="val">${item.p.replace(/\D/g, '')}</span></div>` : ''}
+                ${!item.p ? `<div class="info-row"><span class="key-lg">ESTANTE</span></div>` : ''}
             </div>
         </div>
     `;}).join('');
 
     printArea.innerHTML = labelsHtml;
 
+    // CSS Injection
     const styleId = 'dynamic-page-size';
     const oldStyle = document.getElementById(styleId);
     if (oldStyle) oldStyle.remove();
@@ -279,10 +274,40 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
             .info-row { display: flex; align-items: baseline; line-height: 1.0; margin-bottom: 1px; }
             .key { font-size: 16px; font-weight: 800; margin-right: 3px; color: #000; }
             .val { font-size: 28px; font-weight: 900; color: #000; letter-spacing: -1px; }
+            .key-lg { font-size: 18px; font-weight: 900; text-transform: uppercase; color: #000; margin-top: 5px; }
         }
     `;
     document.head.appendChild(style);
     setTimeout(() => window.print(), 250);
+  };
+
+  const handlePrintSelected = () => {
+      const selectedAddresses = addresses.filter(a => selectedIds.has(a.id));
+      if (selectedAddresses.length === 0) return;
+
+      const printItems = selectedAddresses.map(addr => {
+          const parts = addr.code.split('-');
+          return {
+              code: addr.code,
+              g: parts[1] || '?',
+              e: parts[2] || '?',
+              p: parts[3] || '?'
+          };
+      });
+      executePrint(printItems);
+  };
+
+  // --- PRINT LOGIC (Shelf Only) ---
+  const handlePrintShelfLabel = (galpao: string, estante: string) => {
+      // Create a virtual item for the Shelf
+      const code = `LOC-${galpao}-${estante}`; // Removed Level part
+      const item = {
+          code: code,
+          g: galpao,
+          e: estante,
+          p: undefined // No Prateleira
+      };
+      executePrint([item]);
   };
 
   if (!isDesktop) return (
@@ -311,19 +336,19 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
              
              <div className="flex items-center gap-3">
                  <button 
-                    onClick={handlePrint}
+                    onClick={handlePrintSelected}
                     disabled={selectedIds.size === 0}
                     className={`flex items-center gap-2 px-5 py-2 rounded-lg font-bold bg-gray-900 dark:bg-white dark:text-black text-white transition-all ${selectedIds.size === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 shadow-lg'}`}
                  >
                     <Icon name="print" size={20} />
-                    <span>Imprimir ({selectedIds.size})</span>
+                    <span>Imprimir Selecionados ({selectedIds.size})</span>
                  </button>
              </div>
         </header>
 
         <div className="flex flex-1 overflow-hidden">
             
-            {/* MAIN CONTENT: HIERARCHICAL LIST */}
+            {/* MAIN CONTENT: TREE VIEW LIST */}
             <div className="flex-1 flex flex-col p-6 overflow-hidden">
                 <div className="flex items-center justify-between mb-4">
                     <h2 className="text-lg font-bold text-gray-800 dark:text-white">Estrutura do Armazém</h2>
@@ -336,81 +361,114 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
                     </button>
                 </div>
 
-                {/* ACCORDION LIST */}
-                <div className="flex-1 overflow-y-auto pr-2 space-y-4">
+                {/* HIERARCHICAL TREE LIST */}
+                <div className="flex-1 overflow-y-auto pr-2 space-y-2 bg-white dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-white/5 p-4 shadow-inner">
                     {Array.from(hierarchicalData.entries()).map(([galpao, shelfMap]) => {
                         const isGExpanded = expandedWarehouses.has(galpao);
-                        const shelfCount = shelfMap.size;
-                        const totalAddrs = Array.from(shelfMap.values()).reduce((acc, arr) => acc + arr.length, 0);
+                        
+                        // Check if all items in this Galpao are selected
+                        const allGalpaoItems: WMSAddress[] = [];
+                        shelfMap.forEach(items => allGalpaoItems.push(...items));
+                        const isGalpaoSelected = allGalpaoItems.length > 0 && allGalpaoItems.every(i => selectedIds.has(i.id));
 
                         return (
-                            <div key={galpao} className="bg-white dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-white/5 overflow-hidden shadow-sm">
-                                {/* Warehouse Header */}
-                                <div 
-                                    onClick={() => toggleWarehouse(galpao)}
-                                    className="flex items-center p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5 transition-colors border-l-4 border-l-primary"
-                                >
-                                    <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-primary mr-3">
+                            <div key={galpao} className="select-none">
+                                {/* LEVEL 1: WAREHOUSE */}
+                                <div className={`flex items-center p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 border border-transparent ${isGExpanded ? 'bg-gray-50 dark:bg-white/5' : ''}`}>
+                                    <button 
+                                        onClick={() => toggleWarehouse(galpao)} 
+                                        className="p-1 mr-2 text-gray-400 hover:text-primary transition-colors"
+                                    >
                                         <Icon name={isGExpanded ? "expand_more" : "chevron_right"} size={24} />
-                                    </div>
-                                    <div className="flex-1">
-                                        <h3 className="font-bold text-lg text-gray-900 dark:text-white">Galpão {galpao}</h3>
-                                        <p className="text-xs text-gray-500">{shelfCount} estantes • {totalAddrs} endereços</p>
+                                    </button>
+                                    
+                                    <input 
+                                        type="checkbox" 
+                                        checked={isGalpaoSelected}
+                                        onChange={() => handleSelectWarehouse(shelfMap)}
+                                        className="w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer mr-3"
+                                    />
+                                    
+                                    <div className="flex items-center gap-2 cursor-pointer flex-1" onClick={() => toggleWarehouse(galpao)}>
+                                        <Icon name="domain" className="text-gray-500" />
+                                        <span className="font-bold text-lg text-gray-800 dark:text-white">Galpão {galpao}</span>
+                                        <span className="text-xs text-gray-400 font-normal ml-2">({shelfMap.size} estantes)</span>
                                     </div>
                                 </div>
 
-                                {/* Shelves List */}
+                                {/* LEVEL 2: SHELVES */}
                                 {isGExpanded && (
-                                    <div className="bg-gray-50 dark:bg-black/20 p-4 space-y-3 border-t border-gray-200 dark:border-white/5">
+                                    <div className="ml-8 border-l-2 border-gray-100 dark:border-white/10 pl-2 mt-1 space-y-1">
                                         {Array.from(shelfMap.entries()).map(([estante, items]) => {
                                             const shelfKey = `${galpao}-${estante}`;
                                             const isSExpanded = expandedShelves.has(shelfKey);
-                                            const allSelected = items.every(i => selectedIds.has(i.id));
+                                            const isShelfSelected = items.length > 0 && items.every(i => selectedIds.has(i.id));
 
                                             return (
-                                                <div key={estante} className="bg-white dark:bg-surface-dark rounded-lg border border-gray-200 dark:border-white/10 overflow-hidden">
-                                                    <div className="flex items-center p-3 gap-3">
-                                                        <button onClick={() => toggleShelf(shelfKey)} className="text-gray-400 hover:text-primary">
-                                                            <Icon name={isSExpanded ? "expand_less" : "expand_more"} />
+                                                <div key={estante}>
+                                                    <div className="flex items-center p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10">
+                                                        <button 
+                                                            onClick={() => toggleShelf(shelfKey)}
+                                                            className="p-1 mr-2 text-gray-400 hover:text-primary"
+                                                        >
+                                                            <Icon name={isSExpanded ? "expand_more" : "chevron_right"} size={20} />
                                                         </button>
-                                                        
-                                                        {/* Checkbox para selecionar TODA a estante */}
+
                                                         <input 
                                                             type="checkbox" 
-                                                            checked={allSelected}
-                                                            onChange={(e) => selectShelf(items, e.target.checked)}
-                                                            className="rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                                                            checked={isShelfSelected}
+                                                            onChange={() => handleSelectShelf(items)}
+                                                            className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer mr-3"
                                                         />
 
-                                                        <div className="flex-1" onClick={() => toggleShelf(shelfKey)}>
-                                                            <span className="font-bold text-gray-800 dark:text-white">Estante {estante.replace('E','')}</span>
-                                                            <span className="text-xs text-gray-400 ml-2">({items.length} níveis)</span>
+                                                        <div className="flex items-center gap-2 cursor-pointer flex-1" onClick={() => toggleShelf(shelfKey)}>
+                                                            <Icon name="shelves" className="text-gray-400" size={18} />
+                                                            <span className="font-bold text-base text-gray-700 dark:text-gray-200">Estante {estante.replace('E','')}</span>
+                                                            <span className="text-xs text-gray-400 ml-1">({items.length} níveis)</span>
                                                         </div>
-                                                        
-                                                        <div className="flex items-center gap-2 text-gray-300">
-                                                            <Icon name="qr_code" size={16} />
-                                                        </div>
+
+                                                        {/* ACTION: PRINT SHELF LABEL */}
+                                                        <button 
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handlePrintShelfLabel(galpao, estante);
+                                                            }}
+                                                            title="Imprimir QR Code da Estante"
+                                                            className="p-2 text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-200 dark:hover:bg-white/20 rounded transition-colors"
+                                                        >
+                                                            <Icon name="print" size={18} />
+                                                        </button>
                                                     </div>
 
-                                                    {/* Prateleiras (Levels) List */}
+                                                    {/* LEVEL 3: ITEMS (LEVELS/PRATELEIRAS) */}
                                                     {isSExpanded && (
-                                                        <div className="pl-12 pr-4 pb-3 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                                                        <div className="ml-9 border-l border-dashed border-gray-200 dark:border-white/10 pl-2 mt-1 space-y-1">
                                                             {items.map(addr => {
-                                                                const isSel = selectedIds.has(addr.id);
+                                                                const isSelected = selectedIds.has(addr.id);
                                                                 const nivelLabel = addr.code.split('-').pop() || '';
-                                                                
+
                                                                 return (
                                                                     <div 
-                                                                        key={addr.id}
-                                                                        onClick={() => toggleSelectId(addr.id)}
-                                                                        className={`flex items-center justify-between p-2 rounded border cursor-pointer select-none transition-all ${
-                                                                            isSel 
-                                                                            ? 'bg-primary/10 border-primary text-primary' 
-                                                                            : 'bg-gray-50 dark:bg-white/5 border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-400 hover:border-gray-400'
-                                                                        }`}
+                                                                        key={addr.id} 
+                                                                        className={`flex items-center p-2 rounded hover:bg-blue-50 dark:hover:bg-blue-900/10 cursor-pointer ${isSelected ? 'bg-blue-50 dark:bg-blue-900/10' : ''}`}
+                                                                        onClick={() => handleSelectId(addr.id)}
                                                                     >
-                                                                        <span className="font-bold text-sm">{nivelLabel}</span>
-                                                                        {isSel && <Icon name="check" size={14} />}
+                                                                        {/* Placeholder for expand icon alignment */}
+                                                                        <div className="w-6 mr-2"></div> 
+
+                                                                        <input 
+                                                                            type="checkbox" 
+                                                                            checked={isSelected}
+                                                                            onChange={() => handleSelectId(addr.id)}
+                                                                            className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer mr-3"
+                                                                        />
+                                                                        
+                                                                        <div className="flex items-center gap-2">
+                                                                            <Icon name="layers" size={16} className={isSelected ? "text-primary" : "text-gray-300"} />
+                                                                            <span className={`text-sm font-medium ${isSelected ? "text-primary font-bold" : "text-gray-600 dark:text-gray-400"}`}>
+                                                                                Prateleira/Nível {nivelLabel.replace('P','')}
+                                                                            </span>
+                                                                        </div>
                                                                     </div>
                                                                 );
                                                             })}
@@ -424,13 +482,11 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
                             </div>
                         );
                     })}
+                    
                     {addresses.length === 0 && !loading && (
                         <div className="text-center py-20 text-gray-400">
                             <Icon name="map" size={64} className="mb-4 opacity-50" />
                             <p>Nenhum endereço cadastrado.</p>
-                            <button onClick={() => setIsGeneratorModalOpen(true)} className="text-primary font-bold mt-2 hover:underline">
-                                Começar agora
-                            </button>
                         </div>
                     )}
                 </div>
