@@ -265,8 +265,8 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
             { facingMode: "environment" }, 
             {
               fps: 10,
-              qrbox: { width: 250, height: 250 },
-              aspectRatio: 1.0
+              // REMOVIDO aspectRatio: 1.0 para compatibilidade mobile (preencher tela)
+              qrbox: { width: 250, height: 250 }
             },
             (decodedText) => {
               // Sucesso
@@ -286,7 +286,12 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
              setIsPermDenied(true);
              setError('Permissão de câmera negada.');
           } else {
-             setError('Não foi possível iniciar a câmera.');
+             // Detecção de erro por contexto inseguro (HTTP)
+             if (!window.isSecureContext && window.location.hostname !== 'localhost') {
+                setError('Erro: Câmera requer HTTPS. Conexão atual é insegura.');
+             } else {
+                setError('Não foi possível iniciar a câmera.');
+             }
           }
         }
       }
@@ -317,9 +322,6 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
   };
 
   const handleRetryPermission = () => {
-      // Tentamos reiniciar o fluxo. Se o navegador bloqueou permanentemente,
-      // a nova tentativa falhará novamente, mantendo a tela de erro,
-      // mas se foi temporário ou usuário mudou config, funcionará.
       setRetryTrigger(prev => prev + 1);
   };
 

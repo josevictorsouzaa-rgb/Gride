@@ -55,18 +55,19 @@ const App: React.FC = () => {
     setCurrentScreen('dashboard');
 
     // --- SOLICITAR PERMISSÃO DE CÂMERA IMEDIATAMENTE APÓS LOGIN ---
-    // Isso garante que o navegador peça permissão enquanto há um gesto de usuário (clique no login)
+    // Agora com HTTPS configurado, o navegador mobile deve permitir o acesso.
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
         .then((stream) => {
-            console.log("Acesso à câmera concedido.");
+            console.log("Acesso à câmera concedido e pré-aquecido.");
             // Paramos as tracks imediatamente para não gastar bateria, 
             // a permissão já ficará salva no navegador.
             stream.getTracks().forEach(track => track.stop());
         })
         .catch((err) => {
             console.warn("Permissão de câmera negada ou adiada no login:", err);
-            // Não bloqueamos o app, mas o ScannerModal lidará com isso depois se o usuário tentar escanear.
+            // Não bloqueamos o app. Se o usuário negou, o ScannerModal 
+            // mostrará o botão de "Tentar Novamente" quando for aberto.
         });
     }
   };
