@@ -12,7 +12,7 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
   const [addresses, setAddresses] = useState<WMSAddress[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [loading, setLoading] = useState(false);
-  const [printSize, setPrintSize] = useState<'6030' | '6040'>('6040');
+  const [printSize, setPrintSize] = useState<'60x30' | '60x40'>('60x40');
   
   // States do Gerador (Modal)
   const [isGeneratorModalOpen, setIsGeneratorModalOpen] = useState(false);
@@ -244,24 +244,29 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
         const isShelfLabel = !item.p;
 
         // Logic: 
-        // Se for Prateleira (Nivel), o título é "NÍVEL" e o número grande é o Nível.
-        // Se for Estante, o título é "ESTANTE" e o número grande é a Estante.
+        // Se for Prateleira (Nivel), o título é "PRATELEIRA" (ajustado de NÍVEL)
+        // Se for Estante, o título é "ESTANTE".
         
-        const labelTitle = isShelfLabel ? 'ESTANTE' : 'NÍVEL';
+        const labelTitle = isShelfLabel ? 'ESTANTE' : 'PRATELEIRA';
         const labelNum = isShelfLabel ? estanteNum : nivelNum;
+        
+        // CSS class for font size adjustment if word is long
+        const titleClass = (labelTitle.length > 8) ? 'text-sm' : 'text-xl';
 
         // Unified Design: QR Left, Info Right (Bar + Big Code at Bottom)
         return `
         <div class="label-item">
-            <div class="qr-box">
-                <img src="${qrSrc}" />
-            </div>
-            <div class="info-column">
-                <div class="black-bar">
-                    <span class="label-type">${labelTitle}</span>
-                    <span class="label-number">${labelNum}</span>
+            <div class="label-inner">
+                <div class="qr-box">
+                    <img src="${qrSrc}" />
                 </div>
-                <div class="code-text">${item.code}</div>
+                <div class="info-column">
+                    <div class="black-bar">
+                        <span class="label-type ${titleClass}">${labelTitle}</span>
+                        <span class="label-number">${labelNum}</span>
+                    </div>
+                    <div class="code-text">${item.code}</div>
+                </div>
             </div>
         </div>`;
     }).join('');
@@ -275,38 +280,55 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
 
     const style = document.createElement('style');
     style.id = styleId;
-    const width = '60mm';
-    const height = printSize === '6040' ? '40mm' : '30mm';
     
+    // Page Dimensions based on selection
+    const pageHeight = printSize === '60x30' ? '30mm' : '40mm';
+    // Safe dimensions to prevent cutting (1-2mm margin)
+    const safeWidth = '58mm';
+    const safeHeight = printSize === '60x30' ? '28mm' : '38mm';
+
     style.innerHTML = `
         @media print {
-            @page { size: ${width} ${height}; margin: 0; }
+            @page { size: 60mm ${pageHeight}; margin: 0; }
             body { margin: 0 !important; padding: 0 !important; font-family: 'Inter', sans-serif; -webkit-print-color-adjust: exact; }
             body > *:not(#print-area) { display: none !important; }
-            #print-area { display: block !important; position: absolute; top: 0; left: 0; width: ${width}; }
+            #print-area { display: block !important; position: absolute; top: 0; left: 0; width: 60mm; }
             
             .label-item {
-                width: ${width}; height: ${height};
-                page-break-after: always; break-after: page;
-                box-sizing: border-box; overflow: hidden;
-                position: relative;
-                background: white;
-                border: 1px solid #ddd;
+                width: 60mm; 
+                height: ${pageHeight};
+                page-break-after: always; 
+                break-after: page;
+                box-sizing: border-box; 
+                overflow: hidden;
                 display: flex;
-                padding: 1mm;
                 align-items: center;
+                justify-content: center;
+            }
+
+            .label-inner {
+                width: ${safeWidth};
+                height: ${safeHeight};
+                display: flex;
+                flex-direction: row;
+                align-items: center;
+                /* Optional Border for debug, remove in prod or make very light */
+                /* border: 1px dotted #ccc; */ 
             }
 
             .qr-box {
-                width: 24mm;
-                height: 24mm;
+                height: 100%;
+                aspect-ratio: 1/1;
                 flex-shrink: 0;
-                margin-right: 1mm;
-                border-right: 2px solid #000;
-                padding-right: 1mm;
+                padding: 1mm;
+                display: flex;
+                align-items: center;
+                justify-content: center;
             }
             .qr-box img {
-                width: 100%; height: 100%; object-fit: contain;
+                width: 100%; 
+                height: 100%; 
+                object-fit: contain;
                 image-rendering: pixelated;
             }
 
@@ -315,41 +337,44 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
                 height: 100%;
                 display: flex;
                 flex-direction: column;
-                justify-content: center; /* Changed from space-between for centering */
-                gap: 3mm; /* Gap between bar and code */
-                padding-left: 2mm;
+                justify-content: center; /* Center vertically */
+                gap: 1mm;
+                padding-left: 1mm;
+                padding-right: 1mm;
             }
 
             .black-bar {
                 background: #000;
                 color: #fff;
-                padding: 2mm 3mm;
+                padding: 1mm 2mm;
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
-                border-radius: 2mm;
+                border-radius: 1.5mm;
+                width: 100%;
             }
             
             .label-type {
-                font-size: 8pt;
                 font-weight: bold;
                 letter-spacing: 0.5px;
                 text-transform: uppercase;
             }
+            .label-type.text-sm { font-size: 8pt; } /* For PRATELEIRA */
+            .label-type.text-xl { font-size: 10pt; } /* For ESTANTE */
 
             .label-number {
-                font-size: 24pt;
+                font-size: 20pt;
                 font-weight: 900;
                 line-height: 1;
             }
 
             .code-text {
-                font-size: 14pt; /* Increased size significantly */
+                font-size: 10pt;
                 font-weight: 900;
                 color: #000;
                 text-align: center;
-                letter-spacing: 1px;
                 white-space: nowrap;
+                margin-top: 1mm;
             }
         }
     `;
@@ -411,6 +436,18 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
              </div>
              
              <div className="flex items-center gap-3">
+                 <div className="flex items-center gap-2 mr-4 bg-gray-50 dark:bg-white/5 p-1.5 rounded-lg border border-gray-200 dark:border-white/10">
+                    <span className="text-xs font-bold text-gray-500 ml-2">Tamanho:</span>
+                    <select 
+                        value={printSize}
+                        onChange={(e) => setPrintSize(e.target.value as any)}
+                        className="bg-white dark:bg-black/20 border border-gray-200 dark:border-white/10 text-gray-900 dark:text-white text-xs rounded focus:ring-primary focus:border-primary block p-1.5 font-bold"
+                    >
+                        <option value="60x40">60mm x 40mm</option>
+                        <option value="60x30">60mm x 30mm</option>
+                    </select>
+                 </div>
+
                  <div className="flex items-center bg-gray-100 dark:bg-white/5 rounded-lg p-1 mr-2">
                     <button 
                         onClick={handleSelectAll}
