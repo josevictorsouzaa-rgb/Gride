@@ -8,7 +8,7 @@ interface LoginScreenProps {
 }
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
-  const [code, setCode] = useState('8888'); // Default test user
+  const [code, setCode] = useState(''); // Inicia vazio conforme solicitado
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -86,7 +86,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 onBlur={handleCodeBlur}
-                placeholder="Seu ID (ex: 8888)"
+                placeholder="Informe seu ID"
                 className="flex w-full min-w-0 bg-transparent py-4 pl-4 pr-12 text-lg text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none border-none focus:ring-0 rounded-xl"
               />
               <div className="absolute right-3 flex items-center justify-center pointer-events-none">

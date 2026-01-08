@@ -38,22 +38,34 @@ const safeString = (value) => {
 // --- ROTA DE PRÉ-VISUALIZAÇÃO DE NOME (SEM SENHA) ---
 app.get('/user-name/:id', (req, res) => {
     const { id } = req.params;
+    console.log(`[INFO] Buscando nome para usuário ID: ${id}`);
 
     // Mock Users
     if (id === '9999') return res.json({ name: 'Gestor de Teste' });
     if (id === '8888') return res.json({ name: 'Colaborador Teste' });
 
     Firebird.attach(options, (err, db) => {
-        if (err) return res.status(500).json({ error: 'Erro db' });
+        if (err) {
+            console.error('[ERRO] Falha ao conectar no Firebird:', err.message);
+            return res.status(500).json({ error: 'Erro de conexão com banco de dados' });
+        }
 
         const sql = `SELECT USU_NOME FROM USUARIOS WHERE USU_COD = ? AND USU_ATIVO = 'S'`;
+        
         db.query(sql, [id], (err, result) => {
             db.detach();
-            if (err) return res.status(500).json({ error: err.message });
+            
+            if (err) {
+                console.error('[ERRO] Falha na query SQL:', err.message);
+                return res.status(500).json({ error: err.message });
+            }
             
             if (result.length > 0) {
-                res.json({ name: safeString(result[0].USU_NOME) });
+                const nome = safeString(result[0].USU_NOME);
+                console.log(`[SUCESSO] Usuário encontrado: ${nome}`);
+                res.json({ name: nome });
             } else {
+                console.log(`[AVISO] Usuário ID ${id} não encontrado ou inativo.`);
                 res.status(404).json({ error: 'Usuário não encontrado' });
             }
         });
