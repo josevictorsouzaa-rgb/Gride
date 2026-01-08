@@ -1,11 +1,13 @@
-
-const express = require('express');
-const Firebird = require('node-firebird');
-const cors = require('cors');
-const bodyParser = require('body-parser');
+import express from 'express';
+import Firebird from 'node-firebird';
+import cors from 'cors';
+import bodyParser from 'body-parser';
 
 const app = express();
 const port = 8000;
+
+// Configuração do Banco de Dados
+const DB_PATH = 'C:\\Users\\DELL G15\\Desktop\\BD\\DATABASE\\DATABASE.FDB';
 
 // Middleware
 app.use(cors());
@@ -15,7 +17,7 @@ app.use(bodyParser.json());
 const options = {
     host: '127.0.0.1',
     port: 3050,
-    database: 'C:\\Users\\DELL G15\\Desktop\\BD\\DATABASE\\DATABASE.FDB',
+    database: DB_PATH,
     user: 'SYSDBA',
     password: 'masterkey',
     lowercase_keys: false, 
@@ -24,7 +26,6 @@ const options = {
 };
 
 // Helper para converter Buffer/Null para String com segurança
-// ISSO É CRUCIAL PARA EVITAR ERROS NO REACT
 const safeString = (value) => {
     if (value === null || value === undefined) return '';
     // Se for buffer, converte para string
@@ -43,7 +44,7 @@ app.post('/login', (req, res) => {
     }
 
     Firebird.attach(options, (err, db) => {
-        if (err) return res.status(500).json({ error: 'Erro de conexão com banco' });
+        if (err) return res.status(500).json({ error: 'Erro de conexão com banco: ' + err.message });
 
         const sqlUser = `SELECT USU_COD, USU_NOME, USU_ATIVO FROM USUARIOS WHERE USU_COD = ?`;
         
@@ -102,7 +103,7 @@ app.post('/login', (req, res) => {
 // --- ROTA DE CATEGORIAS ---
 app.get('/categories', (req, res) => {
     Firebird.attach(options, (err, db) => {
-        if (err) return res.status(500).json({ error: 'Erro de conexão' });
+        if (err) return res.status(500).json({ error: 'Erro de conexão: ' + err.message });
 
         // Buscar Grupos
         db.query('SELECT GR_COD, GR_DESCRI FROM GRUPOPRODUTOS', [], (err, groups) => {
@@ -123,7 +124,7 @@ app.get('/categories', (req, res) => {
                     // Filtrar subgrupos deste grupo e usar safeString
                     const subs = subgroups.filter(s => s.GR_COD === groupId).map(s => ({
                         id: s.SG_COD.toString(),
-                        name: safeString(s.SG_DESCRI), // Proteção CRÍTICA
+                        name: safeString(s.SG_DESCRI), 
                         count: 0, 
                         icon: 'circle'
                     }));
@@ -131,7 +132,7 @@ app.get('/categories', (req, res) => {
                     return {
                         id: groupId.toString(),
                         db_id: groupId,
-                        label: safeString(g.GR_DESCRI), // Proteção CRÍTICA
+                        label: safeString(g.GR_DESCRI), 
                         icon: 'inventory_2', 
                         count: 0, 
                         subcategories: subs
@@ -186,8 +187,8 @@ app.get('/products', (req, res) => {
             const mapped = result.map(item => {
                 return {
                     id: item.PRO_COD,
-                    name: safeString(item.PRO_DESCRI), // Proteção
-                    sku: safeString(item.PRO_NRFABRICANTE), // Proteção
+                    name: safeString(item.PRO_DESCRI),
+                    sku: safeString(item.PRO_NRFABRICANTE),
                     balance: parseFloat(item.PRO_EST_ATUAL || 0),
                     similar_id: safeString(item.PRO_COD_SIMILAR) || null,
                     brand: 'GENÉRICO',
