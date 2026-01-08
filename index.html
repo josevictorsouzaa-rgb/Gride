@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="pt-BR" class="dark">
   <head>
@@ -70,6 +71,74 @@
       .pb-safe {
         padding-bottom: env(safe-area-inset-bottom);
       }
+
+      /* ESTILOS DE IMPRESSÃO TÉRMICA */
+      @media print {
+        @page {
+           margin: 0;
+           size: auto;
+        }
+        body * {
+           visibility: hidden;
+           height: 0;
+           overflow: hidden;
+        }
+        #print-area, #print-area * {
+           visibility: visible;
+           height: auto;
+           overflow: visible;
+        }
+        #print-area {
+           position: absolute;
+           left: 0;
+           top: 0;
+           width: 100%;
+        }
+
+        /* FORMATO 60x30mm */
+        .label-6030 {
+            width: 60mm;
+            height: 30mm;
+            page-break-after: always;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 2mm;
+            border: 1px dashed #ccc; /* Remove in production if printed on real labels */
+            box-sizing: border-box;
+            background: white;
+            color: black;
+        }
+
+        /* FORMATO 60x40mm */
+        .label-6040 {
+            width: 60mm;
+            height: 40mm;
+            page-break-after: always;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 2mm;
+            border: 1px dashed #ccc; 
+            box-sizing: border-box;
+            background: white;
+            color: black;
+        }
+
+        .label-content {
+           flex: 1;
+           padding-left: 2mm;
+           font-family: sans-serif;
+           font-weight: bold;
+           display: flex;
+           flex-col: column;
+           justify-content: center;
+        }
+        
+        .label-code { font-size: 16px; line-height: 1.1; }
+        .label-desc { font-size: 10px; margin-top: 2px; font-weight: normal; }
+        .label-brand { font-size: 8px; margin-top: 4px; text-transform: uppercase; }
+      }
     </style>
 <script type="importmap">
 {
@@ -94,5 +163,8 @@
   <body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-white antialiased selection:bg-primary selection:text-white">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
+    
+    <!-- Área de Impressão Invisível -->
+    <div id="print-area"></div>
   </body>
 </html>

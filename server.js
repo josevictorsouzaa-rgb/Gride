@@ -1,3 +1,4 @@
+
 import express from 'express';
 import Firebird from 'node-firebird';
 import cors from 'cors';
@@ -11,7 +12,7 @@ const DB_PATH = 'C:\\Users\\DELL G15\\Desktop\\BD\\DATABASE\\DATABASE.FDB';
 
 // Middleware
 app.use(cors());
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '10mb' })); // Aumentado limite para envio em massa
 
 // Configuração do Firebird
 const options = {
@@ -24,6 +25,46 @@ const options = {
     role: null,
     pageSize: 4096
 };
+
+// --- INIT DB: Create WMS Table ---
+const initDb = () => {
+    Firebird.attach(options, (err, db) => {
+        if (err) return;
+        
+        // Tabela de Endereços WMS
+        const createTable = `
+            CREATE TABLE GRIDE_ENDERECOS (
+                ID INTEGER NOT NULL PRIMARY KEY,
+                CODIGO VARCHAR(50) NOT NULL,
+                DESCRICAO VARCHAR(100),
+                TIPO VARCHAR(20),
+                PRO_COD VARCHAR(20)
+            )
+        `;
+        // Generator para ID
+        const createGen = `CREATE GENERATOR GEN_GRIDE_ENDERECOS_ID`;
+        const createTrigger = `
+            CREATE TRIGGER TR_GRIDE_ENDERECOS FOR GRIDE_ENDERECOS
+            ACTIVE BEFORE INSERT POSITION 0
+            AS
+            BEGIN
+              IF (NEW.ID IS NULL) THEN
+                NEW.ID = GEN_ID(GEN_GRIDE_ENDERECOS_ID, 1);
+            END
+        `;
+
+        // Executa criações (ignora erros se já existir)
+        db.query(createTable, [], () => {
+            db.query(createGen, [], () => {
+                db.query(createTrigger, [], () => {
+                    console.log('WMS Tables Checked/Created');
+                    db.detach();
+                });
+            });
+        });
+    });
+};
+setTimeout(initDb, 2000);
 
 // Helper para converter Buffer/Null para String com segurança
 const safeString = (value) => {
@@ -38,15 +79,13 @@ const safeString = (value) => {
 // --- ROTA DE PRÉ-VISUALIZAÇÃO DE NOME (SEM SENHA) ---
 app.get('/user-name/:id', (req, res) => {
     const { id } = req.params;
-    console.log(`[INFO] Buscando nome para usuário ID: ${id}`);
-
+    
     // Mock Users
     if (id === '9999') return res.json({ name: 'Gestor de Teste' });
     if (id === '8888') return res.json({ name: 'Colaborador Teste' });
 
     Firebird.attach(options, (err, db) => {
         if (err) {
-            console.error('[ERRO] Falha ao conectar no Firebird:', err.message);
             return res.status(500).json({ error: 'Erro de conexão com banco de dados' });
         }
 
@@ -56,16 +95,13 @@ app.get('/user-name/:id', (req, res) => {
             db.detach();
             
             if (err) {
-                console.error('[ERRO] Falha na query SQL:', err.message);
                 return res.status(500).json({ error: err.message });
             }
             
             if (result.length > 0) {
                 const nome = safeString(result[0].USU_NOME);
-                console.log(`[SUCESSO] Usuário encontrado: ${nome}`);
                 res.json({ name: nome });
             } else {
-                console.log(`[AVISO] Usuário ID ${id} não encontrado ou inativo.`);
                 res.status(404).json({ error: 'Usuário não encontrado' });
             }
         });
@@ -310,6 +346,77 @@ app.get('/history', (req, res) => {
 
             res.json(safeResult);
         });
+    });
+});
+
+// --- WMS / ENDEREÇAMENTO ---
+
+// Listar Endereços
+app.get('/addresses', (req, res) => {
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.status(500).json([]);
+        
+        db.query('SELECT FIRST 2000 ID, CODIGO, DESCRICAO, TIPO, PRO_COD FROM GRIDE_ENDERECOS ORDER BY CODIGO', [], (err, result) => {
+            db.detach();
+            if (err) return res.json([]);
+            
+            const mapped = result.map(r => ({
+                id: r.ID,
+                code: safeString(r.CODIGO),
+                description: safeString(r.DESCRICAO),
+                type: safeString(r.TIPO) || 'shelf',
+                linkedSku: safeString(r.PRO_COD)
+            }));
+            res.json(mapped);
+        });
+    });
+});
+
+// Salvar Endereços (Batch)
+app.post('/save-addresses', (req, res) => {
+    const addresses = req.body; // Array of objects
+    if (!Array.isArray(addresses)) return res.status(400).json({error: 'Expected array'});
+
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.status(500).json({error: 'DB Error'});
+
+        let processed = 0;
+        let skipped = 0;
+        
+        // Loop recursivo para garantir ordem e conexão
+        const processNext = (idx) => {
+            if (idx >= addresses.length) {
+                db.detach();
+                return res.json({ success: true, count: processed, skipped: skipped });
+            }
+            
+            const item = addresses[idx];
+            
+            // Check if exists to avoid duplicates on CODIGO
+            const sqlCheck = 'SELECT ID FROM GRIDE_ENDERECOS WHERE CODIGO = ?';
+            
+            db.query(sqlCheck, [item.code], (err, exists) => {
+                if (err) {
+                    console.error('Erro ao checar existência:', err);
+                    processNext(idx + 1); // Continua mesmo com erro
+                    return;
+                }
+
+                if (exists && exists.length === 0) {
+                     const sqlInsert = 'INSERT INTO GRIDE_ENDERECOS (CODIGO, DESCRICAO, TIPO) VALUES (?, ?, ?)';
+                     db.query(sqlInsert, [item.code, item.description, item.type], (err) => {
+                         if (!err) processed++;
+                         else console.error('Erro ao inserir:', err);
+                         processNext(idx + 1);
+                     });
+                } else {
+                    skipped++;
+                    processNext(idx + 1);
+                }
+            });
+        };
+        
+        processNext(0);
     });
 });
 
