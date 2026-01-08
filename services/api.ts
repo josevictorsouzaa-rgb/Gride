@@ -1,5 +1,5 @@
 
-import { User } from '../types';
+import { User, WMSAddress, WarehouseLayout } from '../types';
 
 export interface ApiProduct {
   id: number | string;
@@ -36,6 +36,12 @@ export interface ApiCategory {
     count: number; 
     icon: string; 
   }[];
+}
+
+export interface Warehouse {
+    id: number;
+    sigla: string;
+    descricao: string;
 }
 
 const getApiBaseUrl = () => {
@@ -162,5 +168,90 @@ export const api = {
 
   saveSettings: async (settings: any) => {
     return true;
+  },
+
+  // --- WMS ADDRESS METHODS ---
+  getAddresses: async (): Promise<WMSAddress[]> => {
+    try {
+        const response = await fetch(`${API_BASE_URL}/addresses`);
+        if(response.ok) return await response.json();
+        return [];
+    } catch (e) {
+        return [];
+    }
+  },
+
+  saveAddresses: async (addresses: Partial<WMSAddress>[]) => {
+      try {
+          const response = await fetch(`${API_BASE_URL}/save-addresses`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(addresses)
+          });
+          return await response.json();
+      } catch (e) {
+          return { success: false };
+      }
+  },
+
+  // --- WAREHOUSE MANAGEMENT ---
+  getWarehouses: async (): Promise<Warehouse[]> => {
+      try {
+          const response = await fetch(`${API_BASE_URL}/warehouses`);
+          if (response.ok) return await response.json();
+          return [];
+      } catch (e) {
+          return [];
+      }
+  },
+
+  saveWarehouse: async (warehouse: Partial<Warehouse>) => {
+      try {
+          const response = await fetch(`${API_BASE_URL}/save-warehouse`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(warehouse)
+          });
+          return await response.json();
+      } catch (e) {
+          return { success: false };
+      }
+  },
+
+  deleteWarehouse: async (id: number) => {
+      try {
+          await fetch(`${API_BASE_URL}/delete-warehouse`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id })
+          });
+          return true;
+      } catch (e) {
+          return false;
+      }
+  },
+
+  // --- LAYOUT METHODS ---
+  getLayout: async (): Promise<WarehouseLayout | null> => {
+      try {
+          const response = await fetch(`${API_BASE_URL}/layout`);
+          if (response.ok) return await response.json();
+          return null;
+      } catch (e) {
+          return null;
+      }
+  },
+
+  saveLayout: async (layout: WarehouseLayout) => {
+      try {
+          const response = await fetch(`${API_BASE_URL}/save-layout`, {
+             method: 'POST',
+             headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify(layout)
+          });
+          return await response.json();
+      } catch (e) {
+          return { success: false };
+      }
   }
 };

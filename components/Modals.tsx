@@ -918,6 +918,7 @@ export const PrintLabelModal: React.FC<PrintLabelModalProps> = ({ isOpen, onClos
     if (!isOpen || !data) return null;
 
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${data.fullCode}`;
+    const displayLabel = labelType === 'ESTANTE' ? 'ESTANTE' : 'NÍVEL';
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4">
@@ -961,7 +962,7 @@ export const PrintLabelModal: React.FC<PrintLabelModalProps> = ({ isOpen, onClos
                              {/* Black Bar Header */}
                              <div className="w-full bg-black text-white p-2 flex items-center justify-between">
                                  <span className="text-2xl font-bold uppercase tracking-wide">
-                                     {labelType}
+                                     {displayLabel}
                                  </span>
                                  <span className="text-5xl font-black tracking-tighter leading-none">
                                      {data.number}

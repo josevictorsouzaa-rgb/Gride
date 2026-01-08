@@ -1,0 +1,26 @@
+=== INSTRUÇÕES PARA CONFIGURAR HTTPS SEGURO (Mobile & Desktop) ===
+
+Para que a câmera funcione no celular sem avisos de segurança, você precisa de certificados SSL válidos na rede local.
+
+1. Instale a ferramenta 'mkcert':
+   - Windows (via Chocolatey): choco install mkcert
+   - Ou baixe o executável em: https://github.com/FiloSottile/mkcert/releases
+
+2. Instale a Autoridade de Certificação (CA) no seu computador:
+   execute: mkcert -install
+
+3. Gere os certificados na raiz deste projeto:
+   Descubra o IP do seu computador (ex: ipconfig no Windows -> IPv4 Address).
+   Execute o comando abaixo substituindo SEU_IP pelo número real (ex: 192.168.0.15):
+
+   mkcert -key-file key.pem -cert-file cert.pem localhost SEU_IP
+
+4. Instale o certificado no Celular (Android/iOS):
+   - Envie o arquivo 'rootCA.pem' gerado pelo mkcert (geralmente fica na pasta do usuário ou onde rodou o comando) para o celular.
+   - No Android: Configurações > Segurança > Criptografia e credenciais > Instalar certificado > Certificado CA.
+   - No iOS: Envie via AirDrop ou Email, instale em Ajustes, depois vá em Geral > Sobre > Config. de Confiança de Certificados e ative o mkcert.
+
+5. Reinicie o projeto:
+   npm run start
+
+Agora você pode acessar https://SEU_IP:5173 no celular e a câmera abrirá sem erros.

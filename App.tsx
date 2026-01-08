@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { Screen, User, Block } from './types';
 import { LoginScreen } from './screens/LoginScreen';
@@ -9,10 +10,12 @@ import { SubcategoriesScreen } from './screens/SubcategoriesScreen';
 import { TreatmentScreen } from './screens/TreatmentScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { ReservedScreen } from './screens/ReservedScreen';
-import { AnalyticsScreen } from './screens/AnalyticsScreen'; 
+import { AnalyticsScreen } from './screens/AnalyticsScreen';
+import { AddressManagerScreen } from './screens/AddressManagerScreen'; // New Import
 import { BottomNav } from './components/BottomNav';
 import { Sidebar } from './components/Sidebar'; 
 import { ScannerModal } from './components/Modals';
+import { Icon } from './components/Icon'; 
 import { api, ApiProduct, ApiCategory } from './services/api'; 
 
 const initialBlocksData: Block[] = [
@@ -55,31 +58,14 @@ const App: React.FC = () => {
     setCurrentScreen('dashboard');
 
     // --- SOLICITAR PERMISSÃO DE CÂMERA IMEDIATAMENTE APÓS LOGIN ---
-    
-    // 1. Verificação de Segurança (CRÍTICO PARA MOBILE)
-    // Navegadores bloqueiam getUserMedia em HTTP (exceto localhost).
-    if (!window.isSecureContext && window.location.hostname !== 'localhost') {
-        alert(
-          "⚠️ AVISO DE DESENVOLVIMENTO ⚠️\n\n" +
-          "Você está acessando via HTTP (IP).\n" +
-          "Os navegadores BLOQUEIAM a câmera no celular se não houver HTTPS.\n\n" +
-          "A câmera pode não abrir. Para testar no celular, configure HTTPS no Vite."
-        );
-    }
-
-    // 2. Tentar solicitar permissão
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
         .then((stream) => {
             console.log("Acesso à câmera concedido e pré-aquecido.");
-            // Paramos as tracks imediatamente para não gastar bateria, 
-            // a permissão já ficará salva no navegador.
             stream.getTracks().forEach(track => track.stop());
         })
         .catch((err) => {
             console.warn("Permissão de câmera negada ou adiada no login:", err);
-            // Não bloqueamos o app. Se o usuário negou, o ScannerModal 
-            // mostrará o botão de "Tentar Novamente" quando for aberto.
         });
     }
   };
@@ -98,18 +84,14 @@ const App: React.FC = () => {
       }, INACTIVITY_LIMIT);
     };
 
-    // Eventos para monitorar atividade
     const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart'];
     
-    // Inicia o timer
     resetTimer();
 
-    // Adiciona listeners
     events.forEach(event => {
       window.addEventListener(event, resetTimer);
     });
 
-    // Cleanup
     return () => {
       clearTimeout(timeoutId);
       events.forEach(event => {
@@ -117,9 +99,7 @@ const App: React.FC = () => {
       });
     };
   }, [currentScreen, handleLogout]);
-  // -----------------------------
 
-  // Load Categories & Products on Login
   useEffect(() => {
     if (currentScreen !== 'login') {
       loadRealData();
@@ -129,16 +109,13 @@ const App: React.FC = () => {
   const loadRealData = async () => {
     setIsLoading(true);
     try {
-        // 1. Carregar Categorias
         const cats = await api.getCategories();
-        
         if (cats && Array.isArray(cats)) {
              setCategories(cats);
         } else {
              setCategories([]);
         }
 
-        // 2. Carregar Produtos
         const products = await api.getProducts(1, 100);
         
         if (products && Array.isArray(products) && products.length > 0) {
@@ -222,11 +199,28 @@ const App: React.FC = () => {
     setCurrentScreen('mission_detail');
   };
 
-  const handleScanComplete = (code: string) => {
+  // --- LOGICA DE SCANNER ATUALIZADA ---
+  const handleScanComplete = async (code: string) => {
     setShowScanner(false);
-    let mockBlock;
-    if (code.startsWith('PRD-')) {
-       mockBlock = {
+    
+    // 1. PREFIXO LOC- (Localização WMS)
+    if (code.startsWith('LOC-')) {
+       // Filtra blocos/itens relacionados a este local
+       // Simula busca no backend por itens naquele endereço
+       let mockBlock = {
+          id: 9999,
+          contextType: 'location_scan',
+          parentRef: 'ITENS EM: ' + code,
+          location: code,
+          status: 'progress',
+          items: [] // Em produção, buscaria itens vinculados a este endereço
+       };
+       handleStartBlock(mockBlock);
+       return;
+    }
+
+    // 2. PRODUTO (Normal)
+    let mockBlock = {
           id: 901,
           contextType: 'product_scan',
           parentRef: 'ITEM ESCANEADO',
@@ -241,17 +235,7 @@ const App: React.FC = () => {
               lastCount: null
             }
           ]
-       };
-    } else {
-       mockBlock = {
-          id: 903,
-          contextType: 'location_scan',
-          parentRef: 'LOCALIZAÇÃO ESCANEADA',
-          location: 'Corredor Central',
-          status: 'progress',
-          items: []
-       };
-    }
+    };
     handleStartBlock(mockBlock);
   };
 
@@ -337,6 +321,10 @@ const App: React.FC = () => {
              currentUser={currentUser}
            />
         );
+      case 'address_manager':
+        return (
+           <AddressManagerScreen onBack={() => setCurrentScreen('dashboard')} />
+        );
       default:
         return (
           <DashboardScreen 
@@ -354,7 +342,8 @@ const App: React.FC = () => {
                   currentScreen !== 'mission_detail' && 
                   currentScreen !== 'settings' && 
                   currentScreen !== 'treatment' &&
-                  currentScreen !== 'analytics';
+                  currentScreen !== 'analytics' &&
+                  currentScreen !== 'address_manager'; // Hide nav on address manager
   
   if (currentScreen === 'login') {
     return <LoginScreen onLogin={handleLogin} />;
@@ -403,7 +392,7 @@ const App: React.FC = () => {
         onClose={() => setShowScanner(false)}
         onScanComplete={handleScanComplete}
         title="Escanear Código"
-        instruction="Aponte para o QR Code de um Produto, Prateleira ou Estante"
+        instruction="Aponte para QR Code de Produto (PRD) ou Local (LOC)"
       />
     </div>
   );
