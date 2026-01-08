@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Icon } from '../components/Icon';
 import { WMSAddress } from '../types';
 import { api } from '../services/api';
+import QRCode from 'qrcode';
 
 interface AddressManagerScreenProps {
   onBack: () => void;
@@ -176,17 +177,35 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
   };
 
   // --- PRINT LOGIC ---
-  const handlePrint = () => {
+  const handlePrint = async () => {
     const itemsToPrint = addresses.filter(a => selectedIds.has(a.id));
     if (itemsToPrint.length === 0) return;
 
     const printArea = document.getElementById('print-area');
     if (!printArea) return;
 
+    // Gerar QR Codes localmente para garantir exibição
+    const qrMap = new Map<number, string>();
+    try {
+        const promises = itemsToPrint.map(async (addr) => {
+            const url = await QRCode.toDataURL(addr.code, { 
+                margin: 0, 
+                width: 200,
+                errorCorrectionLevel: 'M'
+            });
+            return { id: addr.id, url };
+        });
+        const results = await Promise.all(promises);
+        results.forEach(r => qrMap.set(r.id, r.url));
+    } catch (err) {
+        console.error("Erro ao gerar QR Code", err);
+        alert("Erro ao gerar etiquetas. Verifique se 'qrcode' está instalado.");
+        return;
+    }
+
     // 1. Gerar HTML das etiquetas
     const labelsHtml = itemsToPrint.map(addr => {
         // Extração dos códigos usando Regex para pegar o que vem depois de G, E, P
-        // Ex: LOC-G01-E05-P02 -> G=01, E=05, P=02
         const code = addr.code.toUpperCase();
         
         const gMatch = code.match(/G(\d+)/);
@@ -196,11 +215,13 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
         const g = gMatch ? gMatch[1] : null;
         const e = eMatch ? eMatch[1] : null;
         const p = pMatch ? pMatch[1] : null;
+        
+        const qrSrc = qrMap.get(addr.id);
 
         return `
         <div class="label-item">
             <div class="qr-container">
-                <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${addr.code}" />
+                <img src="${qrSrc}" alt="QR Code" />
             </div>
             <div class="info-container">
                 ${g ? `<div class="info-row"><span class="key">G:</span><span class="val">${g}</span></div>` : ''}
@@ -255,16 +276,17 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
                 break-after: page;
                 display: flex;
                 align-items: center;
-                justify-content: flex-start; /* Alinhado a esquerda */
-                padding: 2mm;
+                justify-content: flex-start; 
+                padding: 1mm 2mm; /* Margem leve interna */
                 box-sizing: border-box;
                 overflow: hidden;
                 font-family: sans-serif;
+                border: 0px solid white; /* Evita bordas fantasmas */
             }
 
             .qr-container {
-                width: 26mm; /* Tamanho fixo para o QR */
-                height: 26mm;
+                width: 25mm; /* Levemente menor que o container total para dar respiro */
+                height: 25mm;
                 display: flex;
                 align-items: center;
                 justify-content: center;
@@ -275,6 +297,7 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
                 width: 100%;
                 height: 100%;
                 object-fit: contain;
+                display: block;
             }
 
             .info-container {
@@ -282,33 +305,35 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
                 display: flex;
                 flex-direction: column;
                 justify-content: center;
-                gap: 0mm; /* Espaçamento justo */
+                gap: 0;
             }
 
             .info-row {
                 display: flex;
                 align-items: baseline;
-                line-height: 1.1;
+                line-height: 1.0;
+                margin-bottom: 1px;
             }
 
             .key {
-                font-size: 14px;
-                font-weight: 700;
-                margin-right: 2px;
+                font-size: 16px;
+                font-weight: 800;
+                margin-right: 3px;
                 color: #000;
             }
 
             .val {
-                font-size: 26px; /* Números bem grandes */
+                font-size: 28px; /* Números bem visíveis */
                 font-weight: 900;
                 color: #000;
+                letter-spacing: -1px;
             }
         }
     `;
     document.head.appendChild(style);
 
-    // 3. Imprimir
-    setTimeout(() => window.print(), 100);
+    // 3. Imprimir com pequeno delay
+    setTimeout(() => window.print(), 250);
   };
 
   if (!isDesktop) {
