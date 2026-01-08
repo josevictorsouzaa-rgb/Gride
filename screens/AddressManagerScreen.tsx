@@ -179,12 +179,12 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
   // --- PRINT LOGIC ---
   const handlePrint = () => {
     const itemsToPrint = addresses.filter(a => selectedIds.has(a.id));
-    
     if (itemsToPrint.length === 0) return;
 
     const printArea = document.getElementById('print-area');
     if (!printArea) return;
 
+    // 1. Gerar HTML das etiquetas
     const labelsHtml = itemsToPrint.map(addr => `
         <div class="label-${printSize}">
             <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${addr.code}" style="width: 22mm; height: 22mm;" />
@@ -197,6 +197,34 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
     `).join('');
 
     printArea.innerHTML = labelsHtml;
+
+    // 2. Injetar Estilo de Página Dinâmico (Força o tamanho correto na impressora)
+    const styleId = 'dynamic-page-size';
+    const oldStyle = document.getElementById(styleId);
+    if (oldStyle) oldStyle.remove();
+
+    const style = document.createElement('style');
+    style.id = styleId;
+    
+    // Define o tamanho exato da página (60mm x 40mm ou 30mm)
+    const width = '60mm';
+    const height = printSize === '6040' ? '40mm' : '30mm';
+    
+    style.innerHTML = `
+        @media print {
+            @page {
+                size: ${width} ${height};
+                margin: 0;
+            }
+            body {
+                margin: 0;
+                padding: 0;
+            }
+        }
+    `;
+    document.head.appendChild(style);
+
+    // 3. Imprimir
     window.print();
   };
 
