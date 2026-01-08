@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Icon } from './Icon';
 import { Screen, User } from '../types';
@@ -24,7 +23,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentScreen, onNavigate, cur
     { id: 'list', label: 'Meta Diária', icon: 'checklist' },
     { id: 'history', label: 'Histórico', icon: 'history' },
     ...(isAdmin ? [{ id: 'treatment', label: 'Tratamento', icon: 'admin_panel_settings' }] : []),
-    ...(isAdmin ? [{ id: 'address_manager', label: 'Endereçamento', icon: 'qr_code_2' }] : []),
     { id: 'reserved', label: 'Meus Reservados', icon: 'assignment' },
   ];
 

@@ -1,35 +1,5 @@
 
-export type Screen = 'login' | 'dashboard' | 'list' | 'filtered_list' | 'history' | 'mission_detail' | 'subcategories' | 'treatment' | 'settings' | 'reserved' | 'analytics' | 'address_manager';
-
-export type LayoutObjectType = 'shelf' | 'door' | 'desk' | 'wall' | 'area';
-
-export interface LayoutObject {
-  id: string;
-  type: LayoutObjectType;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  label: string;
-  qrCode?: string;
-}
-
-export interface WarehouseLayout {
-  id: number;
-  name: string;
-  width: number;
-  height: number;
-  objects: LayoutObject[];
-}
-
-// --- WMS ADDRESS TYPES ---
-export interface WMSAddress {
-  id: number;
-  code: string; // LOC-G01-R02-E05
-  description: string; // Galpão 1, Rua 2, Estante 5
-  type: 'shelf' | 'pallet' | 'bin';
-  linkedSku?: string; // Produto vinculado (opcional)
-}
+export type Screen = 'login' | 'dashboard' | 'list' | 'filtered_list' | 'history' | 'mission_detail' | 'subcategories' | 'treatment' | 'settings' | 'reserved' | 'analytics';
 
 export interface HistoryEntry {
   date: string;

@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Icon } from '../components/Icon';
 import { Screen, Block } from '../types';
 import { ItemDetailModal } from '../components/ItemDetailModal';
+import { PrintLabelModal } from '../components/Modals';
 
 interface ListScreenProps {
   onNavigate: (screen: Screen) => void;
@@ -44,6 +45,9 @@ export const ListScreen: React.FC<ListScreenProps> = ({
   const [expandedBlocks, setExpandedBlocks] = useState<number[]>([]);
   const [selectedItem, setSelectedItem] = useState<any | null>(null); // Detail Modal State
   
+  // Print Modal State
+  const [printData, setPrintData] = useState<{type: 'ESTANTE' | 'PRATELEIRA', number: string, fullCode: string} | null>(null);
+
   const [searchText, setSearchText] = useState('');
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
 
@@ -57,6 +61,24 @@ export const ListScreen: React.FC<ListScreenProps> = ({
   const handleReserve = (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
     onReserveBlock(id);
+  };
+
+  const handlePrintBlock = (block: Block, e: React.MouseEvent) => {
+      e.stopPropagation();
+      // Heuristic to extract number from parentRef (e.g. "Estante 01" -> "01")
+      const numberMatch = block.parentRef.match(/\d+/);
+      const number = numberMatch ? numberMatch[0].padStart(2, '0') : '00';
+      
+      // Construct a fake location code if explicit one is missing
+      // Logic: LOC-{LOCATION_FIRST_LETTER}-{NUMBER}
+      const locPrefix = block.location.substring(0,2).toUpperCase();
+      const fullCode = `LOC-${locPrefix}-E${number}`;
+
+      setPrintData({
+          type: 'ESTANTE',
+          number: number,
+          fullCode: fullCode
+      });
   };
 
   const getStatusBadge = (status: string, date: string) => {
@@ -262,7 +284,14 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                                 <h3 className="font-bold text-gray-900 dark:text-white text-base leading-tight">
                                     {block.parentRef}
                                 </h3>
-                                {/* Mobile Status Badge if limited space, or keep it on right */}
+                                {/* PRINT BUTTON */}
+                                <button 
+                                  onClick={(e) => handlePrintBlock(block, e)}
+                                  className="p-1.5 bg-gray-100 dark:bg-white/10 rounded-full text-gray-500 hover:text-primary transition-colors"
+                                  title="Imprimir Etiqueta"
+                                >
+                                  <Icon name="print" size={16} />
+                                </button>
                              </div>
                              <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
                                 <Icon name="place" size={12} />
@@ -355,6 +384,12 @@ export const ListScreen: React.FC<ListScreenProps> = ({
         isOpen={!!selectedItem}
         onClose={() => setSelectedItem(null)}
         item={selectedItem}
+      />
+
+      <PrintLabelModal 
+        isOpen={!!printData}
+        onClose={() => setPrintData(null)}
+        data={printData}
       />
     </div>
   );

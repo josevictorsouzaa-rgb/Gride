@@ -42,6 +42,14 @@ interface ScannerModalProps {
   instruction?: string;
 }
 
+interface PrintLabelModalProps extends ModalProps {
+  data: {
+    type: 'ESTANTE' | 'PRATELEIRA';
+    number: string;
+    fullCode: string;
+  } | null;
+}
+
 interface HistoryFilterModalProps extends ModalProps {
   availableUsers: string[];
   currentFilters: {
@@ -108,7 +116,7 @@ export const HistoryFilterModal: React.FC<HistoryFilterModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center">
+    <div className="fixed inset-0 z-50 flex items-end justify-center no-print">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
       
       <div className="relative z-10 w-full bg-white dark:bg-surface-dark rounded-t-[32px] shadow-2xl flex flex-col max-h-[90vh] animate-slide-up">
@@ -328,7 +336,7 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-black">
+    <div className="fixed inset-0 z-[60] flex flex-col bg-black no-print">
       {/* Top Bar */}
       <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start z-20 pt-safe bg-gradient-to-b from-black/80 to-transparent">
         <button onClick={handleClose} className="p-2 rounded-full bg-black/40 text-white backdrop-blur-md border border-white/10">
@@ -683,7 +691,7 @@ export const EntryModal: React.FC<EntryModalProps> = ({
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-end justify-center">
+      <div className="fixed inset-0 z-50 flex items-end justify-center no-print">
         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={handleSafeClose} />
         
         <div className="relative z-10 w-full max-w-md bg-background-light dark:bg-background-dark rounded-t-3xl shadow-2xl flex flex-col max-h-[95vh] h-[85vh] animate-slide-up transition-all duration-300">
@@ -792,7 +800,7 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, on
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 no-print">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
       <div className="relative z-10 w-full max-w-sm bg-white dark:bg-surface-dark rounded-2xl shadow-2xl p-6 animate-scale-up">
         <div className="flex flex-col items-center text-center gap-4">
@@ -830,7 +838,7 @@ export const DamageModal: React.FC<DamageModalProps> = ({ isOpen, onClose, onAtt
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center">
+    <div className="fixed inset-0 z-[60] flex items-end justify-center no-print">
        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
        
        <div className="relative z-10 w-full max-w-md bg-white dark:bg-background-dark rounded-t-3xl shadow-2xl flex flex-col animate-slide-up p-6 pb-safe">
@@ -897,4 +905,91 @@ export const DamageModal: React.FC<DamageModalProps> = ({ isOpen, onClose, onAtt
        </div>
     </div>
   );
+};
+
+// --- Print Label Modal ---
+export const PrintLabelModal: React.FC<PrintLabelModalProps> = ({ isOpen, onClose, data }) => {
+    const [labelType, setLabelType] = useState<'ESTANTE' | 'PRATELEIRA'>(data?.type || 'ESTANTE');
+
+    useEffect(() => {
+        if(data) setLabelType(data.type);
+    }, [data]);
+
+    if (!isOpen || !data) return null;
+
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${data.fullCode}`;
+
+    return (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4">
+            <div className="bg-white rounded-lg shadow-xl overflow-hidden w-full max-w-2xl flex flex-col">
+                {/* Header (No Print) */}
+                <div className="p-4 bg-gray-100 flex justify-between items-center no-print border-b">
+                    <h3 className="font-bold text-lg text-gray-800">Visualizar Impressão</h3>
+                    <button onClick={onClose} className="text-gray-500 hover:text-gray-800">
+                        <Icon name="close" size={24} />
+                    </button>
+                </div>
+
+                {/* Controls (No Print) */}
+                <div className="p-4 flex gap-4 justify-center bg-gray-50 no-print border-b">
+                    <button 
+                        onClick={() => setLabelType('ESTANTE')}
+                        className={`px-4 py-2 rounded font-bold transition-colors ${labelType === 'ESTANTE' ? 'bg-black text-white' : 'bg-gray-200 text-gray-700'}`}
+                    >
+                        ESTANTE
+                    </button>
+                    <button 
+                        onClick={() => setLabelType('PRATELEIRA')}
+                        className={`px-4 py-2 rounded font-bold transition-colors ${labelType === 'PRATELEIRA' ? 'bg-black text-white' : 'bg-gray-200 text-gray-700'}`}
+                    >
+                        PRATELEIRA
+                    </button>
+                </div>
+
+                {/* Print Area Container */}
+                <div className="p-8 bg-gray-200 flex justify-center overflow-auto">
+                    
+                    {/* THE LABEL (Visible in Print) */}
+                    <div id="print-area" className="bg-white w-[500px] h-[300px] border-4 border-black p-4 flex gap-4 shrink-0 box-border">
+                        {/* Left: QR Code */}
+                        <div className="w-[180px] border-r-4 border-black pr-4 flex items-center justify-center shrink-0">
+                            <img src={qrUrl} alt="QR Code" className="w-full h-auto object-contain" style={{imageRendering: 'pixelated'}} />
+                        </div>
+
+                        {/* Right: Info */}
+                        <div className="flex-1 flex flex-col justify-between pl-2 py-2">
+                             {/* Black Bar Header */}
+                             <div className="w-full bg-black text-white p-2 flex items-center justify-between">
+                                 <span className="text-2xl font-bold uppercase tracking-wide">
+                                     {labelType}
+                                 </span>
+                                 <span className="text-5xl font-black tracking-tighter leading-none">
+                                     {data.number}
+                                 </span>
+                             </div>
+
+                             {/* Full Coordinate Code (At the bottom, BIG) */}
+                             <div className="text-center mt-auto pt-4">
+                                 <p className="text-4xl font-black text-black tracking-widest leading-none">
+                                     {data.fullCode}
+                                 </p>
+                             </div>
+                        </div>
+                    </div>
+
+                </div>
+
+                {/* Footer Actions (No Print) */}
+                <div className="p-4 border-t bg-gray-50 flex justify-end gap-3 no-print">
+                    <button onClick={onClose} className="px-6 py-3 rounded-lg font-bold text-gray-600 hover:bg-gray-200">
+                        Cancelar
+                    </button>
+                    <button onClick={() => window.print()} className="px-6 py-3 rounded-lg font-bold bg-primary text-white hover:bg-primary-dark shadow-lg flex items-center gap-2">
+                        <Icon name="print" />
+                        IMPRIMIR
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
 };

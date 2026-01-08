@@ -59,6 +59,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
     // Usa min-h-[100dvh] para lidar melhor com o teclado virtual em navegadores mobile
     <div className="flex flex-col min-h-[100dvh] w-full bg-background-light dark:bg-background-dark overflow-y-auto animate-fade-in">
       
+      {/* Header Minimalista (Apenas Logo, sem botão voltar) */}
+      <div className="flex items-center justify-center pt-8 pb-4">
+           <div className="h-8 px-2 bg-[#182335] rounded flex items-center shadow-sm">
+              <img src="/logo.png" alt="Lubel" className="h-6 w-auto object-contain" />
+           </div>
+      </div>
+
       <main className="flex-1 flex flex-col justify-center px-6 pb-8 max-w-md mx-auto w-full">
         {/* Headline */}
         <div className="flex flex-col items-center justify-center pb-8 animate-slide-up" style={{ animationDelay: '0.1s' }}>

@@ -1,4 +1,3 @@
-
 import express from 'express';
 import Firebird from 'node-firebird';
 import cors from 'cors';
@@ -12,7 +11,7 @@ const DB_PATH = 'C:\\Users\\DELL G15\\Desktop\\BD\\DATABASE\\DATABASE.FDB';
 
 // Middleware
 app.use(cors());
-app.use(bodyParser.json({ limit: '10mb' })); // Aumentado limite para envio em massa
+app.use(bodyParser.json());
 
 // Configuração do Firebird
 const options = {
@@ -25,76 +24,6 @@ const options = {
     role: null,
     pageSize: 4096
 };
-
-// --- INIT DB: Create Tables ---
-const initDb = () => {
-    Firebird.attach(options, (err, db) => {
-        if (err) return;
-        
-        // Tabela de Endereços WMS
-        const createTableEnderecos = `
-            CREATE TABLE GRIDE_ENDERECOS (
-                ID INTEGER NOT NULL PRIMARY KEY,
-                CODIGO VARCHAR(50) NOT NULL,
-                DESCRICAO VARCHAR(100),
-                TIPO VARCHAR(20),
-                PRO_COD VARCHAR(20)
-            )
-        `;
-        
-        // Tabela de Galpões
-        const createTableGalpoes = `
-            CREATE TABLE GRIDE_GALPOES (
-                ID INTEGER NOT NULL PRIMARY KEY,
-                SIGLA VARCHAR(10) NOT NULL,
-                DESCRICAO VARCHAR(50)
-            )
-        `;
-
-        // Generators
-        const createGenEnd = `CREATE GENERATOR GEN_GRIDE_ENDERECOS_ID`;
-        const createGenGal = `CREATE GENERATOR GEN_GRIDE_GALPOES_ID`;
-
-        // Triggers
-        const createTriggerEnd = `
-            CREATE TRIGGER TR_GRIDE_ENDERECOS FOR GRIDE_ENDERECOS
-            ACTIVE BEFORE INSERT POSITION 0
-            AS
-            BEGIN
-              IF (NEW.ID IS NULL) THEN
-                NEW.ID = GEN_ID(GEN_GRIDE_ENDERECOS_ID, 1);
-            END
-        `;
-
-        const createTriggerGal = `
-            CREATE TRIGGER TR_GRIDE_GALPOES FOR GRIDE_GALPOES
-            ACTIVE BEFORE INSERT POSITION 0
-            AS
-            BEGIN
-              IF (NEW.ID IS NULL) THEN
-                NEW.ID = GEN_ID(GEN_GRIDE_GALPOES_ID, 1);
-            END
-        `;
-
-        // Executa criações (ignora erros se já existir - "brute force init")
-        const runQuery = (sql) => {
-            db.query(sql, [], () => {}); 
-        };
-
-        runQuery(createTableEnderecos);
-        runQuery(createTableGalpoes);
-        runQuery(createGenEnd);
-        runQuery(createGenGal);
-        runQuery(createTriggerEnd);
-        runQuery(createTriggerGal);
-        
-        setTimeout(() => {
-            console.log('Database Schema Checked');
-            db.detach();
-        }, 1000);
-    });
-};
-setTimeout(initDb, 2000);
 
 // Helper para converter Buffer/Null para String com segurança
 const safeString = (value) => {
@@ -109,13 +38,15 @@ const safeString = (value) => {
 // --- ROTA DE PRÉ-VISUALIZAÇÃO DE NOME (SEM SENHA) ---
 app.get('/user-name/:id', (req, res) => {
     const { id } = req.params;
-    
+    console.log(`[INFO] Buscando nome para usuário ID: ${id}`);
+
     // Mock Users
     if (id === '9999') return res.json({ name: 'Gestor de Teste' });
     if (id === '8888') return res.json({ name: 'Colaborador Teste' });
 
     Firebird.attach(options, (err, db) => {
         if (err) {
+            console.error('[ERRO] Falha ao conectar no Firebird:', err.message);
             return res.status(500).json({ error: 'Erro de conexão com banco de dados' });
         }
 
@@ -125,13 +56,16 @@ app.get('/user-name/:id', (req, res) => {
             db.detach();
             
             if (err) {
+                console.error('[ERRO] Falha na query SQL:', err.message);
                 return res.status(500).json({ error: err.message });
             }
             
             if (result.length > 0) {
                 const nome = safeString(result[0].USU_NOME);
+                console.log(`[SUCESSO] Usuário encontrado: ${nome}`);
                 res.json({ name: nome });
             } else {
+                console.log(`[AVISO] Usuário ID ${id} não encontrado ou inativo.`);
                 res.status(404).json({ error: 'Usuário não encontrado' });
             }
         });
@@ -375,120 +309,6 @@ app.get('/history', (req, res) => {
             }));
 
             res.json(safeResult);
-        });
-    });
-});
-
-// --- WMS / ENDEREÇAMENTO ---
-
-// Listar Endereços
-app.get('/addresses', (req, res) => {
-    Firebird.attach(options, (err, db) => {
-        if (err) return res.status(500).json([]);
-        
-        db.query('SELECT FIRST 2000 ID, CODIGO, DESCRICAO, TIPO, PRO_COD FROM GRIDE_ENDERECOS ORDER BY CODIGO', [], (err, result) => {
-            db.detach();
-            if (err) return res.json([]);
-            
-            const mapped = result.map(r => ({
-                id: r.ID,
-                code: safeString(r.CODIGO),
-                description: safeString(r.DESCRICAO),
-                type: safeString(r.TIPO) || 'shelf',
-                linkedSku: safeString(r.PRO_COD)
-            }));
-            res.json(mapped);
-        });
-    });
-});
-
-// Salvar Endereços (Batch)
-app.post('/save-addresses', (req, res) => {
-    const addresses = req.body; // Array of objects
-    if (!Array.isArray(addresses)) return res.status(400).json({error: 'Expected array'});
-
-    Firebird.attach(options, (err, db) => {
-        if (err) return res.status(500).json({error: 'DB Error'});
-
-        let processed = 0;
-        let skipped = 0;
-        
-        const processNext = (idx) => {
-            if (idx >= addresses.length) {
-                db.detach();
-                return res.json({ success: true, count: processed, skipped: skipped });
-            }
-            
-            const item = addresses[idx];
-            
-            const sqlCheck = 'SELECT ID FROM GRIDE_ENDERECOS WHERE CODIGO = ?';
-            
-            db.query(sqlCheck, [item.code], (err, exists) => {
-                if (err) {
-                    console.error('Erro ao checar existência:', err);
-                    processNext(idx + 1); 
-                    return;
-                }
-
-                if (exists && exists.length === 0) {
-                     const sqlInsert = 'INSERT INTO GRIDE_ENDERECOS (CODIGO, DESCRICAO, TIPO) VALUES (?, ?, ?)';
-                     db.query(sqlInsert, [item.code, item.description, item.type], (err) => {
-                         if (!err) processed++;
-                         else console.error('Erro ao inserir:', err);
-                         processNext(idx + 1);
-                     });
-                } else {
-                    skipped++;
-                    processNext(idx + 1);
-                }
-            });
-        };
-        
-        processNext(0);
-    });
-});
-
-// --- GALPÕES (WMS WAREHOUSES) ---
-
-app.get('/warehouses', (req, res) => {
-    Firebird.attach(options, (err, db) => {
-        if (err) return res.status(500).json([]);
-        db.query('SELECT ID, SIGLA, DESCRICAO FROM GRIDE_GALPOES ORDER BY SIGLA', [], (err, result) => {
-            db.detach();
-            if (err) return res.json([]);
-            res.json(result.map(r => ({ id: r.ID, sigla: safeString(r.SIGLA), descricao: safeString(r.DESCRICAO) })));
-        });
-    });
-});
-
-app.post('/save-warehouse', (req, res) => {
-    const { sigla, descricao } = req.body;
-    Firebird.attach(options, (err, db) => {
-        if (err) return res.status(500).json({error: 'DB Error'});
-        
-        db.query('SELECT ID FROM GRIDE_GALPOES WHERE SIGLA = ?', [sigla], (err, result) => {
-            if (result && result.length > 0) {
-                db.detach();
-                return res.json({ success: false, message: 'Sigla já existe' });
-            }
-            
-            db.query('INSERT INTO GRIDE_GALPOES (SIGLA, DESCRICAO) VALUES (?, ?)', [sigla, descricao], (err) => {
-                db.detach();
-                if (err) return res.status(500).json({error: err.message});
-                res.json({ success: true });
-            });
-        });
-    });
-});
-
-app.post('/delete-warehouse', (req, res) => {
-    const { id } = req.body;
-    Firebird.attach(options, (err, db) => {
-        if (err) return res.status(500).json({error: 'DB Error'});
-        db.query('DELETE FROM GRIDE_GALPOES WHERE ID = ?', [id], (err) => {
-            db.detach();
-            if (err) return res.status(500).json({error: err.message});
-            res.json({ success: true });
         });
     });
 });
