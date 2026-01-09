@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Icon } from '../components/Icon';
-import { EntryModal, DamageModal, ConfirmationModal, ScannerModal } from '../components/Modals';
+import { EntryModal, DamageModal, ConfirmationModal, ScannerModal, LocationParts } from '../components/Modals';
 import { ItemDetailModal } from '../components/ItemDetailModal';
 import { User } from '../types';
 import { api } from '../services/api';
@@ -72,13 +72,15 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showLocationScanner, setShowLocationScanner] = useState(false);
   const [locationVerified, setLocationVerified] = useState(false);
+  const [scannedLocationParts, setScannedLocationParts] = useState<LocationParts | null>(null);
   
   const allItemsCounted = items.length > 0 && items.every(item => item.status !== 'pending');
   const progressPercentage = items.length > 0 ? Math.round((items.filter(i => i.status !== 'pending').length / items.length) * 100) : 0;
 
   const handleItemClick = (item: BlockItem) => {
     setSelectedItem(item);
-    setLocationVerified(false); // Reset validation on new open
+    setLocationVerified(false); 
+    setScannedLocationParts(null); // Reset parts on new open
     setShowEntry(true);
   };
 
@@ -131,20 +133,26 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
   };
 
   const handleRequestScanLocation = () => {
-      // Oculta a EntryModal temporariamente (ou mantém por baixo se a ScannerModal for sobreposta com z-index maior)
-      // Aqui vamos abrir o ScannerModal que estará "acima" do EntryModal
+      // Abre scanner em cima do EntryModal (z-index maior)
       setShowLocationScanner(true);
   };
 
   const handleLocationScanComplete = (code: string) => {
       setShowLocationScanner(false);
-      // Validação simples: Deve começar com LOC-
-      if (code && code.startsWith('LOC-')) {
-          // Opcional: Verificar se code == selectedItem.loc
+      // Lógica de Parsing: LOC-G01-E05-P02 ou G01-E05-P02
+      // Remove LOC- se existir
+      const raw = code.startsWith('LOC-') ? code.substring(4) : code;
+      const parts = raw.split('-');
+      
+      if (parts.length >= 3) {
           setLocationVerified(true);
-          // Pequeno feedback visual ou sonoro poderia ser adicionado aqui
+          setScannedLocationParts({
+              g: parts[0].replace(/\D/g, ''),
+              e: parts[1].replace(/\D/g, ''),
+              p: parts[2].replace(/\D/g, '')
+          });
       } else {
-          alert("Código inválido. Escaneie um endereço de localização (LOC-...).");
+          alert("Código inválido. Formato esperado: LOC-Gxx-Exx-Pxx");
       }
   };
 
@@ -369,7 +377,8 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
         isOpen={showEntry} 
         itemName={selectedItem?.name}
         itemSku={selectedItem?.sku}
-        itemLocation={selectedItem?.loc} // Pass location
+        itemLocation={selectedItem?.loc} // Pass location string for fallback
+        locationParts={scannedLocationParts} // Pass scanned parts
         initialQuantity={selectedItem?.countedQty || selectedItem?.balance || 1} 
         lastCountInfo={selectedItem?.lastCount ? {
           user: selectedItem.lastCount.user,

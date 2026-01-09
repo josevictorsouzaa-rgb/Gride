@@ -90,6 +90,7 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
       if (res.success) {
           setNewWarehouseSigla(''); setNewWarehouseDesc('');
           setWarehouses(await api.getWarehouses());
+          setIsWarehouseModalOpen(false);
       } else { alert('Erro: ' + (res.message || 'Falha ao salvar')); }
   };
 
@@ -178,6 +179,33 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
   const handleSelectAll = () => setSelectedIds(new Set(addresses.map(a => a.id)));
   const handleDeselectAll = () => setSelectedIds(new Set());
 
+  // Cascading Selection Logic
+  const handleSelectWarehouse = (g: string, e: React.ChangeEvent<HTMLInputElement>) => {
+      e.stopPropagation();
+      const isChecked = e.target.checked;
+      const newSet = new Set(selectedIds);
+      
+      addresses.forEach(addr => {
+          if (addr.code.includes(`LOC-${g}-`)) {
+              if (isChecked) newSet.add(addr.id);
+              else newSet.delete(addr.id);
+          }
+      });
+      setSelectedIds(newSet);
+  };
+
+  const handleSelectShelf = (shelfKey: string, items: WMSAddress[], e: React.ChangeEvent<HTMLInputElement>) => {
+      e.stopPropagation();
+      const isChecked = e.target.checked;
+      const newSet = new Set(selectedIds);
+      
+      items.forEach(addr => {
+          if (isChecked) newSet.add(addr.id);
+          else newSet.delete(addr.id);
+      });
+      setSelectedIds(newSet);
+  };
+
   // --- PRINT LOGIC ---
   const executePrint = async (items: { code: string, g: string, e: string, p?: string }[]) => {
     const printArea = document.getElementById('print-area');
@@ -204,7 +232,6 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
     }).join('');
 
     printArea.innerHTML = labelsHtml;
-    // ... (CSS injection logic same as before, simplified for brevity in this change block) ...
     const styleId = 'dynamic-page-size';
     let style = document.getElementById(styleId) as HTMLStyleElement;
     if (!style) { style = document.createElement('style'); style.id = styleId; document.head.appendChild(style); }
@@ -229,11 +256,25 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
       executePrint(printItems);
   };
 
+  // Special function to print a Shelf Label (created on fly if needed)
+  const handlePrintShelfLabel = (galpao: string, estante: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      // Estante format "E01" -> code LOC-G01-E01
+      const shelfCode = `LOC-${galpao}-${estante}`;
+      // Check if addresses selected for this shelf, if so print them too? 
+      // User requirement: "imprimir apena a etique da estante" AND "imprimir junto a estante" if flagged.
+      // Current button logic: Print specifically the SHELF label only when clicked.
+      // If user flagged items, they use the global print.
+      // If this button is clicked, it prints THIS shelf label.
+      
+      executePrint([{ code: shelfCode, g: galpao, e: estante }]);
+  };
+
   if (!isDesktop) return <div className="flex flex-col items-center justify-center min-h-screen p-8 text-center text-gray-500"><Icon name="desktop_windows" size={64} className="mb-4 opacity-50" /><h2>Acesso Restrito ao Desktop</h2><button onClick={onBack} className="mt-4 px-4 py-2 bg-primary text-white rounded">Voltar</button></div>;
 
   return (
     <div className="flex flex-col h-screen bg-background-light dark:bg-background-dark overflow-hidden">
-        {/* Header (Omitted for brevity, logic maintained) */}
+        {/* Header */}
         <header className="flex items-center justify-between px-6 py-4 bg-white dark:bg-surface-dark border-b border-gray-200 dark:border-white/5 shadow-sm z-10">
              <div className="flex items-center gap-4">
                  <div>
@@ -266,7 +307,10 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
             <div className="flex-1 flex flex-col p-6 overflow-hidden">
                 <div className="flex items-center justify-between mb-4">
                     <h2 className="text-lg font-bold text-gray-800 dark:text-white">Estrutura do Armazém</h2>
-                    <button onClick={() => setIsGeneratorModalOpen(true)} className="flex items-center gap-2 px-6 py-3 bg-primary text-white rounded-xl font-bold shadow-lg shadow-primary/20 hover:bg-primary-dark transition-all active:scale-95"><Icon name="add_location_alt" /> Novo Endereçamento</button>
+                    <div className="flex gap-2">
+                        <button onClick={() => setIsWarehouseModalOpen(true)} className="flex items-center gap-2 px-4 py-3 bg-gray-200 dark:bg-white/10 text-gray-700 dark:text-white rounded-xl font-bold hover:bg-gray-300 dark:hover:bg-white/20 transition-all"><Icon name="domain_add" /> Galpão</button>
+                        <button onClick={() => setIsGeneratorModalOpen(true)} className="flex items-center gap-2 px-6 py-3 bg-primary text-white rounded-xl font-bold shadow-lg shadow-primary/20 hover:bg-primary-dark transition-all active:scale-95"><Icon name="add_location_alt" /> Novo Endereçamento</button>
+                    </div>
                 </div>
 
                 <div className="flex-1 overflow-y-auto pr-2 space-y-2 bg-white dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-white/5 p-4 shadow-inner">
@@ -276,6 +320,15 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
                             <div key={galpao} className="select-none">
                                 <div className={`flex items-center p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-white/10 border border-transparent ${isGExpanded ? 'bg-gray-50 dark:bg-white/5' : ''}`}>
                                     <button onClick={() => toggleWarehouse(galpao)} className="p-1 mr-2 text-gray-400 hover:text-primary"><Icon name={isGExpanded ? "expand_more" : "chevron_right"} size={24} /></button>
+                                    
+                                    {/* Warehouse Checkbox */}
+                                    <input 
+                                        type="checkbox" 
+                                        onChange={(e) => handleSelectWarehouse(galpao, e)}
+                                        className="w-5 h-5 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer mr-3"
+                                        onClick={(e) => e.stopPropagation()}
+                                    />
+
                                     <div className="flex items-center gap-2 cursor-pointer flex-1" onClick={() => toggleWarehouse(galpao)}>
                                         <Icon name="domain" className="text-gray-500" />
                                         <span className="font-bold text-lg text-gray-800 dark:text-white">Galpão {galpao}</span>
@@ -291,11 +344,29 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
                                                 <div key={estante}>
                                                     <div className="flex items-center p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10">
                                                         <button onClick={() => toggleShelf(shelfKey)} className="p-1 mr-2 text-gray-400 hover:text-primary"><Icon name={isSExpanded ? "expand_more" : "chevron_right"} size={20} /></button>
+                                                        
+                                                        {/* Shelf Checkbox */}
+                                                        <input 
+                                                            type="checkbox" 
+                                                            onChange={(e) => handleSelectShelf(shelfKey, items, e)}
+                                                            className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer mr-3"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                        />
+
                                                         <div className="flex items-center gap-2 cursor-pointer flex-1" onClick={() => toggleShelf(shelfKey)}>
                                                             <Icon name="shelves" className="text-gray-400" size={18} />
                                                             <span className="font-bold text-base text-gray-700 dark:text-gray-200">Estante {estante.replace('E','')}</span>
                                                             <span className="text-xs text-gray-400 ml-1">({items.length} níveis)</span>
                                                         </div>
+
+                                                        {/* Shelf Print Button */}
+                                                        <button 
+                                                            onClick={(e) => handlePrintShelfLabel(galpao, estante, e)} 
+                                                            className="p-1.5 text-gray-400 hover:text-gray-900 dark:hover:text-white bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded shadow-sm hover:shadow transition-all"
+                                                            title="Imprimir Etiqueta da Estante"
+                                                        >
+                                                            <Icon name="print" size={16} />
+                                                        </button>
                                                     </div>
                                                     {isSExpanded && (
                                                         <div className="ml-9 border-l border-dashed border-gray-200 dark:border-white/10 pl-2 mt-1 space-y-1">
@@ -332,8 +403,89 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
             </div>
         </div>
 
-        {/* MODAIS: GENERATOR, WAREHOUSE, EDIT ADDRESS (SIMPLIFIED RENDERING) */}
-        {/* ... Generator & Warehouse modals same as before ... */}
+        {/* MODAL: GENERATOR */}
+        {isGeneratorModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                <div className="bg-white dark:bg-surface-dark rounded-xl shadow-2xl p-6 w-full max-w-lg">
+                    <h3 className="text-xl font-bold mb-4 flex items-center gap-2"><Icon name="add_location_alt" /> Gerar Endereços</h3>
+                    
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Galpão</label>
+                            <select value={genGalpaoSigla} onChange={e => setGenGalpaoSigla(e.target.value)} className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-black/20 text-gray-900 dark:text-white">
+                                <option value="">Selecione...</option>
+                                {warehouses.map(w => <option key={w.id} value={w.sigla}>{w.sigla} - {w.descricao}</option>)}
+                            </select>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-bold mb-1">Estante Inicial</label>
+                                <input type="number" value={genEstanteStart} onChange={e => setGenEstanteStart(parseInt(e.target.value))} className="w-full p-2 border rounded dark:bg-black/20" />
+                            </div>
+                            <div className={isSingleShelf ? 'opacity-50 pointer-events-none' : ''}>
+                                <label className="block text-sm font-bold mb-1">Estante Final</label>
+                                <input type="number" value={genEstanteEnd} onChange={e => setGenEstanteEnd(parseInt(e.target.value))} className="w-full p-2 border rounded dark:bg-black/20" />
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <input type="checkbox" checked={isSingleShelf} onChange={e => setIsSingleShelf(e.target.checked)} className="rounded" />
+                            <span className="text-sm">Apenas uma estante</span>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-bold mb-1">Nível Inicial</label>
+                                <input type="number" value={genNivelStart} onChange={e => setGenNivelStart(parseInt(e.target.value))} className="w-full p-2 border rounded dark:bg-black/20" />
+                            </div>
+                            <div className={isSingleLevel ? 'opacity-50 pointer-events-none' : ''}>
+                                <label className="block text-sm font-bold mb-1">Nível Final</label>
+                                <input type="number" value={genNivelEnd} onChange={e => setGenNivelEnd(parseInt(e.target.value))} className="w-full p-2 border rounded dark:bg-black/20" />
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <input type="checkbox" checked={isSingleLevel} onChange={e => setIsSingleLevel(e.target.checked)} className="rounded" />
+                            <span className="text-sm">Apenas um nível</span>
+                        </div>
+
+                        <div className="pt-4 flex gap-3">
+                            <button onClick={() => setIsGeneratorModalOpen(false)} className="flex-1 py-3 bg-gray-200 dark:bg-white/10 rounded-xl font-bold">Cancelar</button>
+                            <button onClick={handleGenerate} className="flex-1 py-3 bg-primary text-white rounded-xl font-bold shadow-lg">Gerar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* MODAL: WAREHOUSE */}
+        {isWarehouseModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                <div className="bg-white dark:bg-surface-dark rounded-xl shadow-2xl p-6 w-full max-w-sm">
+                    <h3 className="text-lg font-bold mb-4">Novo Galpão</h3>
+                    <div className="space-y-3">
+                        <input value={newWarehouseSigla} onChange={e => setNewWarehouseSigla(e.target.value)} className="w-full p-2 border rounded uppercase" placeholder="Sigla (Ex: G1)" maxLength={3} />
+                        <input value={newWarehouseDesc} onChange={e => setNewWarehouseDesc(e.target.value)} className="w-full p-2 border rounded" placeholder="Descrição (Ex: Principal)" />
+                        
+                        <div className="mt-4 border-t pt-4">
+                            <p className="text-xs font-bold text-gray-500 mb-2">Galpões Existentes:</p>
+                            <ul className="max-h-32 overflow-y-auto text-sm space-y-1">
+                                {warehouses.map(w => (
+                                    <li key={w.id} className="flex justify-between items-center bg-gray-50 dark:bg-white/5 p-1 rounded">
+                                        <span>{w.sigla} - {w.descricao}</span>
+                                        <button onClick={() => handleDeleteWarehouse(w.id)} className="text-red-500"><Icon name="delete" size={16} /></button>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+
+                        <div className="flex gap-2 pt-2">
+                            <button onClick={() => setIsWarehouseModalOpen(false)} className="flex-1 py-2 bg-gray-200 rounded">Fechar</button>
+                            <button onClick={handleSaveWarehouse} className="flex-1 py-2 bg-primary text-white rounded">Salvar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
         
         {editingAddress && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
