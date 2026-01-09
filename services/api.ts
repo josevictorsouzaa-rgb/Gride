@@ -100,7 +100,7 @@ export const api = {
   },
 
   // --- ATUALIZADO: BUSCA DE BLOCOS COM FILTROS ESPECÍFICOS ---
-  getBlocks: async (page = 1, limit = 100, search = '', gr_cod?: number, sg_cod?: number, daily_meta?: boolean): Promise<Block[]> => {
+  getBlocks: async (page = 1, limit = 100, search = '', gr_cod?: number, sg_cod?: number, daily_meta?: boolean, location?: string): Promise<Block[]> => {
     try {
       const params = new URLSearchParams({ 
           page: page.toString(), 
@@ -110,6 +110,7 @@ export const api = {
       if (gr_cod) params.append('gr_cod', gr_cod.toString());
       if (sg_cod) params.append('sg_cod', sg_cod.toString());
       if (daily_meta) params.append('daily_meta', 'true');
+      if (location) params.append('location', location); // Novo parametro
 
       const response = await fetch(`${API_BASE_URL}/blocks?${params}`);
       if (!response.ok) throw new Error('Erro blocks');

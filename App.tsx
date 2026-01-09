@@ -92,11 +92,11 @@ const App: React.FC = () => {
                 setBlocks(metaBlocks);
             } else if (isFilteredList) {
                 // EXPLORAR: Carrega com PAGINAÇÃO (30 itens) e filtros específicos de GR e SG
-                if (selectedGrCod) {
+                // NOTA: Se segmentFilter for 'Resultado da Busca', não recarregamos aqui para não sobrescrever a busca do scanner,
+                // a menos que estejamos paginando
+                if (segmentFilter !== 'Resultado da Busca' && selectedGrCod) {
                     const filteredBlocks = await api.getBlocks(browsePage, BROWSE_LIMIT, '', selectedGrCod, selectedSgCod);
                     setBlocks(filteredBlocks);
-                } else {
-                    setBlocks([]); 
                 }
             } else if (currentScreen === 'reserved' && currentUser) {
                 // RESERVADOS: Usa rota exclusiva para garantir que itens apareçam mesmo fora da paginação (SEM PAGINAÇÃO)
@@ -156,9 +156,66 @@ const App: React.FC = () => {
     setCurrentScreen('mission_detail');
   };
 
+  // --- SMART SCANNER LOGIC ---
   const handleScanComplete = async (code: string) => {
     setShowScanner(false);
-    alert(`Item ${code} scaneado. (Funcionalidade de busca direta a implementar)`);
+    
+    // Tratamento básico da string (remover espaços)
+    const cleanCode = code.trim().toUpperCase();
+    
+    // Verifica se é código de localização (LOC-...)
+    if (cleanCode.startsWith('LOC-')) {
+        setIsLoading(true);
+        try {
+            // Remove o prefixo para a busca (depende de como está no banco, mas assumindo que busca pelo código)
+            // Se o usuário quer buscar TUDO que começa com o local (Tipo 1: G+E) ou EXATO (Tipo 2: G+E+P)
+            // A API vai receber o código completo ou parcial e filtrar "STARTING WITH"
+            const rawLocation = cleanCode.replace('LOC-', ''); 
+            
+            // Chama a API filtrando por localização
+            // Passamos limit=100 para trazer bastante coisa se for um galpão inteiro
+            const results = await api.getBlocks(1, 100, '', undefined, undefined, false, rawLocation);
+            
+            if (results.length > 0) {
+                setBlocks(results);
+                setSegmentFilter('Resultado da Busca');
+                setBrowsePage(1); // Reset paginação
+                // Limpa filtros de categoria para evitar conflito na logica do useEffect
+                setSelectedGrCod(undefined);
+                setSelectedSgCod(undefined);
+                
+                setCurrentScreen('filtered_list');
+            } else {
+                alert(`Nenhum item encontrado na localização: ${cleanCode}`);
+            }
+        } catch (error) {
+            console.error(error);
+            alert("Erro ao buscar itens por localização.");
+        } finally {
+            setIsLoading(false);
+        }
+    } else {
+        // Se não for LOC, assume que é código de produto/SKU e tenta buscar
+        // O backend busca por descrição ou fabricante (SKU) no param 'search'
+        setIsLoading(true);
+        try {
+            const results = await api.getBlocks(1, 50, cleanCode);
+            if (results.length > 0) {
+                setBlocks(results);
+                setSegmentFilter('Resultado da Busca');
+                setBrowsePage(1);
+                setSelectedGrCod(undefined);
+                setSelectedSgCod(undefined);
+                setCurrentScreen('filtered_list');
+            } else {
+                alert(`Nenhum item encontrado com o código: ${code}`);
+            }
+        } catch (e) {
+            alert("Erro na busca.");
+        } finally {
+            setIsLoading(false);
+        }
+    }
   };
 
   // Pagination Handlers

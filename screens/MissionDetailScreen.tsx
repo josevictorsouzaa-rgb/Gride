@@ -139,11 +139,11 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
 
   const handleLocationScanComplete = (code: string) => {
       setShowLocationScanner(false);
-      // Lógica de Parsing: LOC-G01-E05-P02 ou G01-E05-P02
-      // Remove LOC- se existir
+      // Lógica de Parsing: LOC-G01-E05-P02 (3 partes)
       const raw = code.startsWith('LOC-') ? code.substring(4) : code;
       const parts = raw.split('-');
       
+      // Validação estrita: Deve ter exatamente 3 partes (Galpão, Estante, Prateleira)
       if (parts.length >= 3) {
           setLocationVerified(true);
           setScannedLocationParts({
@@ -152,7 +152,10 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
               p: parts[2].replace(/\D/g, '')
           });
       } else {
-          alert("Código inválido. Formato esperado: LOC-Gxx-Exx-Pxx");
+          // Se tiver menos de 3 partes (ex: só Galpão e Estante)
+          alert("Código incompleto. É obrigatório escanear a etiqueta da prateleira/nível específico (LOC-Gxx-Exx-Pxx).");
+          setLocationVerified(false);
+          setScannedLocationParts(null);
       }
   };
 
@@ -379,7 +382,7 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
         itemSku={selectedItem?.sku}
         itemLocation={selectedItem?.loc} // Pass location string for fallback
         locationParts={scannedLocationParts} // Pass scanned parts
-        initialQuantity={selectedItem?.countedQty || selectedItem?.balance || 1} 
+        initialQuantity={selectedItem?.countedQty || selectedItem?.expectedQty || 1} 
         lastCountInfo={selectedItem?.lastCount ? {
           user: selectedItem.lastCount.user,
           date: selectedItem.lastCount.date,

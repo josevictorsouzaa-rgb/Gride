@@ -41,6 +41,11 @@ export const ListScreen: React.FC<ListScreenProps> = ({
     onReserveBlock(id);
   };
 
+  // Handler para clique no item
+  const handleItemClick = (item: any) => {
+      setSelectedItem(item);
+  };
+
   const filteredBlocks = useMemo(() => {
     return blocks.filter(block => {
       // Allow 'progress' if it's locked, logic handled in UI render
@@ -116,7 +121,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
 
                       <div className="bg-gray-50 dark:bg-black/20 rounded-lg p-2 space-y-1">
                           {visibleItems.map((item: any, idx: number) => (
-                              <div key={idx} className="flex flex-col gap-1 p-2 border-b border-gray-200/50 dark:border-white/5 last:border-0">
+                              <div key={idx} onClick={() => handleItemClick(item)} className="flex flex-col gap-1 p-2 border-b border-gray-200/50 dark:border-white/5 last:border-0 cursor-pointer hover:bg-gray-100 dark:hover:bg-white/5 transition-colors rounded">
                                   <span className="font-bold text-sm text-gray-800 dark:text-gray-200 leading-tight">{item.name}</span>
                                   <div className="flex items-center gap-2 mt-0.5">
                                       <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-white dark:bg-white/10 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-white/5">{item.ref}</span>

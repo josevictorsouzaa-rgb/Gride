@@ -217,6 +217,9 @@ const groupProductsToBlocks = (products, lockMap) => {
             groups.set(similarId, []);
         }
         
+        // Tenta ler localizacao do banco se existir, senão 'GERAL'
+        const rawLocation = safeString(p.PRO_LOCAL) || 'GERAL';
+
         groups.get(similarId).push({
             id: safeString(p.PRO_COD),
             db_pro_cod: p.PRO_COD,
@@ -224,7 +227,7 @@ const groupProductsToBlocks = (products, lockMap) => {
             ref: safeString(p.PRO_NRFABRICANTE),
             balance: parseFloat(p.PRO_EST_ATUAL || 0),
             brand: 'GENERICO',
-            location: 'GERAL',
+            location: rawLocation,
             lastCount: null
         });
     });
@@ -259,6 +262,7 @@ app.get('/blocks', (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 100;
     const search = req.query.search || '';
+    const locationSearch = req.query.location || ''; // Novo Parametro
     const gr_cod = req.query.gr_cod;
     const sg_cod = req.query.sg_cod;
     const daily_meta = req.query.daily_meta === 'true';
@@ -286,10 +290,11 @@ app.get('/blocks', (req, res) => {
             });
 
             // 2. Query Dinâmica
+            // Adicionado PRO_LOCAL na seleção
             let sql = `
                 SELECT FIRST ? SKIP ?
                     P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.PRO_COD_SIMILAR, 
-                    P.PRO_NRFABRICANTE, P.GR_COD, P.SG_COD, P.MAR_COD
+                    P.PRO_NRFABRICANTE, P.GR_COD, P.SG_COD, P.MAR_COD, P.PRO_LOCAL
                 FROM PRODUTOS P
                 WHERE P.PRO_ATIVO = 'S'
             `;
@@ -301,6 +306,12 @@ app.get('/blocks', (req, res) => {
                 sql += ` AND (P.PRO_DESCRI CONTAINING ? OR P.PRO_NRFABRICANTE CONTAINING ?)`;
                 params.push(search);
                 params.push(search);
+            }
+
+            // Novo Filtro de Localização
+            if (locationSearch) {
+                sql += ` AND P.PRO_LOCAL STARTING WITH ?`;
+                params.push(locationSearch);
             }
 
             if (gr_cod) { sql += ` AND P.GR_COD = ?`; params.push(gr_cod); }
@@ -353,7 +364,7 @@ app.get('/reserved-blocks/:userId', (req, res) => {
             
             const sql = `
                 SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.PRO_COD_SIMILAR, 
-                       P.PRO_NRFABRICANTE, P.GR_COD, P.SG_COD, P.MAR_COD
+                       P.PRO_NRFABRICANTE, P.GR_COD, P.SG_COD, P.MAR_COD, P.PRO_LOCAL
                 FROM PRODUTOS P
                 WHERE P.PRO_ATIVO = 'S' 
                 AND (
