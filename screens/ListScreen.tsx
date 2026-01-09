@@ -148,7 +148,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
 
       {/* PAGINATION CONTROLS (Only in Browse Mode) */}
       {mode === 'browse' && onPageChange && (
-          <div className="fixed bottom-20 md:bottom-6 left-0 right-0 flex justify-center items-center gap-4 p-4 z-30 pointer-events-none">
+          <div className="fixed bottom-20 md:bottom-6 left-0 right-0 md:pl-64 flex justify-center items-center gap-4 p-4 z-30 pointer-events-none">
               <div className="bg-white dark:bg-surface-dark border border-gray-200 dark:border-card-border shadow-xl rounded-full p-1.5 flex gap-2 pointer-events-auto">
                   <button 
                     disabled={page === 1}

@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
 import { Icon } from '../components/Icon';
-import { EntryModal, DamageModal, ConfirmationModal } from '../components/Modals';
+import { EntryModal, DamageModal, ConfirmationModal, ScannerModal } from '../components/Modals';
 import { ItemDetailModal } from '../components/ItemDetailModal';
 import { User } from '../types';
 import { api } from '../services/api';
@@ -69,12 +70,15 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
   const [showDamage, setShowDamage] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const [showLocationScanner, setShowLocationScanner] = useState(false);
+  const [locationVerified, setLocationVerified] = useState(false);
   
   const allItemsCounted = items.length > 0 && items.every(item => item.status !== 'pending');
   const progressPercentage = items.length > 0 ? Math.round((items.filter(i => i.status !== 'pending').length / items.length) * 100) : 0;
 
   const handleItemClick = (item: BlockItem) => {
     setSelectedItem(item);
+    setLocationVerified(false); // Reset validation on new open
     setShowEntry(true);
   };
 
@@ -124,6 +128,24 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
       setShowEntry(false);
       setSelectedItem(null);
     }
+  };
+
+  const handleRequestScanLocation = () => {
+      // Oculta a EntryModal temporariamente (ou mantém por baixo se a ScannerModal for sobreposta com z-index maior)
+      // Aqui vamos abrir o ScannerModal que estará "acima" do EntryModal
+      setShowLocationScanner(true);
+  };
+
+  const handleLocationScanComplete = (code: string) => {
+      setShowLocationScanner(false);
+      // Validação simples: Deve começar com LOC-
+      if (code && code.startsWith('LOC-')) {
+          // Opcional: Verificar se code == selectedItem.loc
+          setLocationVerified(true);
+          // Pequeno feedback visual ou sonoro poderia ser adicionado aqui
+      } else {
+          alert("Código inválido. Escaneie um endereço de localização (LOC-...).");
+      }
   };
 
   const handleBack = () => {
@@ -347,6 +369,8 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
         isOpen={showEntry} 
         itemName={selectedItem?.name}
         itemSku={selectedItem?.sku}
+        itemLocation={selectedItem?.loc} // Pass location
+        initialQuantity={selectedItem?.countedQty || selectedItem?.balance || 1} 
         lastCountInfo={selectedItem?.lastCount ? {
           user: selectedItem.lastCount.user,
           date: selectedItem.lastCount.date,
@@ -354,9 +378,20 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
           avatar: `https://i.pravatar.cc/150?u=${selectedItem.lastCount.user}`
         } : null}
         onClose={() => setShowEntry(false)} 
-        onConfirm={handleConfirmCount} 
+        onConfirm={handleConfirmCount}
+        onRequestScanLocation={handleRequestScanLocation}
+        isLocationVerified={locationVerified}
       />
       
+      {/* Scanner Local para Validação de Local */}
+      <ScannerModal 
+        isOpen={showLocationScanner}
+        onClose={() => setShowLocationScanner(false)}
+        onScanComplete={handleLocationScanComplete}
+        title="Validar Localização"
+        instruction="Escaneie o QR Code da Estante/Prateleira"
+      />
+
       <ItemDetailModal 
         isOpen={showDetailModal}
         onClose={handleCloseDetails}
