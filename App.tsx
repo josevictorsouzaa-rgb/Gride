@@ -72,29 +72,37 @@ const App: React.FC = () => {
     if (currentScreen === 'login') return;
 
     const fetchBlocks = async () => {
+        // Se estivermos em dashboard ou reserved, queremos carregar blocos para garantir
+        // que a contagem de reservas (badge) e a lista de reservados estejam sincronizadas.
+        const shouldFetchReservations = currentScreen === 'reserved' || currentScreen === 'dashboard';
+        const isListScreen = currentScreen === 'list';
+        const isFilteredList = currentScreen === 'filtered_list';
+
+        if (!isListScreen && !isFilteredList && !shouldFetchReservations) {
+            return; // Não carrega nada em outras telas para economizar
+        }
+
         setIsLoading(true);
         try {
-            if (currentScreen === 'list') {
+            if (isListScreen) {
                 // META DIÁRIA: Carrega vazio (ou lógica futura de curva ABC)
-                // daily_meta = true na API retorna [] por enquanto
                 const metaBlocks = await api.getBlocks(1, 100, '', undefined, undefined, true);
                 setBlocks(metaBlocks);
-            } else if (currentScreen === 'filtered_list') {
+            } else if (isFilteredList) {
                 // EXPLORAR: Carrega com filtros específicos de GR e SG
                 if (selectedGrCod) {
                     const filteredBlocks = await api.getBlocks(1, 200, '', selectedGrCod, selectedSgCod);
                     setBlocks(filteredBlocks);
                 } else {
-                    setBlocks([]); // Segurança se não houver filtro
+                    setBlocks([]); 
                 }
-            } else if (currentScreen === 'dashboard' || currentScreen === 'reserved') {
-                // Carrega reservas do usuário para contar no badge ou mostrar na tela de reservados
-                // Se quiser carregar *apenas* os reservados, precisaríamos de outro endpoint ou filtrar no front.
-                // Por enquanto, getBlocks carrega tudo sem filtro se não passar nada, o que pode ser pesado.
-                // Melhor seria um endpoint /my-reservations.
-                // Usaremos getBlocks(..., daily_meta=false) padrao mas só para o sidebar count por enquanto.
-                // Mas isso é pesado. Ideal: carregar blocks apenas quando necessario.
-                // Para simplificar: Não carregamos blocks globais no Dashboard para performance.
+            } else if (shouldFetchReservations) {
+                // DASHBOARD ou RESERVADOS: 
+                // Precisamos buscar blocos para identificar quais estão reservados pelo usuário.
+                // Atualmente usamos getBlocks geral que retorna tudo. 
+                // Idealmente teríamos endpoint /my-reservations, mas usaremos o filtro no front.
+                const allBlocks = await api.getBlocks(1, 300); // Carrega lote maior para encontrar reservas
+                setBlocks(allBlocks);
             }
         } catch (error) {
             console.error("Erro ao carregar dados:", error);
@@ -105,19 +113,6 @@ const App: React.FC = () => {
 
     fetchBlocks();
   }, [currentScreen, selectedGrCod, selectedSgCod]);
-
-  // Recarrega lista de reservados especificamente quando entra na tela 'reserved'
-  useEffect(() => {
-      if (currentScreen === 'reserved') {
-          // Precisamos de todos os blocos ativos para filtrar os reservados?
-          // Sim, ou um endpoint especifico. Vamos usar o getBlocks geral por enquanto.
-          setIsLoading(true);
-          api.getBlocks(1, 300).then(data => {
-              setBlocks(data);
-              setIsLoading(false);
-          });
-      }
-  }, [currentScreen]);
 
   const reservedCount = blocks.filter(b => b.status === 'progress' && (!b.lockedBy || b.lockedBy.userId === currentUser?.id)).length;
   

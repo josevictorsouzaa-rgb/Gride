@@ -297,14 +297,22 @@ app.get('/blocks', (req, res) => {
                 // 4. Formatar Blocos
                 const blocks = [];
                 groups.forEach((items, key) => {
-                    const firstItem = items[0];
                     const blockId = key;
+                    
+                    // Lógica para definir a Referência do Bloco (Parent Ref)
+                    // Tenta encontrar o item "Pai" (onde PRO_COD == PRO_COD_SIMILAR ou onde a ref é principal)
+                    // Se não encontrar, usa o primeiro item.
+                    const parentItem = items.find(i => i.id === blockId) || items[0];
+                    
+                    // Exibe APENAS a Referência (PRO_NRFABRICANTE) do agrupador, conforme solicitado
+                    const displayRef = parentItem.ref || 'S/ REF';
+
                     const isLocked = lockMap.get(blockId);
 
                     blocks.push({
                         id: blockId,
-                        parentRef: items.length > 1 ? `Agrupamento #${blockId}` : firstItem.name,
-                        location: firstItem.location,
+                        parentRef: displayRef, // Alterado para mostrar a REF
+                        location: items[0].location,
                         status: isLocked ? 'progress' : 'pending',
                         date: 'Hoje',
                         subcategory: 'Geral',
