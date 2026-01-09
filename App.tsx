@@ -11,26 +11,14 @@ import { TreatmentScreen } from './screens/TreatmentScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { ReservedScreen } from './screens/ReservedScreen';
 import { AnalyticsScreen } from './screens/AnalyticsScreen';
-import { AddressManagerScreen } from './screens/AddressManagerScreen'; // New Import
+import { AddressManagerScreen } from './screens/AddressManagerScreen'; 
 import { BottomNav } from './components/BottomNav';
 import { Sidebar } from './components/Sidebar'; 
 import { ScannerModal } from './components/Modals';
 import { Icon } from './components/Icon'; 
-import { api, ApiProduct, ApiCategory } from './services/api'; 
+import { api, ApiCategory } from './services/api'; 
 
-const initialBlocksData: Block[] = [
-  { 
-    id: 1, 
-    parentRef: 'SISTEMA', 
-    location: 'Aguardando', 
-    status: 'pending', 
-    date: 'Hoje', 
-    subcategory: 'Geral', 
-    items: []
-  }
-];
-
-// Tempo de inatividade em milissegundos (15 minutos)
+const initialBlocksData: Block[] = [];
 const INACTIVITY_LIMIT = 15 * 60 * 1000;
 
 const App: React.FC = () => {
@@ -46,58 +34,27 @@ const App: React.FC = () => {
   const [showScanner, setShowScanner] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  // --- LOGICA DE AUTO-LOGOUT ---
   const handleLogout = useCallback(() => {
     setCurrentUser(null);
     setCurrentScreen('login');
-    // Opcional: Limpar dados sensíveis se necessário
   }, []);
 
   const handleLogin = (user: User) => {
     setCurrentUser(user);
     setCurrentScreen('dashboard');
-
-    // --- SOLICITAR PERMISSÃO DE CÂMERA IMEDIATAMENTE APÓS LOGIN ---
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-        .then((stream) => {
-            console.log("Acesso à câmera concedido e pré-aquecido.");
-            stream.getTracks().forEach(track => track.stop());
-        })
-        .catch((err) => {
-            console.warn("Permissão de câmera negada ou adiada no login:", err);
-        });
-    }
   };
 
   useEffect(() => {
     if (currentScreen === 'login') return;
-
     let timeoutId: any;
-
     const resetTimer = () => {
       clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => {
-        console.log("Sessão expirada por inatividade.");
-        handleLogout();
-        alert("Sua sessão expirou por inatividade (15min).");
-      }, INACTIVITY_LIMIT);
+      timeoutId = setTimeout(() => { handleLogout(); alert("Sessão expirada."); }, INACTIVITY_LIMIT);
     };
-
     const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart'];
-    
     resetTimer();
-
-    events.forEach(event => {
-      window.addEventListener(event, resetTimer);
-    });
-
-    return () => {
-      clearTimeout(timeoutId);
-      events.forEach(event => {
-        window.removeEventListener(event, resetTimer);
-      });
-    };
+    events.forEach(event => window.addEventListener(event, resetTimer));
+    return () => { clearTimeout(timeoutId); events.forEach(event => window.removeEventListener(event, resetTimer)); };
   }, [currentScreen, handleLogout]);
 
   useEffect(() => {
@@ -110,73 +67,21 @@ const App: React.FC = () => {
     setIsLoading(true);
     try {
         const cats = await api.getCategories();
-        if (cats && Array.isArray(cats)) {
-             setCategories(cats);
-        } else {
-             setCategories([]);
-        }
+        setCategories(cats || []);
 
-        const products = await api.getProducts(1, 100);
-        
-        if (products && Array.isArray(products) && products.length > 0) {
-            const groupedMap = new Map<string, any[]>();
-            
-            products.forEach((p: ApiProduct) => {
-                const groupKey = p.similar_id ? `SIMILAR_${p.similar_id}` : `PROD_${p.id}`;
-                
-                if (!groupedMap.has(groupKey)) {
-                  groupedMap.set(groupKey, []);
-                }
-                
-                groupedMap.get(groupKey)?.push({
-                  id: p.id,
-                  name: p.name,
-                  ref: p.sku, 
-                  brand: p.brand,
-                  balance: p.balance, 
-                  lastCount: null,
-                  location: p.location,
-                  similar_id: p.similar_id
-                });
-            });
-
-            const realBlocks: Block[] = [];
-            let idCounter = 1000;
-
-            groupedMap.forEach((items, key) => {
-                const isGroup = key.startsWith('SIMILAR_');
-                const firstItem = items[0];
-                
-                let headerTitle = isGroup 
-                ? `Agrupamento Similar #${firstItem.similar_id}` 
-                : firstItem.name;
-
-                if (isGroup && items.length === 1) {
-                    headerTitle = firstItem.name;
-                }
-
-                realBlocks.push({
-                  id: idCounter++,
-                  parentRef: headerTitle, 
-                  location: firstItem.location || 'GERAL',
-                  status: 'pending', 
-                  date: 'Hoje',
-                  subcategory: firstItem.brand || 'DIVERSOS', 
-                  items: items
-                });
-            });
-
-            setBlocks(realBlocks);
+        // AGORA BUSCA BLOCOS JÁ AGRUPADOS E COM STATUS DE RESERVA DO BACKEND
+        const fetchedBlocks = await api.getBlocks(1, 200); // Carrega 200 blocos
+        if (fetchedBlocks && Array.isArray(fetchedBlocks)) {
+            setBlocks(fetchedBlocks);
         }
     } catch (error) {
         console.error("Erro crítico ao carregar dados:", error);
-        setCategories([]); 
     } finally {
         setIsLoading(false);
     }
   };
 
-  const reservedCount = blocks.filter(b => b.status === 'progress').length;
+  const reservedCount = blocks.filter(b => b.status === 'progress' && (!b.lockedBy || b.lockedBy.userId === currentUser?.id)).length;
   
   const handleCategorySelect = (categoryLabel: string) => {
     setSelectedCategory(categoryLabel);
@@ -188,10 +93,22 @@ const App: React.FC = () => {
     setCurrentScreen('filtered_list');
   };
 
-  const handleReserveBlock = (id: number) => {
-    setBlocks(prev => prev.map(b => 
-      b.id === id ? { ...b, status: 'progress' } : b
-    ));
+  const handleReserveBlock = async (id: number) => {
+    if (!currentUser) return;
+    const res = await api.reserveBlock(id, currentUser);
+    if (res.success) {
+        // Atualiza localmente para refletir o bloqueio imediatamente
+        setBlocks(prev => prev.map(b => 
+          b.id === id ? { 
+              ...b, 
+              status: 'progress', 
+              lockedBy: { userId: currentUser.id, userName: currentUser.name, timestamp: new Date().toISOString() } 
+          } : b
+        ));
+    } else {
+        alert(res.message || 'Erro ao reservar.');
+        loadRealData(); // Recarrega para ver status real
+    }
   };
 
   const handleStartBlock = (block: any) => {
@@ -199,201 +116,48 @@ const App: React.FC = () => {
     setCurrentScreen('mission_detail');
   };
 
-  // --- LOGICA DE SCANNER ATUALIZADA ---
   const handleScanComplete = async (code: string) => {
     setShowScanner(false);
-    
-    // 1. PREFIXO LOC- (Localização WMS)
     if (code.startsWith('LOC-')) {
-       // Filtra blocos/itens relacionados a este local
-       // Simula busca no backend por itens naquele endereço
-       let mockBlock = {
-          id: 9999,
-          contextType: 'location_scan',
-          parentRef: 'ITENS EM: ' + code,
-          location: code,
-          status: 'progress',
-          items: [] // Em produção, buscaria itens vinculados a este endereço
-       };
-       handleStartBlock(mockBlock);
+       // Lógica de scan de local...
+       alert(`Local ${code} scaneado. Implementar filtro.`);
        return;
     }
-
-    // 2. PRODUTO (Normal)
-    let mockBlock = {
-          id: 901,
-          contextType: 'product_scan',
-          parentRef: 'ITEM ESCANEADO',
-          location: 'Item Avulso',
-          status: 'progress',
-          items: [
-            { 
-              name: 'ITEM IDENTIFICADO', 
-              ref: code, 
-              brand: 'AUTO', 
-              balance: 1,
-              lastCount: null
-            }
-          ]
-    };
-    handleStartBlock(mockBlock);
+    // Lógica de scan de produto...
+    alert(`Item ${code} scaneado.`);
   };
 
   const renderScreen = () => {
     switch (currentScreen) {
-      case 'login':
-        return <LoginScreen onLogin={handleLogin} />;
-      case 'dashboard':
-        return (
-          <DashboardScreen 
-            onNavigate={setCurrentScreen} 
-            onCategorySelect={handleCategorySelect}
-            currentUser={currentUser}
-            onLogout={handleLogout}
-            categories={categories}
-          />
-        );
-      case 'list':
-        return (
-          <ListScreen 
-            key="meta-list" 
-            onNavigate={setCurrentScreen} 
-            blocks={blocks}
-            segmentFilter={null}
-            onReserveBlock={handleReserveBlock}
-            onClearFilter={() => {}}
-            mode="daily_meta"
-          />
-        );
-      case 'filtered_list':
-        return (
-          <ListScreen 
-            key="browse-list" 
-            onNavigate={setCurrentScreen} 
-            blocks={blocks}
-            segmentFilter={segmentFilter}
-            onReserveBlock={handleReserveBlock}
-            onClearFilter={() => {
-              setSegmentFilter(null);
-              setCurrentScreen('dashboard'); 
-            }}
-            mode="browse"
-          />
-        );
-      case 'reserved':
-        return (
-          <ReservedScreen 
-            onNavigate={setCurrentScreen} 
-            blocks={blocks}
-            onStartBlock={handleStartBlock}
-            currentUser={currentUser}
-          />
-        );
-      case 'history':
-        return <HistoryScreen />;
-      case 'analytics':
-        return <AnalyticsScreen onNavigate={setCurrentScreen} />;
-      case 'mission_detail':
-        return (
-          <MissionDetailScreen 
-            blockData={activeBlock} 
-            onBack={() => setCurrentScreen('reserved')}
-            currentUser={currentUser}
-          />
-        );
-      case 'subcategories':
-        return (
-          <SubcategoriesScreen 
-            categoryLabel={selectedCategory || ''} 
-            categories={categories}
-            onBack={() => setCurrentScreen('dashboard')}
-            onSelectSegment={handleSegmentSelect}
-          />
-        );
-      case 'treatment':
-        return (
-           <TreatmentScreen onNavigate={setCurrentScreen} />
-        );
-      case 'settings':
-        return (
-           <SettingsScreen 
-             onBack={() => setCurrentScreen('dashboard')} 
-             currentUser={currentUser}
-           />
-        );
-      case 'address_manager':
-        return (
-           <AddressManagerScreen onBack={() => setCurrentScreen('dashboard')} />
-        );
-      default:
-        return (
-          <DashboardScreen 
-            onNavigate={setCurrentScreen} 
-            onCategorySelect={handleCategorySelect}
-            currentUser={currentUser}
-            onLogout={handleLogout}
-            categories={categories}
-          />
-        );
+      case 'login': return <LoginScreen onLogin={handleLogin} />;
+      case 'dashboard': return <DashboardScreen onNavigate={setCurrentScreen} onCategorySelect={handleCategorySelect} currentUser={currentUser} onLogout={handleLogout} categories={categories} />;
+      case 'list': return <ListScreen key="meta-list" onNavigate={setCurrentScreen} blocks={blocks} segmentFilter={null} onReserveBlock={handleReserveBlock} onClearFilter={() => {}} mode="daily_meta" />;
+      case 'filtered_list': return <ListScreen key="browse-list" onNavigate={setCurrentScreen} blocks={blocks} segmentFilter={segmentFilter} onReserveBlock={handleReserveBlock} onClearFilter={() => { setSegmentFilter(null); setCurrentScreen('dashboard'); }} mode="browse" />;
+      case 'reserved': return <ReservedScreen onNavigate={setCurrentScreen} blocks={blocks} onStartBlock={handleStartBlock} currentUser={currentUser} />;
+      case 'history': return <HistoryScreen />;
+      case 'analytics': return <AnalyticsScreen onNavigate={setCurrentScreen} />;
+      case 'mission_detail': return <MissionDetailScreen blockData={activeBlock} onBack={() => { setCurrentScreen('reserved'); loadRealData(); }} currentUser={currentUser} />;
+      case 'subcategories': return <SubcategoriesScreen categoryLabel={selectedCategory || ''} categories={categories} onBack={() => setCurrentScreen('dashboard')} onSelectSegment={handleSegmentSelect} />;
+      case 'treatment': return <TreatmentScreen onNavigate={setCurrentScreen} />;
+      case 'settings': return <SettingsScreen onBack={() => setCurrentScreen('dashboard')} currentUser={currentUser} />;
+      case 'address_manager': return <AddressManagerScreen onBack={() => setCurrentScreen('dashboard')} />;
+      default: return <DashboardScreen onNavigate={setCurrentScreen} onCategorySelect={handleCategorySelect} currentUser={currentUser} onLogout={handleLogout} categories={categories} />;
     }
   };
 
-  const showNav = currentScreen !== 'login' && 
-                  currentScreen !== 'mission_detail' && 
-                  currentScreen !== 'settings' && 
-                  currentScreen !== 'treatment' &&
-                  currentScreen !== 'analytics' &&
-                  currentScreen !== 'address_manager'; // Hide nav on address manager
-  
-  if (currentScreen === 'login') {
-    return <LoginScreen onLogin={handleLogin} />;
-  }
-
-  const activeNavTab = (currentScreen === 'subcategories' || currentScreen === 'filtered_list') 
-    ? 'dashboard' 
-    : currentScreen;
+  const showNav = !['login', 'mission_detail', 'settings', 'treatment', 'analytics', 'address_manager'].includes(currentScreen);
+  if (currentScreen === 'login') return <LoginScreen onLogin={handleLogin} />;
+  const activeNavTab = (currentScreen === 'subcategories' || currentScreen === 'filtered_list') ? 'dashboard' : currentScreen;
 
   return (
     <div className="flex w-full min-h-screen bg-background-light dark:bg-background-dark text-slate-900 dark:text-white transition-opacity duration-300">
-      {isLoading && (
-        <div className="fixed top-0 left-0 right-0 h-1 z-[100] bg-primary/20">
-          <div className="h-full bg-primary animate-[shimmer_1s_infinite] w-1/3" />
-        </div>
-      )}
-
-      <Sidebar 
-        currentScreen={activeNavTab}
-        onNavigate={setCurrentScreen}
-        currentUser={currentUser}
-        onLogout={handleLogout}
-        reservedCount={reservedCount}
-      />
-
+      {isLoading && <div className="fixed top-0 left-0 right-0 h-1 z-[100] bg-primary/20"><div className="h-full bg-primary animate-[shimmer_1s_infinite] w-1/3" /></div>}
+      <Sidebar currentScreen={activeNavTab} onNavigate={setCurrentScreen} currentUser={currentUser} onLogout={handleLogout} reservedCount={reservedCount} />
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
-        <div className="flex-1 overflow-y-auto no-scrollbar relative w-full">
-           <div className="w-full min-h-full animate-fade-in">
-             {renderScreen()}
-           </div>
-        </div>
-
-        {showNav && (
-          <BottomNav 
-            currentScreen={activeNavTab} 
-            onNavigate={setCurrentScreen}
-            onScanClick={() => setShowScanner(true)}
-            isAdmin={currentUser?.isAdmin} 
-            reservedCount={reservedCount}
-          />
-        )}
+        <div className="flex-1 overflow-y-auto no-scrollbar relative w-full"><div className="w-full min-h-full animate-fade-in">{renderScreen()}</div></div>
+        {showNav && <BottomNav currentScreen={activeNavTab} onNavigate={setCurrentScreen} onScanClick={() => setShowScanner(true)} isAdmin={currentUser?.isAdmin} reservedCount={reservedCount} />}
       </div>
-
-      <ScannerModal 
-        isOpen={showScanner}
-        onClose={() => setShowScanner(false)}
-        onScanComplete={handleScanComplete}
-        title="Escanear Código"
-        instruction="Aponte para QR Code de Produto (PRD) ou Local (LOC)"
-      />
+      <ScannerModal isOpen={showScanner} onClose={() => setShowScanner(false)} onScanComplete={handleScanComplete} title="Escanear Código" instruction="Aponte para QR Code" />
     </div>
   );
 };

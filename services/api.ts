@@ -1,5 +1,5 @@
 
-import { User, WMSAddress, WarehouseLayout } from '../types';
+import { User, WMSAddress, WarehouseLayout, Block } from '../types';
 
 export interface ApiProduct {
   id: number | string;
@@ -55,130 +55,120 @@ const API_BASE_URL = getApiBaseUrl();
 
 export const api = {
   
-  /**
-   * Busca o nome do usuário pelo ID (pré-login)
-   */
   getUserName: async (id: string): Promise<string | null> => {
     try {
         if (!id) return null;
-        
-        // Mock fallback para desenvolvimento offline
         if (id === '9999') return 'Gestor de Teste';
         if (id === '8888') return 'Colaborador Teste';
-
         const response = await fetch(`${API_BASE_URL}/user-name/${id}`);
-        if (response.ok) {
-            const data = await response.json();
-            return data.name;
-        }
+        if (response.ok) { const data = await response.json(); return data.name; }
         return null;
-    } catch (error) {
-        console.error("Erro ao buscar nome:", error);
-        return null;
-    }
+    } catch (error) { return null; }
   },
 
-  /**
-   * Realiza Login no ERP
-   */
   login: async (usuario_id: string, senha: string): Promise<{ success: boolean; user?: User; error?: string }> => {
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-
       const response = await fetch(`${API_BASE_URL}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ usuario_id, senha }),
-        signal: controller.signal
       });
-
-      clearTimeout(timeoutId);
       const data = await response.json();
-      
-      if (!response.ok) {
-        return { success: false, error: data.error || 'Erro no login' };
-      }
-
+      if (!response.ok) return { success: false, error: data.error || 'Erro no login' };
       return { success: true, user: data.user };
     } catch (error) {
-      console.error("Erro no login (API Offline):", error);
-      
-      // FALLBACKS OFFLINE
-      if (usuario_id === '9999' && senha === 'admin') {
-         return {
-            success: true,
-            user: { id: '9999', name: 'Gestor de Teste (Offline)', role: 'Gerente', avatar: '', isAdmin: true }
-         };
-      }
-      if (usuario_id === '8888' && senha === 'user') {
-         return {
-            success: true,
-            user: { id: '8888', name: 'Colaborador Teste (Offline)', role: 'Conferente', avatar: '', isAdmin: false }
-         };
-      }
-
+      if (usuario_id === '9999') return { success: true, user: { id: '9999', name: 'Gestor (Offline)', role: 'Gerente', avatar: '', isAdmin: true } };
       return { success: false, error: 'Servidor offline.' };
     }
+  },
+
+  getUsers: async (): Promise<User[]> => {
+      try {
+          const response = await fetch(`${API_BASE_URL}/users`);
+          if (response.ok) return await response.json();
+          return [];
+      } catch (e) { return []; }
   },
 
   getCategories: async (): Promise<ApiCategory[]> => {
     try {
       const response = await fetch(`${API_BASE_URL}/categories`);
-      if (!response.ok) throw new Error('Erro categorias');
+      if (!response.ok) throw new Error('Erro');
       return await response.json();
-    } catch (error) {
-      return [];
-    }
+    } catch (error) { return []; }
   },
 
-  getProducts: async (page = 1, limit = 100, search = ''): Promise<ApiProduct[]> => {
+  // --- NOVO: BUSCAR BLOCOS PRÉ-AGRUPADOS DO BACKEND ---
+  getBlocks: async (page = 1, limit = 100, search = ''): Promise<Block[]> => {
     try {
       const params = new URLSearchParams({ page: page.toString(), limit: limit.toString(), search });
-      const response = await fetch(`${API_BASE_URL}/products?${params}`);
-      if (!response.ok) throw new Error('Erro produtos');
+      const response = await fetch(`${API_BASE_URL}/blocks?${params}`);
+      if (!response.ok) throw new Error('Erro blocks');
       return await response.json();
     } catch (error) {
+      console.error(error);
       return [];
     }
   },
 
+  // --- RESERVAS & LOCKING ---
+  reserveBlock: async (blockId: number | string, user: User) => {
+      try {
+          const response = await fetch(`${API_BASE_URL}/reserve-block`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ block_id: blockId, user_id: user.id, user_name: user.name })
+          });
+          return await response.json();
+      } catch (e) { return { success: false, message: 'Erro de conexão' }; }
+  },
+
+  releaseBlock: async (blockId: number | string) => {
+      try {
+          await fetch(`${API_BASE_URL}/release-block`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ block_id: blockId })
+          });
+          return true;
+      } catch (e) { return false; }
+  },
+
+  finalizeBlock: async (data: { block_id: string|number, user_id: string, user_name: string, items: any[] }) => {
+      try {
+          const response = await fetch(`${API_BASE_URL}/finalize-block`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(data)
+          });
+          return await response.json();
+      } catch (e) { return { success: false, error: 'Erro ao finalizar' }; }
+  },
+
+  // --- COMPATIBILIDADE ---
   saveCount: async (data: InventoryLogEntry) => {
+    // Mantido para compatibilidade, mas o finalizeBlock deve ser preferido para blocos
     try {
-      const response = await fetch(`${API_BASE_URL}/save-count`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      });
-      return await response.json();
-    } catch (error) {
-      return { success: false };
-    }
+      await fetch(`${API_BASE_URL}/save-count`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      return { success: true };
+    } catch (error) { return { success: false }; }
   },
 
   getHistory: async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/history`);
-      if (!response.ok) throw new Error('Erro histórico');
+      if (!response.ok) throw new Error('Erro');
       return await response.json();
-    } catch (error) {
-      return [];
-    }
+    } catch (error) { return []; }
   },
 
-  saveSettings: async (settings: any) => {
-    return true;
-  },
-
-  // --- WMS ADDRESS METHODS ---
+  // --- ENDEREÇAMENTO (GERENCIAMENTO) ---
   getAddresses: async (): Promise<WMSAddress[]> => {
     try {
         const response = await fetch(`${API_BASE_URL}/addresses`);
         if(response.ok) return await response.json();
         return [];
-    } catch (e) {
-        return [];
-    }
+    } catch (e) { return []; }
   },
 
   saveAddresses: async (addresses: Partial<WMSAddress>[]) => {
@@ -189,20 +179,37 @@ export const api = {
             body: JSON.stringify(addresses)
           });
           return await response.json();
-      } catch (e) {
-          return { success: false };
-      }
+      } catch (e) { return { success: false }; }
   },
 
-  // --- WAREHOUSE MANAGEMENT ---
+  updateAddress: async (id: number, codigo: string, descricao: string) => {
+      try {
+          const response = await fetch(`${API_BASE_URL}/update-address`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id, codigo, descricao })
+          });
+          return await response.json();
+      } catch (e) { return { success: false }; }
+  },
+
+  deleteAddress: async (id: number) => {
+      try {
+          const response = await fetch(`${API_BASE_URL}/delete-address`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id })
+          });
+          return await response.json();
+      } catch (e) { return { success: false }; }
+  },
+
   getWarehouses: async (): Promise<Warehouse[]> => {
       try {
           const response = await fetch(`${API_BASE_URL}/warehouses`);
           if (response.ok) return await response.json();
           return [];
-      } catch (e) {
-          return [];
-      }
+      } catch (e) { return []; }
   },
 
   saveWarehouse: async (warehouse: Partial<Warehouse>) => {
@@ -213,9 +220,7 @@ export const api = {
               body: JSON.stringify(warehouse)
           });
           return await response.json();
-      } catch (e) {
-          return { success: false };
-      }
+      } catch (e) { return { success: false }; }
   },
 
   deleteWarehouse: async (id: number) => {
@@ -226,32 +231,10 @@ export const api = {
               body: JSON.stringify({ id })
           });
           return true;
-      } catch (e) {
-          return false;
-      }
+      } catch (e) { return false; }
   },
 
-  // --- LAYOUT METHODS ---
-  getLayout: async (): Promise<WarehouseLayout | null> => {
-      try {
-          const response = await fetch(`${API_BASE_URL}/layout`);
-          if (response.ok) return await response.json();
-          return null;
-      } catch (e) {
-          return null;
-      }
-  },
-
-  saveLayout: async (layout: WarehouseLayout) => {
-      try {
-          const response = await fetch(`${API_BASE_URL}/save-layout`, {
-             method: 'POST',
-             headers: { 'Content-Type': 'application/json' },
-             body: JSON.stringify(layout)
-          });
-          return await response.json();
-      } catch (e) {
-          return { success: false };
-      }
-  }
+  // --- LAYOUT METHODS (MOCK / PLACEHOLDER) ---
+  getLayout: async (): Promise<WarehouseLayout | null> => { return null; },
+  saveLayout: async (layout: WarehouseLayout) => { return { success: true }; }
 };

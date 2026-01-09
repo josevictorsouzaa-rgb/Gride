@@ -1,20 +1,14 @@
+
 import React, { useState, useEffect } from 'react';
 import { Icon } from '../components/Icon';
 import { Screen, User } from '../types';
 import { getSettings, saveSettings, getSettingsHistory, SettingsHistoryEntry } from '../data/settingsStore';
+import { api } from '../services/api';
 
 interface SettingsScreenProps {
   onBack: () => void;
   currentUser: User | null;
 }
-
-const initialUsers: User[] = [
-  { id: '849201', name: 'Carlos Silva', role: 'Conferente', avatar: '', canTreat: false },
-  { id: '849202', name: 'Mariana Santos', role: 'Conferente', avatar: '', canTreat: false },
-  { id: '849203', name: 'João Pedro', role: 'Conferente', avatar: '', canTreat: true },
-  { id: '849204', name: 'Ana Souza', role: 'Auxiliar', avatar: '', canTreat: false },
-  { id: '849205', name: 'Roberto Lima', role: 'Conferente', avatar: '', canTreat: false },
-];
 
 const getInitials = (name: string) => name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
 
@@ -41,7 +35,18 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
   const turnsPerYear = ((dailyTarget * 252) / totalStock).toFixed(1); 
   const daysToCycle = Math.round(totalStock / dailyTarget);
 
-  const [users, setUsers] = useState(initialUsers);
+  const [users, setUsers] = useState<User[]>([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+
+  useEffect(() => {
+      if (activeTab === 'users') {
+          setIsLoadingUsers(true);
+          api.getUsers().then(data => {
+              setUsers(data);
+              setIsLoadingUsers(false);
+          });
+      }
+  }, [activeTab]);
 
   const toggleUserPermission = (id: string) => {
     setUsers(prev => prev.map(u => 
@@ -274,11 +279,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
              <div className="bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 p-4 rounded-xl flex gap-3">
                <Icon name="admin_panel_settings" className="text-primary mt-0.5" />
                <p className="text-sm text-blue-800 dark:text-blue-300">
-                 Defina quem pode tratar divergências. Usuários sem essa permissão poderão apenas contar e reportar.
+                 Defina quem pode tratar divergências. A lista abaixo é carregada diretamente do banco de dados (apenas ativos).
                </p>
             </div>
 
             <div className="flex flex-col gap-3">
+               {isLoadingUsers && <p className="text-center text-gray-500">Carregando usuários...</p>}
+               {!isLoadingUsers && users.length === 0 && <p className="text-center text-gray-500">Nenhum usuário ativo encontrado.</p>}
+               
                {users.map(user => (
                  <div key={user.id} className="bg-white dark:bg-surface-dark p-4 rounded-xl border border-gray-200 dark:border-card-border shadow-sm flex items-center justify-between hover:border-gray-300 dark:hover:border-gray-600 transition-colors">
                     <div className="flex items-center gap-3">
@@ -287,7 +295,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
                        </div>
                        <div>
                           <h4 className="font-bold text-gray-900 dark:text-white">{user.name}</h4>
-                          <p className="text-xs text-gray-500">{user.role} • ID: {user.id}</p>
+                          <p className="text-xs text-gray-500">ID: {user.id}</p>
                        </div>
                     </div>
 
