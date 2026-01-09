@@ -23,13 +23,16 @@ const INACTIVITY_LIMIT = 15 * 60 * 1000;
 
 const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<Screen>('login');
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
   
+  // States for Filtering
+  const [selectedCategoryLabel, setSelectedCategoryLabel] = useState<string | null>(null);
+  const [selectedGrCod, setSelectedGrCod] = useState<number | undefined>(undefined);
+  const [selectedSgCod, setSelectedSgCod] = useState<number | undefined>(undefined);
+  
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [blocks, setBlocks] = useState<Block[]>(initialBlocksData);
   const [categories, setCategories] = useState<ApiCategory[]>([]); 
-  
-  const [segmentFilter, setSegmentFilter] = useState<string | null>(null);
+  const [segmentFilter, setSegmentFilter] = useState<string | null>(null); // Visual only
   const [activeBlock, setActiveBlock] = useState<any | null>(null);
   const [showScanner, setShowScanner] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -57,39 +60,76 @@ const App: React.FC = () => {
     return () => { clearTimeout(timeoutId); events.forEach(event => window.removeEventListener(event, resetTimer)); };
   }, [currentScreen, handleLogout]);
 
+  // Carrega Categorias ao entrar no sistema
   useEffect(() => {
-    if (currentScreen !== 'login') {
-      loadRealData();
-    }
+      if (currentScreen === 'dashboard') {
+          api.getCategories().then(setCategories);
+      }
   }, [currentScreen]);
 
-  const loadRealData = async () => {
-    setIsLoading(true);
-    try {
-        const cats = await api.getCategories();
-        setCategories(cats || []);
+  // Lógica principal de carregamento de blocos baseada na tela e filtros
+  useEffect(() => {
+    if (currentScreen === 'login') return;
 
-        // AGORA BUSCA BLOCOS JÁ AGRUPADOS E COM STATUS DE RESERVA DO BACKEND
-        const fetchedBlocks = await api.getBlocks(1, 200); // Carrega 200 blocos
-        if (fetchedBlocks && Array.isArray(fetchedBlocks)) {
-            setBlocks(fetchedBlocks);
+    const fetchBlocks = async () => {
+        setIsLoading(true);
+        try {
+            if (currentScreen === 'list') {
+                // META DIÁRIA: Carrega vazio (ou lógica futura de curva ABC)
+                // daily_meta = true na API retorna [] por enquanto
+                const metaBlocks = await api.getBlocks(1, 100, '', undefined, undefined, true);
+                setBlocks(metaBlocks);
+            } else if (currentScreen === 'filtered_list') {
+                // EXPLORAR: Carrega com filtros específicos de GR e SG
+                if (selectedGrCod) {
+                    const filteredBlocks = await api.getBlocks(1, 200, '', selectedGrCod, selectedSgCod);
+                    setBlocks(filteredBlocks);
+                } else {
+                    setBlocks([]); // Segurança se não houver filtro
+                }
+            } else if (currentScreen === 'dashboard' || currentScreen === 'reserved') {
+                // Carrega reservas do usuário para contar no badge ou mostrar na tela de reservados
+                // Se quiser carregar *apenas* os reservados, precisaríamos de outro endpoint ou filtrar no front.
+                // Por enquanto, getBlocks carrega tudo sem filtro se não passar nada, o que pode ser pesado.
+                // Melhor seria um endpoint /my-reservations.
+                // Usaremos getBlocks(..., daily_meta=false) padrao mas só para o sidebar count por enquanto.
+                // Mas isso é pesado. Ideal: carregar blocks apenas quando necessario.
+                // Para simplificar: Não carregamos blocks globais no Dashboard para performance.
+            }
+        } catch (error) {
+            console.error("Erro ao carregar dados:", error);
+        } finally {
+            setIsLoading(false);
         }
-    } catch (error) {
-        console.error("Erro crítico ao carregar dados:", error);
-    } finally {
-        setIsLoading(false);
-    }
-  };
+    };
+
+    fetchBlocks();
+  }, [currentScreen, selectedGrCod, selectedSgCod]);
+
+  // Recarrega lista de reservados especificamente quando entra na tela 'reserved'
+  useEffect(() => {
+      if (currentScreen === 'reserved') {
+          // Precisamos de todos os blocos ativos para filtrar os reservados?
+          // Sim, ou um endpoint especifico. Vamos usar o getBlocks geral por enquanto.
+          setIsLoading(true);
+          api.getBlocks(1, 300).then(data => {
+              setBlocks(data);
+              setIsLoading(false);
+          });
+      }
+  }, [currentScreen]);
 
   const reservedCount = blocks.filter(b => b.status === 'progress' && (!b.lockedBy || b.lockedBy.userId === currentUser?.id)).length;
   
-  const handleCategorySelect = (categoryLabel: string) => {
-    setSelectedCategory(categoryLabel);
+  const handleCategorySelect = (categoryLabel: string, dbId: number) => {
+    setSelectedCategoryLabel(categoryLabel);
+    setSelectedGrCod(dbId);
     setCurrentScreen('subcategories');
   };
 
-  const handleSegmentSelect = (segment: string) => {
-    setSegmentFilter(segment);
+  const handleSegmentSelect = (segmentLabel: string, sgId: number) => {
+    setSegmentFilter(segmentLabel);
+    setSelectedSgCod(sgId);
     setCurrentScreen('filtered_list');
   };
 
@@ -97,7 +137,6 @@ const App: React.FC = () => {
     if (!currentUser) return;
     const res = await api.reserveBlock(id, currentUser);
     if (res.success) {
-        // Atualiza localmente para refletir o bloqueio imediatamente
         setBlocks(prev => prev.map(b => 
           b.id === id ? { 
               ...b, 
@@ -107,7 +146,11 @@ const App: React.FC = () => {
         ));
     } else {
         alert(res.message || 'Erro ao reservar.');
-        loadRealData(); // Recarrega para ver status real
+        // Força recarregamento para sincronizar status real
+        if (selectedGrCod) {
+             const updated = await api.getBlocks(1, 200, '', selectedGrCod, selectedSgCod);
+             setBlocks(updated);
+        }
     }
   };
 
@@ -118,13 +161,7 @@ const App: React.FC = () => {
 
   const handleScanComplete = async (code: string) => {
     setShowScanner(false);
-    if (code.startsWith('LOC-')) {
-       // Lógica de scan de local...
-       alert(`Local ${code} scaneado. Implementar filtro.`);
-       return;
-    }
-    // Lógica de scan de produto...
-    alert(`Item ${code} scaneado.`);
+    alert(`Item ${code} scaneado. (Funcionalidade de busca direta a implementar)`);
   };
 
   const renderScreen = () => {
@@ -132,12 +169,12 @@ const App: React.FC = () => {
       case 'login': return <LoginScreen onLogin={handleLogin} />;
       case 'dashboard': return <DashboardScreen onNavigate={setCurrentScreen} onCategorySelect={handleCategorySelect} currentUser={currentUser} onLogout={handleLogout} categories={categories} />;
       case 'list': return <ListScreen key="meta-list" onNavigate={setCurrentScreen} blocks={blocks} segmentFilter={null} onReserveBlock={handleReserveBlock} onClearFilter={() => {}} mode="daily_meta" />;
-      case 'filtered_list': return <ListScreen key="browse-list" onNavigate={setCurrentScreen} blocks={blocks} segmentFilter={segmentFilter} onReserveBlock={handleReserveBlock} onClearFilter={() => { setSegmentFilter(null); setCurrentScreen('dashboard'); }} mode="browse" />;
+      case 'filtered_list': return <ListScreen key="browse-list" onNavigate={setCurrentScreen} blocks={blocks} segmentFilter={segmentFilter} onReserveBlock={handleReserveBlock} onClearFilter={() => { setSegmentFilter(null); setSelectedSgCod(undefined); setCurrentScreen('subcategories'); }} mode="browse" />;
       case 'reserved': return <ReservedScreen onNavigate={setCurrentScreen} blocks={blocks} onStartBlock={handleStartBlock} currentUser={currentUser} />;
       case 'history': return <HistoryScreen />;
       case 'analytics': return <AnalyticsScreen onNavigate={setCurrentScreen} />;
-      case 'mission_detail': return <MissionDetailScreen blockData={activeBlock} onBack={() => { setCurrentScreen('reserved'); loadRealData(); }} currentUser={currentUser} />;
-      case 'subcategories': return <SubcategoriesScreen categoryLabel={selectedCategory || ''} categories={categories} onBack={() => setCurrentScreen('dashboard')} onSelectSegment={handleSegmentSelect} />;
+      case 'mission_detail': return <MissionDetailScreen blockData={activeBlock} onBack={() => { setCurrentScreen('reserved'); }} currentUser={currentUser} />;
+      case 'subcategories': return <SubcategoriesScreen categoryLabel={selectedCategoryLabel || ''} categories={categories} onBack={() => setCurrentScreen('dashboard')} onSelectSegment={handleSegmentSelect} />;
       case 'treatment': return <TreatmentScreen onNavigate={setCurrentScreen} />;
       case 'settings': return <SettingsScreen onBack={() => setCurrentScreen('dashboard')} currentUser={currentUser} />;
       case 'address_manager': return <AddressManagerScreen onBack={() => setCurrentScreen('dashboard')} />;

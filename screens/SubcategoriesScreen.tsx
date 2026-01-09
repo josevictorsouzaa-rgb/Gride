@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Icon } from '../components/Icon';
 import { ApiCategory } from '../services/api';
@@ -6,7 +7,7 @@ interface SubcategoriesScreenProps {
   categoryLabel: string;
   categories: ApiCategory[];
   onBack: () => void;
-  onSelectSegment: (segment: string) => void;
+  onSelectSegment: (segment: string, sgId: number) => void;
 }
 
 export const SubcategoriesScreen: React.FC<SubcategoriesScreenProps> = ({ 
@@ -56,7 +57,7 @@ export const SubcategoriesScreen: React.FC<SubcategoriesScreenProps> = ({
             {items.map((sub, idx) => (
               <button 
                 key={sub.id || idx}
-                onClick={() => onSelectSegment(sub.name)}
+                onClick={() => onSelectSegment(sub.name, sub.db_id)}
                 className="flex items-center p-4 bg-white dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-card-border shadow-sm hover:border-primary/50 transition-all active:scale-[0.98] group"
               >
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 group-hover:bg-primary/10 group-hover:text-primary transition-colors">

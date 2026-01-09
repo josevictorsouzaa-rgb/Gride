@@ -32,6 +32,7 @@ export interface ApiCategory {
   count: number;
   subcategories: { 
     id: string; 
+    db_id: number; // Added for precise filtering
     name: string; 
     count: number; 
     icon: string; 
@@ -98,10 +99,18 @@ export const api = {
     } catch (error) { return []; }
   },
 
-  // --- NOVO: BUSCAR BLOCOS PRÉ-AGRUPADOS DO BACKEND ---
-  getBlocks: async (page = 1, limit = 100, search = ''): Promise<Block[]> => {
+  // --- ATUALIZADO: BUSCA DE BLOCOS COM FILTROS ESPECÍFICOS ---
+  getBlocks: async (page = 1, limit = 100, search = '', gr_cod?: number, sg_cod?: number, daily_meta?: boolean): Promise<Block[]> => {
     try {
-      const params = new URLSearchParams({ page: page.toString(), limit: limit.toString(), search });
+      const params = new URLSearchParams({ 
+          page: page.toString(), 
+          limit: limit.toString(), 
+          search 
+      });
+      if (gr_cod) params.append('gr_cod', gr_cod.toString());
+      if (sg_cod) params.append('sg_cod', sg_cod.toString());
+      if (daily_meta) params.append('daily_meta', 'true');
+
       const response = await fetch(`${API_BASE_URL}/blocks?${params}`);
       if (!response.ok) throw new Error('Erro blocks');
       return await response.json();
@@ -145,9 +154,7 @@ export const api = {
       } catch (e) { return { success: false, error: 'Erro ao finalizar' }; }
   },
 
-  // --- COMPATIBILIDADE ---
   saveCount: async (data: InventoryLogEntry) => {
-    // Mantido para compatibilidade, mas o finalizeBlock deve ser preferido para blocos
     try {
       await fetch(`${API_BASE_URL}/save-count`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
       return { success: true };
@@ -234,7 +241,6 @@ export const api = {
       } catch (e) { return false; }
   },
 
-  // --- LAYOUT METHODS (MOCK / PLACEHOLDER) ---
   getLayout: async (): Promise<WarehouseLayout | null> => { return null; },
   saveLayout: async (layout: WarehouseLayout) => { return { success: true }; }
 };
