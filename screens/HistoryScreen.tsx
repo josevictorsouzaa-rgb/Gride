@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { Icon } from '../components/Icon';
 import { EntryModal, HistoryFilterModal } from '../components/Modals';
@@ -7,12 +8,14 @@ import { api } from '../services/api';
 export const HistoryScreen: React.FC = () => {
   const [historyBlocks, setHistoryBlocks] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const LIMIT = 30;
 
   // Fetch History from Backend
   useEffect(() => {
     const fetchHistory = async () => {
         setLoading(true);
-        const data = await api.getHistory();
+        const data = await api.getHistory(page, LIMIT);
         
         // Transform Flat Log into Grouped Blocks (Logic based on Location + User + Date)
         const groups = new Map();
@@ -61,7 +64,7 @@ export const HistoryScreen: React.FC = () => {
     };
 
     fetchHistory();
-  }, []);
+  }, [page]);
 
   const [expandedBlocks, setExpandedBlocks] = useState<number[]>([]);
   const [selectedItem, setSelectedItem] = useState<any | null>(null);
@@ -122,7 +125,7 @@ export const HistoryScreen: React.FC = () => {
   };
 
   return (
-    <div className="relative flex flex-col w-full min-h-screen pb-24 md:pb-0 bg-background-light dark:bg-background-dark md:bg-transparent">
+    <div className="relative flex flex-col w-full min-h-screen pb-32 md:pb-0 bg-background-light dark:bg-background-dark md:bg-transparent">
       {/* Header */}
       <header className="sticky top-0 z-10 bg-background-light/95 dark:bg-background-dark/95 md:bg-transparent backdrop-blur-sm md:backdrop-blur-none p-4 pb-2 border-b border-transparent">
         <div className="flex items-center justify-between">
@@ -193,7 +196,7 @@ export const HistoryScreen: React.FC = () => {
 
       <div className="px-4 pt-2 pb-2 flex items-center justify-between">
          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-           {loading ? 'Carregando...' : filteredBlocks.length > 0 ? `${filteredBlocks.length} registros` : 'Nenhum resultado'}
+           {loading ? 'Carregando...' : filteredBlocks.length > 0 ? `${filteredBlocks.length} registros (Página ${page})` : 'Nenhum resultado'}
          </p>
       </div>
 
@@ -202,7 +205,7 @@ export const HistoryScreen: React.FC = () => {
         {!loading && filteredBlocks.length === 0 ? (
           <div className="col-span-full flex flex-col items-center justify-center py-12 text-gray-400 opacity-60">
              <Icon name="manage_search" size={64} className="mb-2" />
-             <p className="text-sm font-medium">Nenhum histórico encontrado.</p>
+             <p className="text-sm font-medium">Nenhum histórico encontrado nesta página.</p>
           </div>
         ) : (
           filteredBlocks.map((block) => {
@@ -290,6 +293,30 @@ export const HistoryScreen: React.FC = () => {
              </div>
            );
         }))}
+      </div>
+
+      {/* PAGINATION CONTROLS */}
+      <div className="fixed bottom-20 md:bottom-6 left-0 right-0 flex justify-center items-center gap-4 p-4 z-30 pointer-events-none">
+          <div className="bg-white dark:bg-surface-dark border border-gray-200 dark:border-card-border shadow-xl rounded-full p-1.5 flex gap-2 pointer-events-auto">
+              <button 
+                disabled={page === 1}
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                className="size-10 rounded-full flex items-center justify-center bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 dark:text-white transition-colors"
+              >
+                  <Icon name="chevron_left" size={24} />
+              </button>
+              
+              <div className="flex items-center justify-center px-4 font-bold text-sm text-gray-900 dark:text-white">
+                  Página {page}
+              </div>
+
+              <button 
+                onClick={() => setPage(p => p + 1)}
+                className="size-10 rounded-full flex items-center justify-center bg-primary text-white hover:bg-primary-dark disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors shadow-lg"
+              >
+                  <Icon name="chevron_right" size={24} />
+              </button>
+          </div>
       </div>
 
       <ItemDetailModal 

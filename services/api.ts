@@ -120,6 +120,18 @@ export const api = {
     }
   },
 
+  // --- NOVO: BUSCA APENAS OS BLOCOS RESERVADOS PELO USUÁRIO ---
+  getReservedBlocks: async (userId: string): Promise<Block[]> => {
+      try {
+          const response = await fetch(`${API_BASE_URL}/reserved-blocks/${userId}`);
+          if (!response.ok) throw new Error('Erro ao buscar reservados');
+          return await response.json();
+      } catch (e) { 
+          console.error(e);
+          return []; 
+      }
+  },
+
   // --- RESERVAS & LOCKING ---
   reserveBlock: async (blockId: number | string, user: User) => {
       try {
@@ -161,9 +173,9 @@ export const api = {
     } catch (error) { return { success: false }; }
   },
 
-  getHistory: async () => {
+  getHistory: async (page = 1, limit = 30) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/history`);
+      const response = await fetch(`${API_BASE_URL}/history?page=${page}&limit=${limit}`);
       if (!response.ok) throw new Error('Erro');
       return await response.json();
     } catch (error) { return []; }

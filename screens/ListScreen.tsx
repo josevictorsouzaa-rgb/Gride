@@ -11,26 +11,9 @@ interface ListScreenProps {
   onReserveBlock: (id: number) => void;
   onClearFilter: () => void;
   mode?: 'daily_meta' | 'browse'; 
+  page?: number;
+  onPageChange?: (newPage: number) => void;
 }
-
-// Helper to calculate days since a date string
-const getDaysSince = (dateStr?: string): number => {
-  if (!dateStr) return 9999; 
-  if (dateStr.toLowerCase().includes('hoje')) return 0;
-  if (dateStr.toLowerCase().includes('ontem')) return 1;
-  const parts = dateStr.split('/');
-  if (parts.length === 2) {
-    const day = parseInt(parts[0]);
-    const month = parseInt(parts[1]) - 1; 
-    const now = new Date();
-    const countDate = new Date(now.getFullYear(), month, day);
-    const diffTime = Math.abs(now.getTime() - countDate.getTime());
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-  }
-  return 0;
-};
-
-type TimeFilter = 'all' | '7_days' | '15_days' | '30_days' | 'never';
 
 export const ListScreen: React.FC<ListScreenProps> = ({ 
   onNavigate, 
@@ -38,14 +21,15 @@ export const ListScreen: React.FC<ListScreenProps> = ({
   segmentFilter, 
   onReserveBlock,
   onClearFilter,
-  mode = 'daily_meta' 
+  mode = 'daily_meta',
+  page = 1,
+  onPageChange
 }) => {
   const [showAllBlocks, setShowAllBlocks] = useState(false);
   const [expandedBlocks, setExpandedBlocks] = useState<number[]>([]);
   const [selectedItem, setSelectedItem] = useState<any | null>(null);
   
   const [searchText, setSearchText] = useState('');
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
 
   const toggleBlock = (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -71,15 +55,32 @@ export const ListScreen: React.FC<ListScreenProps> = ({
       }
       return true;
     });
-  }, [blocks, segmentFilter, searchText, timeFilter, mode]);
+  }, [blocks, segmentFilter, searchText, mode]);
 
-  const displayedBlocks = showAllBlocks ? filteredBlocks : filteredBlocks.slice(0, 20);
+  // Se for 'browse', mostra tudo que veio do backend (que já está paginado), senão corta 20
+  const displayedBlocks = (mode === 'browse' || showAllBlocks) ? filteredBlocks : filteredBlocks.slice(0, 20);
 
   return (
-    <div className="relative flex flex-col w-full min-h-screen pb-24 md:pb-0 bg-background-light dark:bg-background-dark md:bg-transparent">
-      {/* Header (Simplified) */}
+    <div className="relative flex flex-col w-full min-h-screen pb-32 md:pb-0 bg-background-light dark:bg-background-dark md:bg-transparent">
+      {/* Header */}
       <div className="sticky top-0 z-20 bg-background-light dark:bg-background-dark/95 backdrop-blur-md border-b border-gray-200 dark:border-card-border p-4">
-          <h2 className="text-lg font-bold">{mode === 'daily_meta' ? 'Meta Diária' : 'Explorar'}</h2>
+          <div className="flex items-center gap-3">
+              {/* BACK BUTTON for Browse Mode */}
+              {mode === 'browse' && (
+                  <button 
+                    onClick={onClearFilter}
+                    className="flex size-10 shrink-0 items-center justify-center rounded-full bg-white dark:bg-surface-dark border border-gray-200 dark:border-white/10 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
+                  >
+                      <Icon name="arrow_back" size={24} />
+                  </button>
+              )}
+              
+              <div>
+                  <h2 className="text-lg font-bold">{mode === 'daily_meta' ? 'Meta Diária' : segmentFilter || 'Explorar'}</h2>
+                  {mode === 'browse' && <p className="text-xs text-gray-500">Página {page}</p>}
+              </div>
+          </div>
+
           <div className="mt-2 flex w-full items-stretch rounded-xl h-11 bg-white dark:bg-surface-dark border border-gray-100 dark:border-white/5">
               <div className="flex items-center justify-center pl-4 text-gray-400"><Icon name="search" size={20} /></div>
               <input className="flex-1 bg-transparent border-none focus:ring-0 text-sm px-3 placeholder-gray-400 text-gray-900 dark:text-white" placeholder="Buscar..." value={searchText} onChange={(e) => setSearchText(e.target.value)} />
@@ -88,7 +89,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
 
       <main className="flex flex-col gap-4 p-4 md:p-8">
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {filteredBlocks.length === 0 ? <div className="col-span-full py-12 text-center text-gray-400">Nenhum bloco encontrado.</div> : (
+              {filteredBlocks.length === 0 ? <div className="col-span-full py-12 text-center text-gray-400">Nenhum bloco encontrado nesta página.</div> : (
                 displayedBlocks.map((block) => {
                   const isExpanded = expandedBlocks.includes(block.id);
                   const visibleItems = isExpanded ? block.items : block.items.slice(0, 3);
@@ -144,6 +145,34 @@ export const ListScreen: React.FC<ListScreenProps> = ({
               )}
             </div>
       </main>
+
+      {/* PAGINATION CONTROLS (Only in Browse Mode) */}
+      {mode === 'browse' && onPageChange && (
+          <div className="fixed bottom-20 md:bottom-6 left-0 right-0 flex justify-center items-center gap-4 p-4 z-30 pointer-events-none">
+              <div className="bg-white dark:bg-surface-dark border border-gray-200 dark:border-card-border shadow-xl rounded-full p-1.5 flex gap-2 pointer-events-auto">
+                  <button 
+                    disabled={page === 1}
+                    onClick={() => onPageChange(page - 1)}
+                    className="size-10 rounded-full flex items-center justify-center bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 dark:text-white transition-colors"
+                  >
+                      <Icon name="chevron_left" size={24} />
+                  </button>
+                  
+                  <div className="flex items-center justify-center px-4 font-bold text-sm text-gray-900 dark:text-white">
+                      Página {page}
+                  </div>
+
+                  <button 
+                    disabled={blocks.length < 30} // Simple check: if less than limit, probably last page
+                    onClick={() => onPageChange(page + 1)}
+                    className="size-10 rounded-full flex items-center justify-center bg-primary text-white hover:bg-primary-dark disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors shadow-lg"
+                  >
+                      <Icon name="chevron_right" size={24} />
+                  </button>
+              </div>
+          </div>
+      )}
+
       <ItemDetailModal isOpen={!!selectedItem} onClose={() => setSelectedItem(null)} item={selectedItem} />
     </div>
   );

@@ -203,18 +203,66 @@ app.get('/categories', (req, res) => {
 });
 
 // ==========================================================================
-// --- CORE DO SISTEMA: BLOCOS COM FILTRO ---
+// --- CORE DO SISTEMA: BLOCOS ---
 // ==========================================================================
 
+// Helper para formatar e agrupar produtos em blocos
+const groupProductsToBlocks = (products, lockMap) => {
+    const groups = new Map();
+
+    products.forEach(p => {
+        const similarId = p.PRO_COD_SIMILAR ? safeString(p.PRO_COD_SIMILAR) : safeString(p.PRO_COD);
+        
+        if (!groups.has(similarId)) {
+            groups.set(similarId, []);
+        }
+        
+        groups.get(similarId).push({
+            id: safeString(p.PRO_COD),
+            db_pro_cod: p.PRO_COD,
+            name: safeString(p.PRO_DESCRI),
+            ref: safeString(p.PRO_NRFABRICANTE),
+            balance: parseFloat(p.PRO_EST_ATUAL || 0),
+            brand: 'GENERICO',
+            location: 'GERAL',
+            lastCount: null
+        });
+    });
+
+    const blocks = [];
+    groups.forEach((items, key) => {
+        const blockId = key;
+        const parentItem = items.find(i => i.id === blockId) || items[0];
+        const displayRef = parentItem.ref || 'S/ REF';
+        const isLocked = lockMap.get(blockId);
+
+        blocks.push({
+            id: blockId,
+            parentRef: displayRef,
+            location: items[0].location,
+            status: isLocked ? 'progress' : 'pending',
+            date: 'Hoje',
+            subcategory: 'Geral',
+            items: items,
+            lockedBy: isLocked ? {
+                userId: isLocked.userId,
+                userName: isLocked.userName,
+                timestamp: isLocked.timestamp
+            } : null
+        });
+    });
+    return blocks;
+};
+
+// Rota Geral de Blocos (Com paginação e filtros)
 app.get('/blocks', (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 100;
     const search = req.query.search || '';
-    const gr_cod = req.query.gr_cod; // Filtro de Grupo
-    const sg_cod = req.query.sg_cod; // Filtro de Subgrupo
-    const daily_meta = req.query.daily_meta === 'true'; // Flag para meta diária
+    const gr_cod = req.query.gr_cod;
+    const sg_cod = req.query.sg_cod;
+    const daily_meta = req.query.daily_meta === 'true';
 
-    // Se for Meta Diária e não tivermos lógica definida (Curva ABC), retorna vazio por enquanto
     if (daily_meta) {
         return res.json([]);
     }
@@ -246,9 +294,8 @@ app.get('/blocks', (req, res) => {
                 WHERE P.PRO_ATIVO = 'S'
             `;
             
-            // Note: Firebird requer params na ordem exata.
-            // Para simplificar, vamos construir a string SQL com cuidado ou usar array de params.
-            const params = [limit * 10, skip]; // Carrega mais para garantir agrupamento correto
+            // Carrega 10x o limite para garantir agrupamento correto na visualização
+            const params = [limit * 10, skip];
 
             if (search) {
                 sql += ` AND (P.PRO_DESCRI CONTAINING ? OR P.PRO_NRFABRICANTE CONTAINING ?)`;
@@ -256,76 +303,73 @@ app.get('/blocks', (req, res) => {
                 params.push(search);
             }
 
-            // Filtros de Categoria (Fluxo Explorar)
-            if (gr_cod) {
-                sql += ` AND P.GR_COD = ?`;
-                params.push(gr_cod);
-            }
-            if (sg_cod) {
-                sql += ` AND P.SG_COD = ?`;
-                params.push(sg_cod);
-            }
+            if (gr_cod) { sql += ` AND P.GR_COD = ?`; params.push(gr_cod); }
+            if (sg_cod) { sql += ` AND P.SG_COD = ?`; params.push(sg_cod); }
             
             sql += ` ORDER BY P.PRO_COD_SIMILAR, P.PRO_DESCRI`;
 
             db.query(sql, params, (err, products) => {
                 db.detach();
                 if (err) return res.status(500).json({ error: err.message });
-
-                // 3. Agrupamento
-                const groups = new Map();
-
-                products.forEach(p => {
-                    const similarId = p.PRO_COD_SIMILAR ? safeString(p.PRO_COD_SIMILAR) : safeString(p.PRO_COD);
-                    
-                    if (!groups.has(similarId)) {
-                        groups.set(similarId, []);
-                    }
-                    
-                    groups.get(similarId).push({
-                        id: safeString(p.PRO_COD),
-                        db_pro_cod: p.PRO_COD,
-                        name: safeString(p.PRO_DESCRI),
-                        ref: safeString(p.PRO_NRFABRICANTE),
-                        balance: parseFloat(p.PRO_EST_ATUAL || 0),
-                        brand: 'GENERICO',
-                        location: 'GERAL',
-                        lastCount: null
-                    });
-                });
-
-                // 4. Formatar Blocos
-                const blocks = [];
-                groups.forEach((items, key) => {
-                    const blockId = key;
-                    
-                    // Lógica para definir a Referência do Bloco (Parent Ref)
-                    // Tenta encontrar o item "Pai" (onde PRO_COD == PRO_COD_SIMILAR ou onde a ref é principal)
-                    // Se não encontrar, usa o primeiro item.
-                    const parentItem = items.find(i => i.id === blockId) || items[0];
-                    
-                    // Exibe APENAS a Referência (PRO_NRFABRICANTE) do agrupador, conforme solicitado
-                    const displayRef = parentItem.ref || 'S/ REF';
-
-                    const isLocked = lockMap.get(blockId);
-
-                    blocks.push({
-                        id: blockId,
-                        parentRef: displayRef, // Alterado para mostrar a REF
-                        location: items[0].location,
-                        status: isLocked ? 'progress' : 'pending',
-                        date: 'Hoje',
-                        subcategory: 'Geral',
-                        items: items,
-                        lockedBy: isLocked ? {
-                            userId: isLocked.userId,
-                            userName: isLocked.userName,
-                            timestamp: isLocked.timestamp
-                        } : null
-                    });
-                });
-
+                const blocks = groupProductsToBlocks(products, lockMap);
+                // Retorna apenas a fatia solicitada após agrupar
                 res.json(blocks.slice(0, limit));
+            });
+        });
+    });
+});
+
+// --- NOVA ROTA: BLOCOS RESERVADOS PELO USUÁRIO (SEM PAGINAÇÃO) ---
+app.get('/reserved-blocks/:userId', (req, res) => {
+    const { userId } = req.params;
+
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.status(500).json({ error: 'Erro DB' });
+
+        // 1. Busca IDs bloqueados por este usuário
+        db.query('SELECT BLOCK_ID, USER_ID, USER_NAME, RESERVED_AT FROM GRIDE_RESERVAS WHERE USER_ID = ?', [userId], (err, reservations) => {
+            if (err) { db.detach(); return res.status(500).json({ error: 'Erro Reservas' }); }
+            
+            if (reservations.length === 0) {
+                db.detach();
+                return res.json([]); // Sem reservas
+            }
+
+            const lockMap = new Map();
+            const blockIds = [];
+            
+            reservations.forEach(r => {
+                const bId = safeString(r.BLOCK_ID);
+                blockIds.push(bId);
+                lockMap.set(bId, {
+                    userId: safeString(r.USER_ID),
+                    userName: safeString(r.USER_NAME),
+                    timestamp: r.RESERVED_AT
+                });
+            });
+
+            // 2. Busca Produtos desses blocos
+            const idsList = blockIds.map(id => `'${id}'`).join(',');
+            
+            const sql = `
+                SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.PRO_COD_SIMILAR, 
+                       P.PRO_NRFABRICANTE, P.GR_COD, P.SG_COD, P.MAR_COD
+                FROM PRODUTOS P
+                WHERE P.PRO_ATIVO = 'S' 
+                AND (
+                    P.PRO_COD_SIMILAR IN (${idsList}) 
+                    OR 
+                    (P.PRO_COD_SIMILAR IS NULL AND P.PRO_COD IN (${idsList}))
+                )
+            `;
+
+            db.query(sql, [], (err, products) => {
+                db.detach();
+                if (err) return res.status(500).json({ error: err.message });
+                
+                // Usa a mesma função de agrupamento
+                const blocks = groupProductsToBlocks(products, lockMap);
+                res.json(blocks);
             });
         });
     });
@@ -460,13 +504,30 @@ app.post('/delete-warehouse', (req, res) => {
         db.query('DELETE FROM GRIDE_GALPOES WHERE ID = ?', [id], (err) => { db.detach(); res.json({ success: true }); });
     });
 });
+// --- ROTA DE HISTÓRICO ATUALIZADA (COM PAGINAÇÃO) ---
 app.get('/history', (req, res) => {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 30;
+    const skip = (page - 1) * limit;
+
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro DB' });
-        const sql = `SELECT FIRST 200 ID, SKU, NOME_PRODUTO, USUARIO_NOME, QTD_CONTADA, LOCALIZACAO, STATUS, DATA_HORA FROM GRIDE_INVENTARIO_LOG ORDER BY DATA_HORA DESC`;
-        db.query(sql, [], (err, result) => {
+        const sql = `
+            SELECT FIRST ? SKIP ? 
+            ID, SKU, NOME_PRODUTO, USUARIO_NOME, QTD_CONTADA, LOCALIZACAO, STATUS, DATA_HORA, USUARIO_ID 
+            FROM GRIDE_INVENTARIO_LOG 
+            ORDER BY DATA_HORA DESC
+        `;
+        db.query(sql, [limit, skip], (err, result) => {
             db.detach();
-            res.json(result ? result.map(r => ({ ...r, NOME_PRODUTO: safeString(r.NOME_PRODUTO), USUARIO_NOME: safeString(r.USUARIO_NOME), STATUS: safeString(r.STATUS), LOCALIZACAO: safeString(r.LOCALIZACAO) })) : []);
+            res.json(result ? result.map(r => ({ 
+                ...r, 
+                NOME_PRODUTO: safeString(r.NOME_PRODUTO), 
+                USUARIO_NOME: safeString(r.USUARIO_NOME), 
+                STATUS: safeString(r.STATUS), 
+                LOCALIZACAO: safeString(r.LOCALIZACAO),
+                USUARIO_ID: safeString(r.USUARIO_ID)
+            })) : []);
         });
     });
 });

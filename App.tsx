@@ -29,6 +29,10 @@ const App: React.FC = () => {
   const [selectedGrCod, setSelectedGrCod] = useState<number | undefined>(undefined);
   const [selectedSgCod, setSelectedSgCod] = useState<number | undefined>(undefined);
   
+  // Pagination State for Browsing
+  const [browsePage, setBrowsePage] = useState(1);
+  const BROWSE_LIMIT = 30; // Paginação de 30 itens por vez
+
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [blocks, setBlocks] = useState<Block[]>(initialBlocksData);
   const [categories, setCategories] = useState<ApiCategory[]>([]); 
@@ -72,37 +76,34 @@ const App: React.FC = () => {
     if (currentScreen === 'login') return;
 
     const fetchBlocks = async () => {
-        // Se estivermos em dashboard ou reserved, queremos carregar blocos para garantir
-        // que a contagem de reservas (badge) e a lista de reservados estejam sincronizadas.
         const shouldFetchReservations = currentScreen === 'reserved' || currentScreen === 'dashboard';
         const isListScreen = currentScreen === 'list';
         const isFilteredList = currentScreen === 'filtered_list';
 
         if (!isListScreen && !isFilteredList && !shouldFetchReservations) {
-            return; // Não carrega nada em outras telas para economizar
+            return; 
         }
 
         setIsLoading(true);
         try {
             if (isListScreen) {
-                // META DIÁRIA: Carrega vazio (ou lógica futura de curva ABC)
+                // META DIÁRIA: Carrega vazio (ou 100 itens fixos para meta)
                 const metaBlocks = await api.getBlocks(1, 100, '', undefined, undefined, true);
                 setBlocks(metaBlocks);
             } else if (isFilteredList) {
-                // EXPLORAR: Carrega com filtros específicos de GR e SG
+                // EXPLORAR: Carrega com PAGINAÇÃO (30 itens) e filtros específicos de GR e SG
                 if (selectedGrCod) {
-                    const filteredBlocks = await api.getBlocks(1, 200, '', selectedGrCod, selectedSgCod);
+                    const filteredBlocks = await api.getBlocks(browsePage, BROWSE_LIMIT, '', selectedGrCod, selectedSgCod);
                     setBlocks(filteredBlocks);
                 } else {
                     setBlocks([]); 
                 }
-            } else if (shouldFetchReservations) {
-                // DASHBOARD ou RESERVADOS: 
-                // Precisamos buscar blocos para identificar quais estão reservados pelo usuário.
-                // Atualmente usamos getBlocks geral que retorna tudo. 
-                // Idealmente teríamos endpoint /my-reservations, mas usaremos o filtro no front.
-                const allBlocks = await api.getBlocks(1, 300); // Carrega lote maior para encontrar reservas
-                setBlocks(allBlocks);
+            } else if (currentScreen === 'reserved' && currentUser) {
+                // RESERVADOS: Usa rota exclusiva para garantir que itens apareçam mesmo fora da paginação (SEM PAGINAÇÃO)
+                const myReserved = await api.getReservedBlocks(currentUser.id);
+                setBlocks(myReserved);
+            } else if (currentScreen === 'dashboard') {
+                // DASHBOARD: Sem carregar blocos pesados
             }
         } catch (error) {
             console.error("Erro ao carregar dados:", error);
@@ -112,7 +113,7 @@ const App: React.FC = () => {
     };
 
     fetchBlocks();
-  }, [currentScreen, selectedGrCod, selectedSgCod]);
+  }, [currentScreen, selectedGrCod, selectedSgCod, currentUser, browsePage]);
 
   const reservedCount = blocks.filter(b => b.status === 'progress' && (!b.lockedBy || b.lockedBy.userId === currentUser?.id)).length;
   
@@ -125,6 +126,7 @@ const App: React.FC = () => {
   const handleSegmentSelect = (segmentLabel: string, sgId: number) => {
     setSegmentFilter(segmentLabel);
     setSelectedSgCod(sgId);
+    setBrowsePage(1); // Reset page on new filter
     setCurrentScreen('filtered_list');
   };
 
@@ -141,9 +143,9 @@ const App: React.FC = () => {
         ));
     } else {
         alert(res.message || 'Erro ao reservar.');
-        // Força recarregamento para sincronizar status real
         if (selectedGrCod) {
-             const updated = await api.getBlocks(1, 200, '', selectedGrCod, selectedSgCod);
+             // Refresh page
+             const updated = await api.getBlocks(browsePage, BROWSE_LIMIT, '', selectedGrCod, selectedSgCod);
              setBlocks(updated);
         }
     }
@@ -159,12 +161,29 @@ const App: React.FC = () => {
     alert(`Item ${code} scaneado. (Funcionalidade de busca direta a implementar)`);
   };
 
+  // Pagination Handlers
+  const handlePageChange = (newPage: number) => {
+      if (newPage < 1) return;
+      setBrowsePage(newPage);
+  };
+
   const renderScreen = () => {
     switch (currentScreen) {
       case 'login': return <LoginScreen onLogin={handleLogin} />;
       case 'dashboard': return <DashboardScreen onNavigate={setCurrentScreen} onCategorySelect={handleCategorySelect} currentUser={currentUser} onLogout={handleLogout} categories={categories} />;
       case 'list': return <ListScreen key="meta-list" onNavigate={setCurrentScreen} blocks={blocks} segmentFilter={null} onReserveBlock={handleReserveBlock} onClearFilter={() => {}} mode="daily_meta" />;
-      case 'filtered_list': return <ListScreen key="browse-list" onNavigate={setCurrentScreen} blocks={blocks} segmentFilter={segmentFilter} onReserveBlock={handleReserveBlock} onClearFilter={() => { setSegmentFilter(null); setSelectedSgCod(undefined); setCurrentScreen('subcategories'); }} mode="browse" />;
+      case 'filtered_list': 
+        return <ListScreen 
+            key="browse-list" 
+            onNavigate={setCurrentScreen} 
+            blocks={blocks} 
+            segmentFilter={segmentFilter} 
+            onReserveBlock={handleReserveBlock} 
+            onClearFilter={() => { setSegmentFilter(null); setSelectedSgCod(undefined); setCurrentScreen('subcategories'); }} 
+            mode="browse"
+            page={browsePage}
+            onPageChange={handlePageChange}
+        />;
       case 'reserved': return <ReservedScreen onNavigate={setCurrentScreen} blocks={blocks} onStartBlock={handleStartBlock} currentUser={currentUser} />;
       case 'history': return <HistoryScreen />;
       case 'analytics': return <AnalyticsScreen onNavigate={setCurrentScreen} />;
