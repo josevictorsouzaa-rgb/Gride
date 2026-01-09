@@ -262,14 +262,15 @@ app.get('/blocks', (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 100;
     const search = req.query.search || '';
-    const locationSearch = req.query.location || ''; // Novo Parametro
-    const gr_cod = req.query.gr_cod;
-    const sg_cod = req.query.sg_cod;
-    const daily_meta = req.query.daily_meta === 'true';
-
-    if (daily_meta) {
-        return res.json([]);
-    }
+    const locationSearch = req.query.location || ''; 
+    
+    // CONVERSÃO DE TIPOS: Garante que GR_COD e SG_COD sejam inteiros
+    const gr_cod = req.query.gr_cod ? parseInt(req.query.gr_cod) : null;
+    const sg_cod = req.query.sg_cod ? parseInt(req.query.sg_cod) : null;
+    
+    // REMOVIDA TRAVA: A trava 'daily_meta' retornava vazio e impedia o carregamento
+    // const daily_meta = req.query.daily_meta === 'true';
+    // if (daily_meta) { return res.json([]); }
 
     const skip = (page - 1) * limit;
 
@@ -322,6 +323,10 @@ app.get('/blocks', (req, res) => {
             db.query(sql, params, (err, products) => {
                 db.detach();
                 if (err) return res.status(500).json({ error: err.message });
+                
+                // DEBUG LOG: Verificar se produtos estão chegando
+                console.log(`[DEBUG] /blocks: Found ${products.length} products. Filters: GR=${gr_cod}, SG=${sg_cod}, LOC=${locationSearch}`);
+
                 const blocks = groupProductsToBlocks(products, lockMap);
                 // Retorna apenas a fatia solicitada após agrupar
                 res.json(blocks.slice(0, limit));
