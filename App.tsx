@@ -11,144 +11,187 @@ import { TreatmentScreen } from './screens/TreatmentScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { ReservedScreen } from './screens/ReservedScreen';
 import { AnalyticsScreen } from './screens/AnalyticsScreen';
-import { AddressManagerScreen } from './screens/AddressManagerScreen'; 
+import { AddressManagerScreen } from './screens/AddressManagerScreen'; // New Import
 import { BottomNav } from './components/BottomNav';
 import { Sidebar } from './components/Sidebar'; 
 import { ScannerModal } from './components/Modals';
 import { Icon } from './components/Icon'; 
-import { api, ApiCategory } from './services/api'; 
+import { api, ApiProduct, ApiCategory } from './services/api'; 
 
-const initialBlocksData: Block[] = [];
+const initialBlocksData: Block[] = [
+  { 
+    id: 1, 
+    parentRef: 'SISTEMA', 
+    location: 'Aguardando', 
+    status: 'pending', 
+    date: 'Hoje', 
+    subcategory: 'Geral', 
+    items: []
+  }
+];
+
+// Tempo de inatividade em milissegundos (15 minutos)
 const INACTIVITY_LIMIT = 15 * 60 * 1000;
 
 const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<Screen>('login');
-  
-  // States for Filtering
-  const [selectedCategoryLabel, setSelectedCategoryLabel] = useState<string | null>(null);
-  const [selectedGrCod, setSelectedGrCod] = useState<number | undefined>(undefined);
-  const [selectedSgCod, setSelectedSgCod] = useState<number | undefined>(undefined);
-  
-  // Pagination State for Browsing
-  const [browsePage, setBrowsePage] = useState(1);
-  const BROWSE_LIMIT = 30; // Paginação de 30 itens por vez
-
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  
   const [blocks, setBlocks] = useState<Block[]>(initialBlocksData);
   const [categories, setCategories] = useState<ApiCategory[]>([]); 
-  const [segmentFilter, setSegmentFilter] = useState<string | null>(null); // Visual only
+  
+  const [segmentFilter, setSegmentFilter] = useState<string | null>(null);
   const [activeBlock, setActiveBlock] = useState<any | null>(null);
   const [showScanner, setShowScanner] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
+  // --- LOGICA DE AUTO-LOGOUT ---
   const handleLogout = useCallback(() => {
     setCurrentUser(null);
     setCurrentScreen('login');
+    // Opcional: Limpar dados sensíveis se necessário
   }, []);
 
   const handleLogin = (user: User) => {
     setCurrentUser(user);
     setCurrentScreen('dashboard');
+
+    // --- SOLICITAR PERMISSÃO DE CÂMERA IMEDIATAMENTE APÓS LOGIN ---
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+        .then((stream) => {
+            console.log("Acesso à câmera concedido e pré-aquecido.");
+            stream.getTracks().forEach(track => track.stop());
+        })
+        .catch((err) => {
+            console.warn("Permissão de câmera negada ou adiada no login:", err);
+        });
+    }
   };
 
   useEffect(() => {
     if (currentScreen === 'login') return;
+
     let timeoutId: any;
+
     const resetTimer = () => {
       clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => { handleLogout(); alert("Sessão expirada."); }, INACTIVITY_LIMIT);
+      timeoutId = setTimeout(() => {
+        console.log("Sessão expirada por inatividade.");
+        handleLogout();
+        alert("Sua sessão expirou por inatividade (15min).");
+      }, INACTIVITY_LIMIT);
     };
+
     const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart'];
+    
     resetTimer();
-    events.forEach(event => window.addEventListener(event, resetTimer));
-    return () => { clearTimeout(timeoutId); events.forEach(event => window.removeEventListener(event, resetTimer)); };
+
+    events.forEach(event => {
+      window.addEventListener(event, resetTimer);
+    });
+
+    return () => {
+      clearTimeout(timeoutId);
+      events.forEach(event => {
+        window.removeEventListener(event, resetTimer);
+      });
+    };
   }, [currentScreen, handleLogout]);
 
-  // Carrega Categorias ao entrar no sistema
   useEffect(() => {
-      if (currentScreen === 'dashboard') {
-          api.getCategories().then(setCategories);
-      }
+    if (currentScreen !== 'login') {
+      loadRealData();
+    }
   }, [currentScreen]);
 
-  // Lógica principal de carregamento de blocos baseada na tela e filtros
-  useEffect(() => {
-    if (currentScreen === 'login') return;
-
-    const fetchBlocks = async () => {
-        const shouldFetchReservations = currentScreen === 'reserved' || currentScreen === 'dashboard';
-        const isListScreen = currentScreen === 'list';
-        const isFilteredList = currentScreen === 'filtered_list';
-
-        if (!isListScreen && !isFilteredList && !shouldFetchReservations) {
-            return; 
+  const loadRealData = async () => {
+    setIsLoading(true);
+    try {
+        const cats = await api.getCategories();
+        if (cats && Array.isArray(cats)) {
+             setCategories(cats);
+        } else {
+             setCategories([]);
         }
 
-        setIsLoading(true);
-        try {
-            if (isListScreen) {
-                // META DIÁRIA: Carrega vazio (ou 100 itens fixos para meta)
-                const metaBlocks = await api.getBlocks(1, 100, '', undefined, undefined, true);
-                setBlocks(metaBlocks);
-            } else if (isFilteredList) {
-                // EXPLORAR: Carrega com PAGINAÇÃO (30 itens) e filtros específicos de GR e SG
-                // NOTA: Se segmentFilter for 'Resultado da Busca', não recarregamos aqui para não sobrescrever a busca do scanner,
-                // a menos que estejamos paginando
-                if (segmentFilter !== 'Resultado da Busca' && selectedGrCod) {
-                    const filteredBlocks = await api.getBlocks(browsePage, BROWSE_LIMIT, '', selectedGrCod, selectedSgCod);
-                    setBlocks(filteredBlocks);
+        const products = await api.getProducts(1, 100);
+        
+        if (products && Array.isArray(products) && products.length > 0) {
+            const groupedMap = new Map<string, any[]>();
+            
+            products.forEach((p: ApiProduct) => {
+                const groupKey = p.similar_id ? `SIMILAR_${p.similar_id}` : `PROD_${p.id}`;
+                
+                if (!groupedMap.has(groupKey)) {
+                  groupedMap.set(groupKey, []);
                 }
-            } else if (currentScreen === 'reserved' && currentUser) {
-                // RESERVADOS: Usa rota exclusiva para garantir que itens apareçam mesmo fora da paginação (SEM PAGINAÇÃO)
-                const myReserved = await api.getReservedBlocks(currentUser.id);
-                setBlocks(myReserved);
-            } else if (currentScreen === 'dashboard') {
-                // DASHBOARD: Sem carregar blocos pesados
-            }
-        } catch (error) {
-            console.error("Erro ao carregar dados:", error);
-        } finally {
-            setIsLoading(false);
+                
+                groupedMap.get(groupKey)?.push({
+                  id: p.id,
+                  name: p.name,
+                  ref: p.sku, 
+                  brand: p.brand,
+                  balance: p.balance, 
+                  lastCount: null,
+                  location: p.location,
+                  similar_id: p.similar_id
+                });
+            });
+
+            const realBlocks: Block[] = [];
+            let idCounter = 1000;
+
+            groupedMap.forEach((items, key) => {
+                const isGroup = key.startsWith('SIMILAR_');
+                const firstItem = items[0];
+                
+                let headerTitle = isGroup 
+                ? `Agrupamento Similar #${firstItem.similar_id}` 
+                : firstItem.name;
+
+                if (isGroup && items.length === 1) {
+                    headerTitle = firstItem.name;
+                }
+
+                realBlocks.push({
+                  id: idCounter++,
+                  parentRef: headerTitle, 
+                  location: firstItem.location || 'GERAL',
+                  status: 'pending', 
+                  date: 'Hoje',
+                  subcategory: firstItem.brand || 'DIVERSOS', 
+                  items: items
+                });
+            });
+
+            setBlocks(realBlocks);
         }
-    };
+    } catch (error) {
+        console.error("Erro crítico ao carregar dados:", error);
+        setCategories([]); 
+    } finally {
+        setIsLoading(false);
+    }
+  };
 
-    fetchBlocks();
-  }, [currentScreen, selectedGrCod, selectedSgCod, currentUser, browsePage]);
-
-  const reservedCount = blocks.filter(b => b.status === 'progress' && (!b.lockedBy || b.lockedBy.userId === currentUser?.id)).length;
+  const reservedCount = blocks.filter(b => b.status === 'progress').length;
   
-  const handleCategorySelect = (categoryLabel: string, dbId: number) => {
-    setSelectedCategoryLabel(categoryLabel);
-    setSelectedGrCod(dbId);
+  const handleCategorySelect = (categoryLabel: string) => {
+    setSelectedCategory(categoryLabel);
     setCurrentScreen('subcategories');
   };
 
-  const handleSegmentSelect = (segmentLabel: string, sgId: number) => {
-    setSegmentFilter(segmentLabel);
-    setSelectedSgCod(sgId);
-    setBrowsePage(1); // Reset page on new filter
+  const handleSegmentSelect = (segment: string) => {
+    setSegmentFilter(segment);
     setCurrentScreen('filtered_list');
   };
 
-  const handleReserveBlock = async (id: number) => {
-    if (!currentUser) return;
-    const res = await api.reserveBlock(id, currentUser);
-    if (res.success) {
-        setBlocks(prev => prev.map(b => 
-          b.id === id ? { 
-              ...b, 
-              status: 'progress', 
-              lockedBy: { userId: currentUser.id, userName: currentUser.name, timestamp: new Date().toISOString() } 
-          } : b
-        ));
-    } else {
-        alert(res.message || 'Erro ao reservar.');
-        if (selectedGrCod) {
-             // Refresh page
-             const updated = await api.getBlocks(browsePage, BROWSE_LIMIT, '', selectedGrCod, selectedSgCod);
-             setBlocks(updated);
-        }
-    }
+  const handleReserveBlock = (id: number) => {
+    setBlocks(prev => prev.map(b => 
+      b.id === id ? { ...b, status: 'progress' } : b
+    ));
   };
 
   const handleStartBlock = (block: any) => {
@@ -156,116 +199,201 @@ const App: React.FC = () => {
     setCurrentScreen('mission_detail');
   };
 
-  // --- SMART SCANNER LOGIC ---
+  // --- LOGICA DE SCANNER ATUALIZADA ---
   const handleScanComplete = async (code: string) => {
     setShowScanner(false);
     
-    // Tratamento básico da string (remover espaços)
-    const cleanCode = code.trim().toUpperCase();
-    
-    // Verifica se é código de localização (LOC-...)
-    if (cleanCode.startsWith('LOC-')) {
-        setIsLoading(true);
-        try {
-            // Remove o prefixo para a busca (depende de como está no banco, mas assumindo que busca pelo código)
-            // Se o usuário quer buscar TUDO que começa com o local (Tipo 1: G+E) ou EXATO (Tipo 2: G+E+P)
-            // A API vai receber o código completo ou parcial e filtrar "STARTING WITH"
-            const rawLocation = cleanCode.replace('LOC-', ''); 
-            
-            // Chama a API filtrando por localização
-            // Passamos limit=100 para trazer bastante coisa se for um galpão inteiro
-            const results = await api.getBlocks(1, 100, '', undefined, undefined, false, rawLocation);
-            
-            if (results.length > 0) {
-                setBlocks(results);
-                setSegmentFilter('Resultado da Busca');
-                setBrowsePage(1); // Reset paginação
-                // Limpa filtros de categoria para evitar conflito na logica do useEffect
-                setSelectedGrCod(undefined);
-                setSelectedSgCod(undefined);
-                
-                setCurrentScreen('filtered_list');
-            } else {
-                alert(`Nenhum item encontrado na localização: ${cleanCode}`);
-            }
-        } catch (error) {
-            console.error(error);
-            alert("Erro ao buscar itens por localização.");
-        } finally {
-            setIsLoading(false);
-        }
-    } else {
-        // Se não for LOC, assume que é código de produto/SKU e tenta buscar
-        // O backend busca por descrição ou fabricante (SKU) no param 'search'
-        setIsLoading(true);
-        try {
-            const results = await api.getBlocks(1, 50, cleanCode);
-            if (results.length > 0) {
-                setBlocks(results);
-                setSegmentFilter('Resultado da Busca');
-                setBrowsePage(1);
-                setSelectedGrCod(undefined);
-                setSelectedSgCod(undefined);
-                setCurrentScreen('filtered_list');
-            } else {
-                alert(`Nenhum item encontrado com o código: ${code}`);
-            }
-        } catch (e) {
-            alert("Erro na busca.");
-        } finally {
-            setIsLoading(false);
-        }
+    // 1. PREFIXO LOC- (Localização WMS)
+    if (code.startsWith('LOC-')) {
+       // Filtra blocos/itens relacionados a este local
+       // Simula busca no backend por itens naquele endereço
+       let mockBlock = {
+          id: 9999,
+          contextType: 'location_scan',
+          parentRef: 'ITENS EM: ' + code,
+          location: code,
+          status: 'progress',
+          items: [] // Em produção, buscaria itens vinculados a este endereço
+       };
+       handleStartBlock(mockBlock);
+       return;
     }
-  };
 
-  // Pagination Handlers
-  const handlePageChange = (newPage: number) => {
-      if (newPage < 1) return;
-      setBrowsePage(newPage);
+    // 2. PRODUTO (Normal)
+    let mockBlock = {
+          id: 901,
+          contextType: 'product_scan',
+          parentRef: 'ITEM ESCANEADO',
+          location: 'Item Avulso',
+          status: 'progress',
+          items: [
+            { 
+              name: 'ITEM IDENTIFICADO', 
+              ref: code, 
+              brand: 'AUTO', 
+              balance: 1,
+              lastCount: null
+            }
+          ]
+    };
+    handleStartBlock(mockBlock);
   };
 
   const renderScreen = () => {
     switch (currentScreen) {
-      case 'login': return <LoginScreen onLogin={handleLogin} />;
-      case 'dashboard': return <DashboardScreen onNavigate={setCurrentScreen} onCategorySelect={handleCategorySelect} currentUser={currentUser} onLogout={handleLogout} categories={categories} />;
-      case 'list': return <ListScreen key="meta-list" onNavigate={setCurrentScreen} blocks={blocks} segmentFilter={null} onReserveBlock={handleReserveBlock} onClearFilter={() => {}} mode="daily_meta" />;
-      case 'filtered_list': 
-        return <ListScreen 
+      case 'login':
+        return <LoginScreen onLogin={handleLogin} />;
+      case 'dashboard':
+        return (
+          <DashboardScreen 
+            onNavigate={setCurrentScreen} 
+            onCategorySelect={handleCategorySelect}
+            currentUser={currentUser}
+            onLogout={handleLogout}
+            categories={categories}
+          />
+        );
+      case 'list':
+        return (
+          <ListScreen 
+            key="meta-list" 
+            onNavigate={setCurrentScreen} 
+            blocks={blocks}
+            segmentFilter={null}
+            onReserveBlock={handleReserveBlock}
+            onClearFilter={() => {}}
+            mode="daily_meta"
+          />
+        );
+      case 'filtered_list':
+        return (
+          <ListScreen 
             key="browse-list" 
             onNavigate={setCurrentScreen} 
-            blocks={blocks} 
-            segmentFilter={segmentFilter} 
-            onReserveBlock={handleReserveBlock} 
-            onClearFilter={() => { setSegmentFilter(null); setSelectedSgCod(undefined); setCurrentScreen('subcategories'); }} 
+            blocks={blocks}
+            segmentFilter={segmentFilter}
+            onReserveBlock={handleReserveBlock}
+            onClearFilter={() => {
+              setSegmentFilter(null);
+              setCurrentScreen('dashboard'); 
+            }}
             mode="browse"
-            page={browsePage}
-            onPageChange={handlePageChange}
-        />;
-      case 'reserved': return <ReservedScreen onNavigate={setCurrentScreen} blocks={blocks} onStartBlock={handleStartBlock} currentUser={currentUser} />;
-      case 'history': return <HistoryScreen />;
-      case 'analytics': return <AnalyticsScreen onNavigate={setCurrentScreen} />;
-      case 'mission_detail': return <MissionDetailScreen blockData={activeBlock} onBack={() => { setCurrentScreen('reserved'); }} currentUser={currentUser} />;
-      case 'subcategories': return <SubcategoriesScreen categoryLabel={selectedCategoryLabel || ''} categories={categories} onBack={() => setCurrentScreen('dashboard')} onSelectSegment={handleSegmentSelect} />;
-      case 'treatment': return <TreatmentScreen onNavigate={setCurrentScreen} />;
-      case 'settings': return <SettingsScreen onBack={() => setCurrentScreen('dashboard')} currentUser={currentUser} />;
-      case 'address_manager': return <AddressManagerScreen onBack={() => setCurrentScreen('dashboard')} />;
-      default: return <DashboardScreen onNavigate={setCurrentScreen} onCategorySelect={handleCategorySelect} currentUser={currentUser} onLogout={handleLogout} categories={categories} />;
+          />
+        );
+      case 'reserved':
+        return (
+          <ReservedScreen 
+            onNavigate={setCurrentScreen} 
+            blocks={blocks}
+            onStartBlock={handleStartBlock}
+            currentUser={currentUser}
+          />
+        );
+      case 'history':
+        return <HistoryScreen />;
+      case 'analytics':
+        return <AnalyticsScreen onNavigate={setCurrentScreen} />;
+      case 'mission_detail':
+        return (
+          <MissionDetailScreen 
+            blockData={activeBlock} 
+            onBack={() => setCurrentScreen('reserved')}
+            currentUser={currentUser}
+          />
+        );
+      case 'subcategories':
+        return (
+          <SubcategoriesScreen 
+            categoryLabel={selectedCategory || ''} 
+            categories={categories}
+            onBack={() => setCurrentScreen('dashboard')}
+            onSelectSegment={handleSegmentSelect}
+          />
+        );
+      case 'treatment':
+        return (
+           <TreatmentScreen onNavigate={setCurrentScreen} />
+        );
+      case 'settings':
+        return (
+           <SettingsScreen 
+             onBack={() => setCurrentScreen('dashboard')} 
+             currentUser={currentUser}
+           />
+        );
+      case 'address_manager':
+        return (
+           <AddressManagerScreen onBack={() => setCurrentScreen('dashboard')} />
+        );
+      default:
+        return (
+          <DashboardScreen 
+            onNavigate={setCurrentScreen} 
+            onCategorySelect={handleCategorySelect}
+            currentUser={currentUser}
+            onLogout={handleLogout}
+            categories={categories}
+          />
+        );
     }
   };
 
-  const showNav = !['login', 'mission_detail', 'settings', 'treatment', 'analytics', 'address_manager'].includes(currentScreen);
-  if (currentScreen === 'login') return <LoginScreen onLogin={handleLogin} />;
-  const activeNavTab = (currentScreen === 'subcategories' || currentScreen === 'filtered_list') ? 'dashboard' : currentScreen;
+  const showNav = currentScreen !== 'login' && 
+                  currentScreen !== 'mission_detail' && 
+                  currentScreen !== 'settings' && 
+                  currentScreen !== 'treatment' &&
+                  currentScreen !== 'analytics' &&
+                  currentScreen !== 'address_manager'; // Hide nav on address manager
+  
+  if (currentScreen === 'login') {
+    return <LoginScreen onLogin={handleLogin} />;
+  }
+
+  const activeNavTab = (currentScreen === 'subcategories' || currentScreen === 'filtered_list') 
+    ? 'dashboard' 
+    : currentScreen;
 
   return (
     <div className="flex w-full min-h-screen bg-background-light dark:bg-background-dark text-slate-900 dark:text-white transition-opacity duration-300">
-      {isLoading && <div className="fixed top-0 left-0 right-0 h-1 z-[100] bg-primary/20"><div className="h-full bg-primary animate-[shimmer_1s_infinite] w-1/3" /></div>}
-      <Sidebar currentScreen={activeNavTab} onNavigate={setCurrentScreen} currentUser={currentUser} onLogout={handleLogout} reservedCount={reservedCount} />
+      {isLoading && (
+        <div className="fixed top-0 left-0 right-0 h-1 z-[100] bg-primary/20">
+          <div className="h-full bg-primary animate-[shimmer_1s_infinite] w-1/3" />
+        </div>
+      )}
+
+      <Sidebar 
+        currentScreen={activeNavTab}
+        onNavigate={setCurrentScreen}
+        currentUser={currentUser}
+        onLogout={handleLogout}
+        reservedCount={reservedCount}
+      />
+
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
-        <div className="flex-1 overflow-y-auto no-scrollbar relative w-full"><div className="w-full min-h-full animate-fade-in">{renderScreen()}</div></div>
-        {showNav && <BottomNav currentScreen={activeNavTab} onNavigate={setCurrentScreen} onScanClick={() => setShowScanner(true)} isAdmin={currentUser?.isAdmin} reservedCount={reservedCount} />}
+        <div className="flex-1 overflow-y-auto no-scrollbar relative w-full">
+           <div className="w-full min-h-full animate-fade-in">
+             {renderScreen()}
+           </div>
+        </div>
+
+        {showNav && (
+          <BottomNav 
+            currentScreen={activeNavTab} 
+            onNavigate={setCurrentScreen}
+            onScanClick={() => setShowScanner(true)}
+            isAdmin={currentUser?.isAdmin} 
+            reservedCount={reservedCount}
+          />
+        )}
       </div>
-      <ScannerModal isOpen={showScanner} onClose={() => setShowScanner(false)} onScanComplete={handleScanComplete} title="Escanear Código" instruction="Aponte para QR Code" />
+
+      <ScannerModal 
+        isOpen={showScanner}
+        onClose={() => setShowScanner(false)}
+        onScanComplete={handleScanComplete}
+        title="Escanear Código"
+        instruction="Aponte para QR Code de Produto (PRD) ou Local (LOC)"
+      />
     </div>
   );
 };

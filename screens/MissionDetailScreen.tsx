@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect } from 'react';
 import { Icon } from '../components/Icon';
-import { EntryModal, DamageModal, ConfirmationModal, ScannerModal, LocationParts } from '../components/Modals';
+import { EntryModal, DamageModal, ConfirmationModal } from '../components/Modals';
 import { ItemDetailModal } from '../components/ItemDetailModal';
 import { User } from '../types';
 import { api } from '../services/api';
@@ -70,17 +69,12 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
   const [showDamage, setShowDamage] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
-  const [showLocationScanner, setShowLocationScanner] = useState(false);
-  const [locationVerified, setLocationVerified] = useState(false);
-  const [scannedLocationParts, setScannedLocationParts] = useState<LocationParts | null>(null);
   
   const allItemsCounted = items.length > 0 && items.every(item => item.status !== 'pending');
   const progressPercentage = items.length > 0 ? Math.round((items.filter(i => i.status !== 'pending').length / items.length) * 100) : 0;
 
   const handleItemClick = (item: BlockItem) => {
     setSelectedItem(item);
-    setLocationVerified(false); 
-    setScannedLocationParts(null); // Reset parts on new open
     setShowEntry(true);
   };
 
@@ -130,33 +124,6 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
       setShowEntry(false);
       setSelectedItem(null);
     }
-  };
-
-  const handleRequestScanLocation = () => {
-      // Abre scanner em cima do EntryModal (z-index maior)
-      setShowLocationScanner(true);
-  };
-
-  const handleLocationScanComplete = (code: string) => {
-      setShowLocationScanner(false);
-      // Lógica de Parsing: LOC-G01-E05-P02 (3 partes)
-      const raw = code.startsWith('LOC-') ? code.substring(4) : code;
-      const parts = raw.split('-');
-      
-      // Validação estrita: Deve ter exatamente 3 partes (Galpão, Estante, Prateleira)
-      if (parts.length >= 3) {
-          setLocationVerified(true);
-          setScannedLocationParts({
-              g: parts[0].replace(/\D/g, ''),
-              e: parts[1].replace(/\D/g, ''),
-              p: parts[2].replace(/\D/g, '')
-          });
-      } else {
-          // Se tiver menos de 3 partes (ex: só Galpão e Estante)
-          alert("Código incompleto. É obrigatório escanear a etiqueta da prateleira/nível específico (LOC-Gxx-Exx-Pxx).");
-          setLocationVerified(false);
-          setScannedLocationParts(null);
-      }
   };
 
   const handleBack = () => {
@@ -380,9 +347,6 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
         isOpen={showEntry} 
         itemName={selectedItem?.name}
         itemSku={selectedItem?.sku}
-        itemLocation={selectedItem?.loc} // Pass location string for fallback
-        locationParts={scannedLocationParts} // Pass scanned parts
-        initialQuantity={selectedItem?.countedQty || selectedItem?.expectedQty || 1} 
         lastCountInfo={selectedItem?.lastCount ? {
           user: selectedItem.lastCount.user,
           date: selectedItem.lastCount.date,
@@ -390,20 +354,9 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
           avatar: `https://i.pravatar.cc/150?u=${selectedItem.lastCount.user}`
         } : null}
         onClose={() => setShowEntry(false)} 
-        onConfirm={handleConfirmCount}
-        onRequestScanLocation={handleRequestScanLocation}
-        isLocationVerified={locationVerified}
+        onConfirm={handleConfirmCount} 
       />
       
-      {/* Scanner Local para Validação de Local */}
-      <ScannerModal 
-        isOpen={showLocationScanner}
-        onClose={() => setShowLocationScanner(false)}
-        onScanComplete={handleLocationScanComplete}
-        title="Validar Localização"
-        instruction="Escaneie o QR Code da Estante/Prateleira"
-      />
-
       <ItemDetailModal 
         isOpen={showDetailModal}
         onClose={handleCloseDetails}

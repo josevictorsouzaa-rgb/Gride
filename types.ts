@@ -59,8 +59,6 @@ export interface InventoryItem {
   totalStockValue?: number;
   abcCategory?: 'A' | 'B' | 'C';
   history?: HistoryEntry[];
-  // Novos campos do BD
-  db_pro_cod?: number;
 }
 
 export interface User {
@@ -73,20 +71,13 @@ export interface User {
 }
 
 export interface Block {
-  id: number; // Identificador único do bloco (pode ser o ID do similar principal)
-  parentRef: string; // Título do Bloco (Nome do produto principal ou Similar)
+  id: number;
+  parentRef: string;
   location: string;
   status: 'pending' | 'progress' | 'late' | 'completed';
   date: string;
   subcategory?: string; // Added for filtering
   items: any[];
-  // Campos de Bloqueio/Reserva
-  lockedBy?: {
-    userId: string;
-    userName: string;
-    avatar?: string;
-    timestamp: string;
-  } | null;
 }
 
 export interface Mission {

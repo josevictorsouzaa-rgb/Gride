@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { Icon } from '../components/Icon';
@@ -7,7 +6,7 @@ import { ApiCategory } from '../services/api';
 
 interface DashboardScreenProps {
   onNavigate: (screen: Screen) => void;
-  onCategorySelect: (category: string, dbId: number) => void;
+  onCategorySelect: (category: string) => void;
   currentUser: User | null;
   onLogout?: () => void;
   categories: ApiCategory[]; 
@@ -46,13 +45,14 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
   const pendingIssuesCount = 3;
   const dailyTarget = 150;
-  const countedToday = 0; // Temporariamente 0 até ligar a meta
-  const lateCount = 0; 
+  const countedToday = 98;
+  const lateCount = 12; 
   const totalYearCounted = 24500;
   const progressPercent = Math.min(100, Math.round((countedToday / dailyTarget) * 100));
 
   const goalData = [
     { name: 'Contado', value: countedToday, color: '#137fec' },
+    { name: 'Atrasado', value: lateCount, color: '#ef4444' },
     { name: 'Restante', value: Math.max(0, dailyTarget - countedToday), color: '#33415520' }
   ];
 
@@ -217,11 +217,11 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
                   <div className="col-span-full py-10 text-center text-gray-400 text-sm animate-pulse">Carregando categorias...</div>
                 ) : (
                   displayedCategories.map((cat, idx) => {
-                    const isActive = false;
+                    const isActive = cat.label === 'MOTOR'; 
                     return (
                       <button 
                           key={idx} 
-                          onClick={() => onCategorySelect(cat.label, cat.db_id)}
+                          onClick={() => onCategorySelect(cat.label)}
                           className={`flex flex-col items-center justify-center aspect-square rounded-xl gap-1 group active:scale-95 hover:scale-105 hover:-translate-y-1 transition-all duration-300 ${
                           isActive 
                           ? 'bg-surface-dark border border-primary/50 shadow-[0_0_10px_rgba(19,127,236,0.15)]' 
