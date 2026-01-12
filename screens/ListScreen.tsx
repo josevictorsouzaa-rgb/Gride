@@ -111,8 +111,8 @@ export const ListScreen: React.FC<ListScreenProps> = ({
   const filteredBlocks = useMemo(() => {
     return blocks.filter(block => {
       // 0. Base Status Check
-      // Apenas esconde 'progress' se não estivermos na tela de Reservados (que usa outro componente)
-      // Aqui assumimos que ListScreen mostra itens disponíveis ou meta
+      // Apenas esconde 'progress' (que significa que EU ou OUTRO já reservou neste momento)
+      // Se eu acabei de contar e liberei, o status volta para 'pending' no banco (ou mantém data)
       if (block.status === 'progress') return false; 
       
       // LOGIC SPLIT BASED ON MODE
@@ -129,8 +129,9 @@ export const ListScreen: React.FC<ListScreenProps> = ({
         }
       } else {
         // BROWSE MODE (Explorar Estoque)
-        // A filtragem por Categoria/Subcategoria já foi feita no Backend (API).
-        // NÃO devemos filtrar por 'segmentFilter' aqui, pois o backend retorna subcategory='Geral'.
+        // AQUI ESTÁ A CORREÇÃO SOLICITADA:
+        // Não filtramos 'completed'. Itens contados devem aparecer.
+        // Se houver impedimento (Treatment), eles aparecem mas bloqueados (tratado no render).
         
         if (searchText) {
            const lowerSearch = searchText.toLowerCase();
@@ -269,7 +270,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                   const hiddenCount = block.items.length - 3;
                   const hasStaleItems = block.items.some(i => !i.lastCount || getDaysSince(i.lastCount.date) > 30);
                   
-                  // Verificar se há itens em tratamento
+                  // VERIFICAR IMPEDIMENTOS
                   const hasTreatmentItems = block.items.some((i: any) => i.inTreatment);
 
                   return (
@@ -282,7 +283,6 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                                 <h3 className="font-bold text-gray-900 dark:text-white text-base leading-tight">
                                     {block.parentRef}
                                 </h3>
-                                {/* Mobile Status Badge if limited space, or keep it on right */}
                              </div>
                              <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
                                 <Icon name="place" size={12} />
@@ -292,7 +292,9 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                           
                           {/* Status Badge */}
                           <div className="flex flex-col items-end gap-1">
+                             {/* Sempre mostrar data da última contagem, independente do status */}
                              {getStatusBadge(block.status, block.date)}
+                             
                              {hasStaleItems && (
                                 <div className="flex items-center gap-1 text-[9px] text-orange-600 bg-orange-50 dark:bg-orange-900/20 px-1.5 py-0.5 rounded font-bold">
                                    <Icon name="priority_high" size={10} />
@@ -307,7 +309,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                           {visibleItems.map((item: any, idx: number) => (
                               <div 
                                 key={idx} 
-                                onClick={() => setSelectedItem(item)} // Open details on click
+                                onClick={() => setSelectedItem(item)}
                                 className="flex flex-col gap-1 p-2 border-b border-gray-200/50 dark:border-white/5 last:border-0 hover:bg-gray-100 dark:hover:bg-white/5 rounded transition-colors cursor-pointer group"
                               >
                                   {/* Row 1: Name */}
@@ -338,7 +340,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                               </div>
                           ))}
                           
-                          {/* Expand Button - Only shows if there are hidden items */}
+                          {/* Expand Button */}
                           {hiddenCount > 0 && !isExpanded && (
                              <button 
                                onClick={(e) => toggleBlock(block.id, e)}
@@ -359,16 +361,19 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                           )}
                       </div>
 
-                      {/* Footer Action */}
+                      {/* Footer Action - BLOQUEIO POR IMPEDIMENTO */}
                       {hasTreatmentItems ? (
-                          <div className="w-full h-10 rounded-lg bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-xs font-bold uppercase tracking-wide flex items-center justify-center gap-2 cursor-not-allowed">
-                             Aguardando Regularização
-                             <Icon name="lock_clock" size={16} />
+                          <div className="w-full h-12 rounded-xl bg-orange-100 dark:bg-orange-900/20 text-orange-700 dark:text-orange-300 border border-orange-200 dark:border-orange-800 text-xs font-bold uppercase tracking-wide flex flex-col items-center justify-center cursor-not-allowed">
+                             <div className="flex items-center gap-1">
+                                <Icon name="lock" size={16} />
+                                Bloqueado para Reserva
+                             </div>
+                             <span className="text-[9px] opacity-80 font-medium normal-case">Regularize as divergências primeiro</span>
                           </div>
                       ) : (
                           <button 
                             onClick={(e) => handleReserve(block.id, e)}
-                            className="w-full h-10 rounded-lg bg-slate-800 hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 text-white text-xs font-bold uppercase tracking-wide flex items-center justify-center gap-2 transition-all active:scale-95"
+                            className="w-full h-12 rounded-xl bg-slate-800 hover:bg-slate-700 dark:bg-white dark:text-black dark:hover:bg-gray-200 text-white text-xs font-bold uppercase tracking-wide flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg"
                           >
                              Reservar
                              <Icon name="lock" size={14} />

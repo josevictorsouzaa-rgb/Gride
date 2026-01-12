@@ -44,7 +44,9 @@ export const HistoryScreen: React.FC = () => {
                     id: blockId,
                     parentRef: entry.PRO_COD_SIMILAR ? `BLOCO ${entry.PRO_COD_SIMILAR}` : entry.SKU,
                     name: entry.PROD_DESC_ATUAL || entry.NOME_PRODUTO, // Nome do produto principal (do bloco)
+                    location: entry.LOCALIZACAO || 'GERAL',
                     latestDate: entry.DATA_HORA, // First entry is the latest due to sort
+                    user: entry.USUARIO_NOME, // Last user to count an item in this block
                     status: 'concluido', // Default
                     itemsMap: new Map() // Map to ensure unique items (latest state)
                 });
@@ -63,7 +65,7 @@ export const HistoryScreen: React.FC = () => {
                     id: entry.ID,
                     name: entry.NOME_PRODUTO,
                     ref: entry.SKU,
-                    brand: entry.MAR_COD ? `MARCA ${entry.MAR_COD}` : '---',
+                    brand: entry.MAR_COD ? `MARCA ${entry.MAR_COD}` : 'GENÉRICO',
                     qty: entry.QTD_CONTADA,
                     countedBy: entry.USUARIO_NOME,
                     countedAt: entry.DATA_HORA,
@@ -100,7 +102,6 @@ export const HistoryScreen: React.FC = () => {
   });
 
   const uniqueUsers = useMemo(() => {
-    // Collect all users from all items in all blocks
     const users = new Set<string>();
     historyBlocks.forEach(b => {
         b.items.forEach((i: any) => users.add(i.countedBy));
@@ -123,7 +124,6 @@ export const HistoryScreen: React.FC = () => {
 
       if (!matchesText) return false;
 
-      // Filter by Item User
       if (activeFilters.users.length > 0) {
           const hasUser = block.items.some((i:any) => activeFilters.users.includes(i.countedBy));
           if (!hasUser) return false;
@@ -142,15 +142,6 @@ export const HistoryScreen: React.FC = () => {
     setExpandedBlocks(prev => 
       prev.includes(id) ? prev.filter(blockId => blockId !== id) : [...prev, id]
     );
-  };
-
-  const getStatusConfig = (status: string) => {
-    switch(status) {
-      case 'divergencia':
-        return { color: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-100 dark:bg-orange-900/30', border: 'border-orange-200 dark:border-orange-800', icon: 'warning', label: 'Com Divergência' };
-      default:
-        return { color: 'text-green-600 dark:text-green-400', bg: 'bg-green-100 dark:bg-green-900/30', border: 'border-green-200 dark:border-green-800', icon: 'check_circle', label: 'Concluído' };
-    }
   };
 
   if (loading) {
@@ -211,7 +202,7 @@ export const HistoryScreen: React.FC = () => {
          </p>
       </div>
 
-      {/* Blocks List */}
+      {/* Blocks List - VISUAL IDENTICO AO RESERVAR */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 px-4 pb-28 md:pb-0">
         {filteredBlocks.length === 0 ? (
           <div className="col-span-full flex flex-col items-center justify-center py-12 text-gray-400 opacity-60">
@@ -220,112 +211,117 @@ export const HistoryScreen: React.FC = () => {
           </div>
         ) : (
           filteredBlocks.map((block) => {
-           const status = getStatusConfig(block.status);
            const isExpanded = expandedBlocks.includes(block.id);
            const visibleItems = isExpanded ? block.items : block.items.slice(0, 3);
            const hiddenCount = block.items.length - 3;
+           const hasDivergence = block.status === 'divergencia';
 
            return (
-             <div key={block.id} className="flex flex-col shadow-sm animate-fade-in h-full group bg-white dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-card-border overflow-hidden">
-                {/* CARD HEADER - BLOCK INFO */}
-                <div className="p-3 border-b border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-white/5">
-                    <div className="flex justify-between items-start gap-2">
-                        <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                                <span className="text-[10px] font-bold bg-gray-200 dark:bg-white/10 px-1.5 py-0.5 rounded uppercase tracking-wider text-gray-600 dark:text-gray-300">
-                                    {block.parentRef}
-                                </span>
-                                <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border ${status.color} ${status.border} bg-transparent`}>
-                                    <Icon name={status.icon} size={10} />
-                                    {status.label}
-                                </div>
-                            </div>
-                            <h3 className="font-bold text-sm leading-tight text-gray-900 dark:text-white line-clamp-1">
-                                {block.name}
-                            </h3>
+             <div key={block.id} className="flex flex-col shadow-md h-full group bg-[#182335] dark:bg-surface-dark rounded-xl border border-gray-700 dark:border-card-border overflow-hidden">
+                {/* CARD HEADER - Dark Style similar to screenshot */}
+                <div className="p-4 border-b border-gray-700 dark:border-white/5 flex justify-between items-start">
+                    <div>
+                        <h3 className="text-lg font-black text-white leading-tight">
+                            {block.parentRef}
+                        </h3>
+                        <div className="flex items-center gap-1 text-xs text-gray-400 mt-1">
+                            <Icon name="place" size={14} />
+                            {block.location}
                         </div>
-                        <div className="text-[10px] text-gray-400 flex items-center gap-1 pt-1">
-                            <Icon name="update" size={12} />
-                            {block.timeAgo}
+                    </div>
+                    
+                    <div className="flex flex-col items-end gap-1">
+                        <div className="flex items-center gap-1.5 px-2 py-1 bg-blue-900/50 rounded border border-blue-800">
+                            <Icon name="calendar_today" size={12} className="text-blue-400" />
+                            <span className="text-[10px] font-bold text-blue-100 uppercase">
+                                {new Date(block.latestDate).toLocaleDateString('pt-BR')}
+                            </span>
                         </div>
+                        {hasDivergence && (
+                            <span className="text-[9px] font-bold text-orange-400 flex items-center gap-1">
+                                <Icon name="warning" size={10} />
+                                Divergência
+                            </span>
+                        )}
                     </div>
                 </div>
 
                 {/* CARD BODY - ITEMS LIST */}
-                <div className="flex-col divide-y divide-gray-100 dark:divide-white/5">
-                      {visibleItems.map((item: any, index: number) => {
-                        const itemStatusColor = item.status === 'divergence_info' || item.status === 'not_located' 
-                            ? 'text-orange-600 dark:text-orange-400' 
-                            : 'text-green-600 dark:text-green-400';
-                        
-                        return (
+                <div className="flex-col divide-y divide-gray-700 dark:divide-white/5">
+                      {visibleItems.map((item: any) => (
                         <div 
                           key={item.id} 
                           onClick={() => setSelectedItem(item)}
-                          className="group/item p-3 cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-white/5"
+                          className="p-4 hover:bg-white/5 transition-colors cursor-pointer"
                         >
-                            {/* Line 1: Name and Quantity */}
-                            <div className="flex justify-between items-start mb-1">
-                                <div className="flex items-center gap-2 flex-1 min-w-0">
-                                    {item.isLocked && <Icon name="lock" size={14} className="text-orange-500 shrink-0" />}
-                                    <span className={`text-xs font-bold text-gray-800 dark:text-gray-200 truncate ${item.isLocked ? 'line-through opacity-70' : ''}`}>
-                                        {item.name}
+                            {/* Line 1: Name */}
+                            <h4 className="text-sm font-bold text-white mb-2 line-clamp-1">{item.name}</h4>
+                            
+                            {/* Line 2: Details Row */}
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-[#2d3748] text-gray-300 border border-gray-600">
+                                        {item.ref}
+                                    </span>
+                                    <span className="text-[10px] text-gray-400 font-bold uppercase border-l border-gray-600 pl-2">
+                                        {item.brand}
                                     </span>
                                 </div>
-                                <div className="pl-2">
-                                    <span className={`text-xs font-bold ${itemStatusColor} bg-opacity-10 px-2 py-0.5 rounded-full border border-current`}>
+                                
+                                <div className="flex flex-col items-end">
+                                    <span className={`text-sm font-bold ${item.status === 'not_located' || item.status === 'divergence_info' ? 'text-orange-400' : 'text-blue-400'}`}>
                                         {item.qty} un
                                     </span>
                                 </div>
                             </div>
 
-                            {/* Line 2: Details Grid */}
-                            <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 gap-y-1 text-[10px] text-gray-500 dark:text-gray-400 items-center">
-                                {/* SKU */}
-                                <div className="flex items-center gap-1 font-mono text-gray-400 dark:text-gray-500 truncate">
-                                    <Icon name="barcode" size={12} />
-                                    {item.ref}
-                                </div>
-                                
-                                {/* Location */}
-                                <div className="flex items-center gap-1 font-medium text-gray-700 dark:text-gray-300">
-                                    <Icon name="place" size={12} className="text-primary opacity-70" />
-                                    {item.location}
-                                </div>
-
-                                {/* User & Time */}
-                                <div className="flex items-center gap-1.5 justify-end">
-                                    <span className="flex items-center gap-1 text-gray-600 dark:text-gray-300 font-medium bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded">
-                                        <Icon name="person" size={10} />
-                                        {item.countedBy.split(' ')[0]}
-                                    </span>
+                            {/* Line 3: History Info (Quem/Quando/Onde) */}
+                            <div className="mt-2 pt-2 border-t border-gray-700/50 flex justify-between items-center text-[10px] text-gray-500">
+                                <div className="flex items-center gap-1">
+                                    <Icon name="person" size={12} />
+                                    <span>{item.countedBy.split(' ')[0]}</span>
+                                    <span className="mx-1">•</span>
                                     <span>{getTimeAgo(item.countedAt)}</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                    <Icon name="place" size={12} />
+                                    <span>{item.location}</span>
+                                    <Icon name="info" size={14} className="ml-1 text-gray-600" />
                                 </div>
                             </div>
                         </div>
-                        );
-                      })}
+                      ))}
                 </div>
 
                 {/* CARD FOOTER - EXPAND CONTROLS */}
-                {(!isExpanded && hiddenCount > 0) && (
-                      <div 
-                        onClick={() => toggleBlock(block.id)}
-                        className="flex items-center justify-center py-2 bg-gray-50 dark:bg-black/20 border-t border-gray-100 dark:border-white/5 cursor-pointer hover:bg-gray-100 dark:hover:bg-white/10 transition-colors text-xs font-bold text-gray-500 gap-1"
-                      >
-                        Ver mais {hiddenCount} itens
-                        <Icon name="expand_more" size={16} />
-                      </div>
-                )}
-                {(isExpanded && block.items.length > 3) && (
-                      <div 
-                        onClick={() => toggleBlock(block.id)}
-                        className="flex items-center justify-center py-2 bg-gray-50 dark:bg-black/20 border-t border-gray-100 dark:border-white/5 cursor-pointer hover:bg-gray-100 dark:hover:bg-white/10 transition-colors text-xs font-bold text-gray-500 gap-1"
-                      >
-                        Mostrar menos
-                        <Icon name="expand_less" size={16} />
-                      </div>
-                )}
+                <div className="mt-auto">
+                    {(!isExpanded && hiddenCount > 0) && (
+                        <button 
+                            onClick={() => toggleBlock(block.id)}
+                            className="w-full py-3 text-xs font-bold text-blue-400 hover:text-blue-300 hover:bg-white/5 transition-colors flex items-center justify-center gap-1"
+                        >
+                            Ver mais {hiddenCount} itens
+                            <Icon name="expand_more" size={16} />
+                        </button>
+                    )}
+                    {(isExpanded && block.items.length > 3) && (
+                        <button 
+                            onClick={() => toggleBlock(block.id)}
+                            className="w-full py-3 text-xs font-bold text-blue-400 hover:text-blue-300 hover:bg-white/5 transition-colors flex items-center justify-center gap-1"
+                        >
+                            Mostrar menos
+                            <Icon name="expand_less" size={16} />
+                        </button>
+                    )}
+                    
+                    {/* Read Only Footer */}
+                    <div className="p-3 bg-[#0f172a] border-t border-gray-700 flex items-center justify-center">
+                        <span className="text-[10px] font-bold text-gray-500 flex items-center gap-2">
+                            <Icon name="lock" size={12} />
+                            REGISTRO DE HISTÓRICO
+                        </span>
+                    </div>
+                </div>
              </div>
            );
         }))}
