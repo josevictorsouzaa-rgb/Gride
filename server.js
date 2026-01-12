@@ -205,7 +205,6 @@ app.get('/blocks', (req, res) => {
                 treatments.forEach(t => treatmentSet.add(safeString(t.SKU)));
 
                 // 3. Query principal de produtos (Blocos)
-                // REMOVIDO: Filtro que excluia blocos com tratamento. Agora eles vêm, mas o frontend trata.
                 let sql = `
                     SELECT FIRST ? SKIP ? 
                         P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, P.MAR_COD, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE 
@@ -293,7 +292,6 @@ app.get('/reserved-blocks/:userId', (req, res) => {
             });
             const idsList = blockIds.map(id => `'${id}'`).join(',');
             
-            // Busca itens em tratamento também para exibir corretamente no reservados (caso haja concorrência ou atualização)
             db.query("SELECT SKU FROM GRIDE_TRATAMENTO WHERE STATUS = 'PENDING'", [], (err, treatments) => {
                 const treatmentSet = new Set();
                 if(treatments) treatments.forEach(t => treatmentSet.add(safeString(t.SKU)));
@@ -302,7 +300,6 @@ app.get('/reserved-blocks/:userId', (req, res) => {
                 db.query(sql, [], (err, products) => {
                     db.detach();
                     if (err) return res.status(500).json({ error: err.message });
-                    // Reuse logic
                     const groups = new Map();
                     products.forEach(p => {
                         const similarId = p.PRO_COD_SIMILAR ? safeString(p.PRO_COD_SIMILAR) : safeString(p.PRO_COD);
@@ -336,7 +333,6 @@ app.post('/reserve-block', (req, res) => {
     const { block_id, user_id, user_name } = req.body;
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro DB' });
-        // Validação extra: verificar se não está em tratamento antes de reservar
         const sqlCheckTreat = `SELECT 1 FROM GRIDE_TRATAMENTO WHERE SKU IN (SELECT PRO_NRFABRICANTE FROM PRODUTOS WHERE PRO_COD = ? OR PRO_COD_SIMILAR = ?) AND STATUS = 'PENDING'`;
         
         db.query(sqlCheckTreat, [block_id, block_id], (err, treatResult) => {
@@ -367,7 +363,6 @@ app.post('/release-block', (req, res) => {
 
 app.post('/finalize-block', (req, res) => {
     const { block_id, user_id, user_name, items } = req.body;
-    // Logica simples de finalização - Em produção, chamaria save-count para cada item
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro DB' });
         db.query('DELETE FROM GRIDE_RESERVAS WHERE BLOCK_ID = ?', [block_id], (err) => { db.detach(); res.json({ success: true }); });
@@ -393,14 +388,10 @@ app.post('/save-count', (req, res) => {
                 const logId = result.ID;
 
                 // 2. Lógica para enviar ao TRATAMENTO
-                // Envia se:
-                // - Status for 'not_located', 'divergence_info' OU 'issue'
-                // - Status for 'counted' MAS tiver uma observação/motivo (erro de cadastro, etc)
                 const hasDivergenceNote = divergencia_motivo && divergencia_motivo.trim().length > 0;
                 const needsTreatment = status === 'not_located' || status === 'divergence_info' || status === 'issue' || hasDivergenceNote;
                 
                 const finish = () => {
-                    // Update Stock Balance regardless (The count is the count, even if wrong it updates the system)
                     const sqlUpdate = `UPDATE PRODUTOS SET PRO_EST_ATUAL = ? WHERE PRO_NRFABRICANTE = ?`;
                     transaction.query(sqlUpdate, [qtd_contada, sku], (err) => {
                         if (err) console.warn("Update stock failed, SKU might not match exact ref");
@@ -412,10 +403,9 @@ app.post('/save-count', (req, res) => {
                 };
 
                 if (needsTreatment) {
-                    // Normalize status for treatment table
                     let treatStatus = status;
                     if (status === 'issue') treatStatus = 'divergence_info';
-                    if (status === 'counted' && hasDivergenceNote) treatStatus = 'divergence_info'; // Upgrade to divergence if there is a note
+                    if (status === 'counted' && hasDivergenceNote) treatStatus = 'divergence_info';
 
                     const sqlTreat = `INSERT INTO GRIDE_TRATAMENTO (LOG_ID, SKU, NOME_PRODUTO, LOCALIZACAO, TIPO_ERRO, DESCRICAO_ERRO, REPORTADO_POR, STATUS) VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING')`;
                     transaction.query(sqlTreat, [logId, sku, nome_produto, localizacao, treatStatus, divergencia_motivo || 'Erro reportado na contagem', usuario_nome], (err) => {
@@ -434,7 +424,6 @@ app.post('/save-count', (req, res) => {
 app.get('/treatment-items', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json([]);
-        // Busca itens pendentes
         db.query(`SELECT ID, SKU, NOME_PRODUTO, LOCALIZACAO, TIPO_ERRO, DESCRICAO_ERRO, REPORTADO_POR, REPORTADO_EM, STATUS FROM GRIDE_TRATAMENTO WHERE STATUS = 'PENDING' ORDER BY REPORTADO_EM DESC`, [], (err, result) => {
             db.detach();
             res.json(result ? result.map(r => ({
@@ -445,7 +434,7 @@ app.get('/treatment-items', (req, res) => {
                 issueType: safeString(r.TIPO_ERRO),
                 description: safeString(r.DESCRICAO_ERRO),
                 reportedBy: safeString(r.REPORTADO_POR),
-                reportedAt: r.REPORTADO_EM, // ISO or Object
+                reportedAt: r.REPORTADO_EM,
                 status: safeString(r.STATUS)
             })) : []);
         });
@@ -461,27 +450,21 @@ app.post('/resolve-treatment', (req, res) => {
         
         db.query(sql, [userId, `${action}: ${resolution}`, id], (err) => {
             if (err) { db.detach(); return res.status(500).json({error: 'Update Error'}); }
-            
-            // Se a ação for inativar, faz update no produto
-            if (action === 'inactivate') {
-                // Simplificação: Apenas marca resolvido no tratamento.
-            }
-            
             db.detach();
             res.json({ success: true });
         });
     });
 });
 
+// --- HISTORY & PRODUCT HISTORY ---
 app.get('/history', (req, res) => {
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 30;
+    // AUMENTAMOS O LIMITE PARA PERMITIR MELHOR AGRUPAMENTO NO FRONTEND
+    const limit = parseInt(req.query.limit) || 200; 
     const skip = (page - 1) * limit;
 
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json([]);
-        // JOIN com GRIDE_TRATAMENTO para saber se aquele log gerou uma pendencia que AINDA esta PENDING
-        // Se T.ID for not null, significa que tem tratamento. Se STATUS for PENDING, mostra cadeado.
         const sql = `
             SELECT FIRST ? SKIP ? 
                 L.*, T.STATUS as TRATAMENTO_STATUS 
@@ -497,8 +480,25 @@ app.get('/history', (req, res) => {
     });
 });
 
-// Rotas de Endereços/Galpões mantidas (abreviadas aqui, mas assuma que existem)
-// ... (getAddresses, saveAddress, etc.) ...
+app.get('/product-history/:sku', (req, res) => {
+    const { sku } = req.params;
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.status(500).json([]);
+        const sql = `
+            SELECT L.DATA_HORA, L.USUARIO_NOME, L.QTD_SISTEMA, L.QTD_CONTADA, L.STATUS, L.LOCALIZACAO
+            FROM GRIDE_INVENTARIO_LOG L
+            WHERE L.SKU = ?
+            ORDER BY L.DATA_HORA DESC
+        `;
+        db.query(sql, [sku], (err, result) => {
+            db.detach();
+            if (err) return res.json([]);
+            res.json(result);
+        });
+    });
+});
+
+// ... Rotas de Endereços ...
 
 app.listen(port, '0.0.0.0', () => {
     console.log(`Servidor GRIDE Firebird rodando em http://localhost:${port}`);

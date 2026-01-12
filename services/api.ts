@@ -190,6 +190,14 @@ export const api = {
     } catch (error) { return []; }
   },
 
+  getProductHistory: async (sku: string) => {
+      try {
+          const response = await fetch(`${API_BASE_URL}/product-history/${sku}`);
+          if (!response.ok) throw new Error('Erro');
+          return await response.json();
+      } catch (e) { return []; }
+  },
+
   // --- TRATAMENTO ---
   getTreatmentItems: async (): Promise<TreatmentItem[]> => {
       try {
