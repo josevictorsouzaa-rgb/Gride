@@ -490,187 +490,6 @@ export const DamageModal: React.FC<DamageModalProps> = ({ isOpen, onClose, onAtt
   );
 };
 
-// ... (Rest of modals like HistoryFilterModal, ScannerModal, PrintLabelModal remain unchanged)
-export const HistoryFilterModal: React.FC<HistoryFilterModalProps> = ({ 
-  isOpen, 
-  onClose, 
-  availableUsers, 
-  currentFilters, 
-  onApply,
-  onClear
-}) => {
-  const [startDate, setStartDate] = useState(currentFilters.startDate);
-  const [endDate, setEndDate] = useState(currentFilters.endDate);
-  const [selectedUsers, setSelectedUsers] = useState<string[]>(currentFilters.users || []);
-
-  useEffect(() => {
-    if (isOpen) {
-      setStartDate(currentFilters.startDate);
-      setEndDate(currentFilters.endDate);
-      setSelectedUsers(currentFilters.users || []);
-    }
-  }, [isOpen, currentFilters]);
-
-  if (!isOpen) return null;
-
-  const handleApply = () => {
-    onApply({ startDate, endDate, users: selectedUsers });
-    onClose();
-  };
-
-  const handleClear = () => {
-    setStartDate('');
-    setEndDate('');
-    setSelectedUsers([]);
-    onClear();
-    onClose();
-  };
-
-  const toggleUser = (user: string) => {
-    setSelectedUsers(prev => {
-      if (prev.includes(user)) {
-        return prev.filter(u => u !== user);
-      } else {
-        return [...prev, user];
-      }
-    });
-  };
-
-  const toggleAllUsers = () => {
-    if (selectedUsers.length === availableUsers.length) {
-      setSelectedUsers([]);
-    } else {
-      setSelectedUsers([...availableUsers]);
-    }
-  };
-
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-end justify-center no-print">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
-      
-      <div className="relative z-10 w-full bg-white dark:bg-surface-dark rounded-t-[32px] shadow-2xl flex flex-col max-h-[90vh] animate-slide-up">
-        <div className="flex w-full items-center justify-center pt-3 pb-1">
-          <div className="h-1.5 w-12 rounded-full bg-gray-300 dark:bg-card-border" />
-        </div>
-
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-white/5">
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white">Filtrar Histórico</h2>
-          <button onClick={handleClear} className="text-sm font-medium text-primary hover:text-primary-dark">
-            Limpar
-          </button>
-        </div>
-
-        <div className="p-6 space-y-6 overflow-y-auto no-scrollbar">
-          {/* Date Range Section */}
-          <div className="space-y-3">
-            <h3 className="text-sm font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400 flex items-center gap-2">
-              <Icon name="date_range" size={18} />
-              Período
-            </h3>
-            <div className="flex gap-4 items-center">
-              <div className="flex-1 space-y-1">
-                <label className="text-xs text-gray-400 font-medium ml-1">De</label>
-                <div className="relative">
-                  <input 
-                    type="date" 
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full h-12 pl-3 pr-3 bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-xl text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all text-sm"
-                  />
-                </div>
-              </div>
-              <div className="text-gray-400 pt-5">
-                <Icon name="arrow_forward" size={20} />
-              </div>
-              <div className="flex-1 space-y-1">
-                <label className="text-xs text-gray-400 font-medium ml-1">Até</label>
-                <div className="relative">
-                  <input 
-                    type="date" 
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full h-12 pl-3 pr-3 bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-xl text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all text-sm"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="h-px bg-gray-100 dark:bg-white/5" />
-
-          {/* User Selection Section */}
-          <div className="space-y-3 flex-1 min-h-0">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400 flex items-center gap-2">
-                <Icon name="group" size={18} />
-                Realizado por
-              </h3>
-              <button 
-                onClick={toggleAllUsers}
-                className="text-xs font-semibold text-primary"
-              >
-                {selectedUsers.length === availableUsers.length ? 'Desmarcar todos' : 'Selecionar todos'}
-              </button>
-            </div>
-            
-            <div className="flex flex-col border border-gray-200 dark:border-white/10 rounded-xl overflow-hidden bg-gray-50/50 dark:bg-black/20 max-h-60 overflow-y-auto">
-                {availableUsers.map((user, index) => {
-                  const isSelected = selectedUsers.includes(user);
-                  return (
-                    <button
-                      key={user}
-                      onClick={() => toggleUser(user)}
-                      className={`flex items-center gap-3 p-3.5 transition-colors border-b border-gray-100 dark:border-white/5 last:border-0 ${
-                        isSelected 
-                          ? 'bg-blue-50 dark:bg-blue-900/10' 
-                          : 'hover:bg-gray-100 dark:hover:bg-white/5'
-                      }`}
-                    >
-                       <div className={`flex items-center justify-center size-5 rounded border transition-all ${
-                         isSelected 
-                           ? 'bg-primary border-primary text-white' 
-                           : 'bg-white dark:bg-white/5 border-gray-300 dark:border-white/20'
-                       }`}>
-                          {isSelected && <Icon name="check" size={16} />}
-                       </div>
-                       
-                       <div className="flex items-center gap-3 flex-1">
-                          <div className="size-8 rounded-full bg-gray-200 dark:bg-gray-700 bg-center bg-cover" style={{ backgroundImage: `url('https://i.pravatar.cc/150?u=${user}')` }} />
-                          <span className={`text-sm font-medium ${isSelected ? 'text-primary' : 'text-gray-700 dark:text-gray-300'}`}>
-                            {user}
-                          </span>
-                       </div>
-                    </button>
-                  );
-                })}
-                {availableUsers.length === 0 && (
-                  <div className="p-4 text-center text-sm text-gray-400">Nenhum usuário disponível</div>
-                )}
-            </div>
-            <p className="text-xs text-gray-400 px-1">
-              {selectedUsers.length === 0 
-                ? 'Nenhum usuário selecionado (Exibindo todos)' 
-                : `${selectedUsers.length} usuários selecionados`}
-            </p>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="p-5 border-t border-gray-200 dark:border-card-border bg-background-light dark:bg-background-dark pb-safe">
-          <button 
-            onClick={handleApply}
-            className="w-full h-14 bg-primary text-white rounded-xl font-bold text-lg shadow-xl shadow-primary/20 hover:bg-primary-dark active:scale-[0.98] transition-all flex items-center justify-center gap-2"
-          >
-            Aplicar Filtros
-            <Icon name="check" size={24} />
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-};
-
 export const ScannerModal: React.FC<ScannerModalProps> = ({ 
   isOpen, 
   onClose, 
@@ -690,12 +509,20 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
 
     const startScanner = async () => {
       if (isOpen) {
+        // Reset states
         setIsPermDenied(false);
         setError('');
         setCanToggleTorch(false);
         setTorchOn(false);
         
         await new Promise(r => setTimeout(r, 100));
+
+        // Cleanup any residual scanner instance aggressively
+        if (scannerRef.current) {
+            try { await scannerRef.current.stop(); } catch(e) {}
+            try { await scannerRef.current.clear(); } catch(e) {}
+            scannerRef.current = null;
+        }
 
         try {
           html5QrCode = new Html5Qrcode("reader");
@@ -756,38 +583,55 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
       startScanner();
     }
 
+    // Cleanup on unmount or close
     return () => {
       if (scannerRef.current) {
-         scannerRef.current.stop().catch(err => console.error("Falha ao parar scanner", err));
+         scannerRef.current.stop().catch(() => {});
+         try {
+             scannerRef.current.clear();
+         } catch(e) {}
          scannerRef.current = null;
       }
     };
-  }, [isOpen, onScanComplete, retryTrigger]);
+  }, [isOpen, retryTrigger]);
 
   const handleClose = () => {
+    // If in error state, force close instantly
+    if (error || isPermDenied) {
+        if (scannerRef.current) {
+            try { scannerRef.current.clear(); } catch(e) {}
+            scannerRef.current = null;
+        }
+        onClose();
+        return;
+    }
+
     if (scannerRef.current) {
         scannerRef.current.stop().then(() => {
             scannerRef.current = null;
             onClose();
-        }).catch(() => onClose());
+        }).catch(() => {
+            // Force clean up if stop fails
+            if (scannerRef.current) {
+                try { scannerRef.current.clear(); } catch(e) {}
+                scannerRef.current = null;
+            }
+            onClose();
+        });
     } else {
         onClose();
     }
   };
 
   const handleRetryPermission = () => {
-      // Forçar desmontagem/remontagem lógica
+      // Clear current instance to force full re-initialization
       if (scannerRef.current) {
-          scannerRef.current.stop().then(() => {
-              scannerRef.current = null;
-              setRetryTrigger(prev => prev + 1);
-          }).catch(() => {
-              scannerRef.current = null;
-              setRetryTrigger(prev => prev + 1);
-          });
-      } else {
-          setRetryTrigger(prev => prev + 1);
+          try { scannerRef.current.clear(); } catch(e) {}
+          scannerRef.current = null;
       }
+      setError('');
+      setIsPermDenied(false);
+      setRetryTrigger(prev => prev + 1);
   };
 
   const handleToggleTorch = async () => {
@@ -956,6 +800,93 @@ export const PrintLabelModal: React.FC<PrintLabelModalProps> = ({ isOpen, onClos
                     <button onClick={() => window.print()} className="px-6 py-3 rounded-lg font-bold bg-primary text-white hover:bg-primary-dark shadow-lg flex items-center gap-2"><Icon name="print" />IMPRIMIR</button>
                 </div>
             </div>
+        </div>,
+        document.body
+    );
+};
+
+export const HistoryFilterModal: React.FC<HistoryFilterModalProps> = ({ 
+    isOpen, onClose, availableUsers, currentFilters, onApply, onClear 
+}) => {
+    const [startDate, setStartDate] = useState(currentFilters.startDate);
+    const [endDate, setEndDate] = useState(currentFilters.endDate);
+    const [selectedUsers, setSelectedUsers] = useState<string[]>(currentFilters.users);
+
+    useEffect(() => {
+        if(isOpen) {
+            setStartDate(currentFilters.startDate);
+            setEndDate(currentFilters.endDate);
+            setSelectedUsers(currentFilters.users);
+        }
+    }, [isOpen, currentFilters]);
+
+    if (!isOpen) return null;
+
+    const toggleUser = (user: string) => {
+        if(selectedUsers.includes(user)) {
+            setSelectedUsers(prev => prev.filter(u => u !== user));
+        } else {
+            setSelectedUsers(prev => [...prev, user]);
+        }
+    };
+
+    const handleApply = () => {
+        onApply({ startDate, endDate, users: selectedUsers });
+        onClose();
+    };
+
+    const handleClear = () => {
+        onClear();
+        onClose();
+    };
+
+    return createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
+             <div className="relative z-10 w-full max-w-sm bg-white dark:bg-surface-dark rounded-2xl shadow-xl p-6 animate-scale-up flex flex-col max-h-[90vh]">
+                 <div className="flex justify-between items-center mb-4">
+                     <h3 className="text-lg font-bold text-gray-900 dark:text-white">Filtrar Histórico</h3>
+                     <button onClick={onClose}><Icon name="close" /></button>
+                 </div>
+
+                 <div className="space-y-4 overflow-y-auto flex-1 pr-2">
+                     <div>
+                         <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Período</label>
+                         <div className="flex gap-2">
+                             <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full p-2 rounded-lg bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 text-sm" />
+                             <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full p-2 rounded-lg bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 text-sm" />
+                         </div>
+                     </div>
+
+                     <div>
+                         <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">Usuários</label>
+                         <div className="flex flex-wrap gap-2">
+                             {availableUsers.map(user => (
+                                 <button 
+                                     key={user}
+                                     onClick={() => toggleUser(user)}
+                                     className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                                         selectedUsers.includes(user)
+                                         ? 'bg-primary text-white border-primary'
+                                         : 'bg-white dark:bg-white/5 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-white/10'
+                                     }`}
+                                 >
+                                     {user}
+                                 </button>
+                             ))}
+                         </div>
+                     </div>
+                 </div>
+
+                 <div className="flex gap-3 mt-6 pt-4 border-t border-gray-100 dark:border-white/5">
+                     <button onClick={handleClear} className="flex-1 py-3 rounded-xl border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 font-bold">
+                         Limpar
+                     </button>
+                     <button onClick={handleApply} className="flex-1 py-3 rounded-xl bg-primary text-white font-bold shadow-lg">
+                         Aplicar Filtros
+                     </button>
+                 </div>
+             </div>
         </div>,
         document.body
     );
