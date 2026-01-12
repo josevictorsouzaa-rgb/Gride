@@ -337,13 +337,15 @@ app.post('/save-count', (req, res) => {
                 
                 const logId = result.ID;
 
-                // 2. Se for divergência/erro, inserir em TRATAMENTO
-                const needsTreatment = status === 'not_located' || status === 'divergence_info';
+                // 2. Lógica para enviar ao TRATAMENTO
+                // Envia se:
+                // - Status for 'not_located', 'divergence_info' OU 'issue'
+                // - Status for 'counted' MAS tiver uma observação/motivo (erro de cadastro, etc)
+                const hasDivergenceNote = divergencia_motivo && divergencia_motivo.trim().length > 0;
+                const needsTreatment = status === 'not_located' || status === 'divergence_info' || status === 'issue' || hasDivergenceNote;
                 
                 const finish = () => {
                     // Update Stock Balance regardless (The count is the count, even if wrong it updates the system)
-                    // In some advanced WMS, maybe hold update until approved? Assuming update immediately here for simpler flow.
-                    // To link SKU to PRO_COD, we assume SKU is unique or ref. Using ref here.
                     const sqlUpdate = `UPDATE PRODUTOS SET PRO_EST_ATUAL = ? WHERE PRO_NRFABRICANTE = ?`;
                     transaction.query(sqlUpdate, [qtd_contada, sku], (err) => {
                         if (err) console.warn("Update stock failed, SKU might not match exact ref");
@@ -355,8 +357,13 @@ app.post('/save-count', (req, res) => {
                 };
 
                 if (needsTreatment) {
+                    // Normalize status for treatment table
+                    let treatStatus = status;
+                    if (status === 'issue') treatStatus = 'divergence_info';
+                    if (status === 'counted' && hasDivergenceNote) treatStatus = 'divergence_info'; // Upgrade to divergence if there is a note
+
                     const sqlTreat = `INSERT INTO GRIDE_TRATAMENTO (LOG_ID, SKU, NOME_PRODUTO, LOCALIZACAO, TIPO_ERRO, DESCRICAO_ERRO, REPORTADO_POR, STATUS) VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING')`;
-                    transaction.query(sqlTreat, [logId, sku, nome_produto, localizacao, status, divergencia_motivo || 'Erro reportado na contagem', usuario_nome], (err) => {
+                    transaction.query(sqlTreat, [logId, sku, nome_produto, localizacao, treatStatus, divergencia_motivo || 'Erro reportado na contagem', usuario_nome], (err) => {
                         if (err) { transaction.rollback(); db.detach(); return res.status(500).json({error: 'Treat Error'}); }
                         finish();
                     });

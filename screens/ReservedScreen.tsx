@@ -89,6 +89,9 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
   const handleConfirmCount = async (qty: number, status: 'counted' | 'not_located' | 'issue', reason?: string) => {
     if (!selectedItem || activeBlockId === null) return;
 
+    // Normaliza status para o padrão do backend
+    const finalStatus = status === 'issue' ? 'divergence_info' : status;
+
     // SAVE TO API (BALLAST)
     if (currentUser) {
         // Encontrar o bloco para pegar a localização correta
@@ -100,7 +103,7 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
             qtd_sistema: selectedItem.balance || 0,
             qtd_contada: qty,
             localizacao: scannedCode || selectedItem.location || 'N/A', // Usa o código escaneado como prova de local
-            status: status,
+            status: finalStatus,
             divergencia_motivo: reason
         });
     }
@@ -114,7 +117,7 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                 if (item.ref === selectedItem.ref) { 
                     return {
                         ...item,
-                        status: status, // counted, not_located, issue
+                        status: finalStatus, // counted, not_located, divergence_info
                         countedQty: qty,
                         divergenceReason: reason,
                         lastCount: {
@@ -268,7 +271,7 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                         <div className="flex flex-col gap-3">
                             {block.items.map((item: any, idx) => {
                                 const isCounted = item.status === 'counted';
-                                const isIssue = item.status === 'not_located' || item.status === 'issue';
+                                const isIssue = item.status === 'not_located' || item.status === 'issue' || item.status === 'divergence_info';
                                 const isProcessed = isCounted || isIssue;
                                 const hasDivergenceReason = !!item.divergenceReason;
                                 
