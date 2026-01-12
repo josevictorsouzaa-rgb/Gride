@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect } from 'react';
 import { Icon } from '../components/Icon';
 import { Screen, Block, User } from '../types';
 import { ItemDetailModal } from '../components/ItemDetailModal';
-import { EntryModal, ConfirmationModal } from '../components/Modals';
+import { EntryModal, ConfirmationModal, GiveUpBlockModal } from '../components/Modals';
 import { api } from '../services/api';
 
 interface ReservedScreenProps {
@@ -21,8 +22,14 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [blockToFinalize, setBlockToFinalize] = useState<Block | null>(null);
+  
+  // States for Giving Up (Desistir)
+  const [showGiveUpModal, setShowGiveUpModal] = useState(false);
+  const [blockToGiveUp, setBlockToGiveUp] = useState<Block | null>(null);
 
   useEffect(() => {
+    // Ensures status fields are populated correctly from props to prevent stale empty bars
+    // until interaction happens.
     const initialized = blocks
       .filter(b => b.status === 'progress')
       .map(b => ({
@@ -112,6 +119,25 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
       }
   };
 
+  // --- Logic for Giving Up ---
+  const handleRequestGiveUp = (block: Block) => {
+      setBlockToGiveUp(block);
+      setShowGiveUpModal(true);
+  };
+
+  const handleGiveUpConfirm = async () => {
+      if (!blockToGiveUp) return;
+      
+      // Call API to release
+      await api.releaseBlock(blockToGiveUp.id);
+      
+      // Remove from local UI immediately
+      setLocalBlocks(prev => prev.filter(b => b.id !== blockToGiveUp.id));
+      
+      setShowGiveUpModal(false);
+      setBlockToGiveUp(null);
+  };
+
   return (
     <div className="relative flex flex-col w-full min-h-screen pb-24 bg-background-light dark:bg-background-dark">
       <div className="sticky top-0 z-20 bg-background-light dark:bg-background-dark/95 backdrop-blur-md border-b border-gray-200 dark:border-card-border">
@@ -158,6 +184,9 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                 localBlocks.map((block) => {
                     const isComplete = checkBlockCompletion(block);
                     const pendingCount = block.items.filter((i: any) => i.status === 'pending').length;
+                    const totalItems = block.items.length;
+                    const completedItems = totalItems - pendingCount;
+                    const progress = totalItems > 0 ? (completedItems / totalItems) * 100 : 0;
 
                     return (
                     <div key={block.id} className="flex flex-col animate-fade-in">
@@ -170,6 +199,17 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                                 <Icon name="place" size={14} />
                                 {block.location}
                             </div>
+                        </div>
+
+                        {/* Progress Bar (Always Visible) */}
+                        <div className="px-1 mb-3">
+                           <div className="flex justify-between text-[10px] text-gray-500 font-bold uppercase mb-1">
+                              <span>Progresso</span>
+                              <span>{Math.round(progress)}%</span>
+                           </div>
+                           <div className="h-1.5 w-full bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                              <div className="h-full bg-primary transition-all duration-300" style={{ width: `${progress}%` }} />
+                           </div>
                         </div>
 
                         <div className="flex flex-col gap-3">
@@ -266,7 +306,7 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                             })}
                         </div>
 
-                        <div className="mt-4 px-1">
+                        <div className="mt-4 px-1 flex flex-col gap-3">
                             {isComplete ? (
                                 <button 
                                     onClick={() => handleRequestFinalize(block)}
@@ -281,6 +321,15 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                                     <span>Resta contar {pendingCount} item(s)</span>
                                 </div>
                             )}
+
+                            {/* Give Up Button */}
+                            <button 
+                                onClick={() => handleRequestGiveUp(block)}
+                                className="w-full h-10 border border-red-200 dark:border-red-900/30 text-red-500 dark:text-red-400 rounded-xl font-bold text-xs hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors flex items-center justify-center gap-2"
+                            >
+                                <Icon name="backspace" size={16} />
+                                Desistir e Devolver Bloco
+                            </button>
                         </div>
 
                         <div className="my-6 border-b border-gray-200 dark:border-white/5 w-full" />
@@ -311,6 +360,13 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
         isOpen={showConfirmModal}
         onClose={() => setShowConfirmModal(false)}
         onConfirm={handleFinalizeConfirm}
+      />
+
+      <GiveUpBlockModal 
+        isOpen={showGiveUpModal}
+        onClose={() => setShowGiveUpModal(false)}
+        onConfirm={handleGiveUpConfirm}
+        blockName={blockToGiveUp?.parentRef}
       />
     </div>
   );

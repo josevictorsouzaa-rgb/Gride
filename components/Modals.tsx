@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Icon } from './Icon';
 import { Html5Qrcode } from "html5-qrcode";
@@ -28,6 +29,7 @@ interface ConfirmationModalProps extends ModalProps {
 
 interface AbandonModalProps extends ModalProps {
   onConfirm: () => void;
+  blockName?: string;
 }
 
 interface DamageModalProps extends ModalProps {
@@ -216,6 +218,36 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, on
   );
 };
 
+export const GiveUpBlockModal: React.FC<AbandonModalProps> = ({ isOpen, onClose, onConfirm, blockName }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-sm bg-white dark:bg-surface-dark rounded-2xl shadow-xl p-6 text-center animate-scale-up border-2 border-red-100 dark:border-red-900/30">
+        <div className="size-16 rounded-full bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400 flex items-center justify-center mx-auto mb-4">
+            <Icon name="block" size={32} />
+        </div>
+        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Devolver Bloco?</h3>
+        <p className="text-gray-500 dark:text-gray-400 mb-6 text-sm">
+            Você está prestes a desistir da contagem do bloco <strong>{blockName || 'Selecionado'}</strong>. 
+            <br/><br/>
+            Qualquer contagem não finalizada será descartada e o bloco ficará disponível para outros usuários.
+        </p>
+        <div className="flex gap-3">
+            <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 font-bold">
+                Voltar
+            </button>
+            <button onClick={onConfirm} className="flex-1 py-3 rounded-xl bg-red-600 text-white font-bold shadow-lg hover:bg-red-700 flex items-center justify-center gap-2">
+                <Icon name="backspace" size={18} />
+                Devolver
+            </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const DamageModal: React.FC<DamageModalProps> = ({ isOpen, onClose, onAttach }) => {
   if (!isOpen) return null;
   
@@ -256,7 +288,7 @@ export const DamageModal: React.FC<DamageModalProps> = ({ isOpen, onClose, onAtt
   );
 };
 
-// --- History Filter Modal ---
+// ... (HistoryFilterModal, ScannerModal, PrintLabelModal remain unchanged)
 export const HistoryFilterModal: React.FC<HistoryFilterModalProps> = ({ 
   isOpen, 
   onClose, 
@@ -436,7 +468,7 @@ export const HistoryFilterModal: React.FC<HistoryFilterModalProps> = ({
   );
 };
 
-// --- REAL SCANNER MODAL with html5-qrcode ---
+// ... (ScannerModal and PrintLabelModal logic retained in full)
 export const ScannerModal: React.FC<ScannerModalProps> = ({ 
   isOpen, 
   onClose, 
@@ -447,7 +479,7 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const [error, setError] = useState<string>('');
   const [isPermDenied, setIsPermDenied] = useState(false);
-  const [retryTrigger, setRetryTrigger] = useState(0); // Usado para forçar re-render
+  const [retryTrigger, setRetryTrigger] = useState(0); 
 
   useEffect(() => {
     let html5QrCode: Html5Qrcode;
@@ -457,7 +489,6 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
         setIsPermDenied(false);
         setError('');
         
-        // Pequeno delay para garantir que o DOM (div id="reader") foi renderizado
         await new Promise(r => setTimeout(r, 100));
 
         try {
@@ -468,20 +499,15 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
             { facingMode: "environment" }, 
             {
               fps: 10,
-              // REMOVIDO aspectRatio: 1.0 para compatibilidade mobile (preencher tela)
               qrbox: { width: 250, height: 250 }
             },
             (decodedText) => {
-              // Sucesso
               html5QrCode.stop().then(() => {
                 scannerRef.current = null;
                 onScanComplete(decodedText);
               }).catch(err => console.error(err));
             },
-            (errorMessage) => {
-              // Erro de leitura a cada frame, ignorar para não spammar
-              // console.log(errorMessage);
-            }
+            (errorMessage) => { }
           );
         } catch (err: any) {
           console.error("Erro ao iniciar câmera", err);
@@ -489,7 +515,6 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
              setIsPermDenied(true);
              setError('Permissão de câmera negada.');
           } else {
-             // Detecção de erro por contexto inseguro (HTTP)
              if (!window.isSecureContext && window.location.hostname !== 'localhost') {
                 setError('Erro: Câmera requer HTTPS. Conexão atual é insegura.');
              } else {
@@ -505,7 +530,6 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
     }
 
     return () => {
-      // Cleanup ao desmontar ou fechar
       if (scannerRef.current) {
          scannerRef.current.stop().catch(err => console.error("Falha ao parar scanner", err));
          scannerRef.current = null;
@@ -532,7 +556,6 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-black no-print">
-      {/* Top Bar */}
       <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start z-20 pt-safe bg-gradient-to-b from-black/80 to-transparent">
         <button onClick={handleClose} className="p-2 rounded-full bg-black/40 text-white backdrop-blur-md border border-white/10">
           <Icon name="close" size={24} />
@@ -544,27 +567,20 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
       </div>
 
       <div className="flex-1 flex flex-col items-center justify-center relative bg-black">
-         
-         {/* Reader Element for Library */}
          <div id="reader" className="w-full h-full object-cover"></div>
-
-         {/* Fallback Error UI */}
          {(error || isPermDenied) && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 p-8 text-center z-30 animate-fade-in">
                 <div className="size-20 rounded-full bg-red-900/30 text-red-500 flex items-center justify-center mb-6 border border-red-500/30">
                     <Icon name={isPermDenied ? "no_photography" : "error"} size={40} />
                 </div>
-                
                 <h3 className="text-white font-bold text-xl mb-3">
                     {isPermDenied ? "Acesso Negado" : "Erro na Câmera"}
                 </h3>
-                
                 <p className="text-gray-400 text-sm mb-8 max-w-xs leading-relaxed">
                     {isPermDenied 
                         ? "O aplicativo precisa da câmera para ler códigos QR. Verifique se você bloqueou o acesso nas configurações do navegador." 
                         : error}
                 </p>
-
                 <div className="flex flex-col gap-3 w-full max-w-xs">
                     <button 
                         onClick={handleRetryPermission} 
@@ -581,23 +597,17 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
                 </div>
             </div>
          )}
-         
-         {/* Overlay Guide (Only visible if no error) */}
          {!error && !isPermDenied && (
              <>
                 <div className="absolute inset-0 pointer-events-none border-[40px] border-black/50 z-10 flex items-center justify-center">
-                   {/* Corners */}
                    <div className="relative w-64 h-64 border-2 border-white/20 rounded-lg">
                       <div className="absolute top-0 left-0 w-6 h-6 border-l-4 border-t-4 border-primary rounded-tl-lg" />
                       <div className="absolute top-0 right-0 w-6 h-6 border-r-4 border-t-4 border-primary rounded-tr-lg" />
                       <div className="absolute bottom-0 left-0 w-6 h-6 border-l-4 border-b-4 border-primary rounded-bl-lg" />
                       <div className="absolute bottom-0 right-0 w-6 h-6 border-r-4 border-b-4 border-primary rounded-br-lg" />
-                      
-                      {/* Scanning Line Animation */}
                       <div className="absolute top-0 left-0 right-0 h-0.5 bg-primary/80 shadow-[0_0_15px_rgba(19,127,236,0.8)] animate-[slideUp_2s_ease-in-out_infinite]" />
                    </div>
                 </div>
-
                 <div className="absolute bottom-10 left-0 right-0 z-20 flex justify-center pb-safe">
                     <p className="text-white/90 text-sm font-medium bg-black/60 px-6 py-3 rounded-full backdrop-blur-md border border-white/10 text-center">
                     {instruction}
@@ -606,8 +616,6 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
              </>
          )}
       </div>
-      
-      {/* Hide library default unwanted elements via CSS injected directly */}
       <style>{`
          #reader__scan_region img { display: none; }
          #reader__dashboard_section_csr button { display: none; }
@@ -617,7 +625,6 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
   );
 };
 
-// --- Print Label Modal ---
 export const PrintLabelModal: React.FC<PrintLabelModalProps> = ({ isOpen, onClose, data }) => {
     const [labelType, setLabelType] = useState<'ESTANTE' | 'PRATELEIRA'>(data?.type || 'ESTANTE');
     const [printSize, setPrintSize] = useState<'60x30' | '60x20'>('60x30');
@@ -627,7 +634,6 @@ export const PrintLabelModal: React.FC<PrintLabelModalProps> = ({ isOpen, onClos
     }, [data]);
 
     useEffect(() => {
-        // Inject dynamic CSS for the selected size when modal is open
         if (isOpen) {
             const styleId = 'dynamic-print-modal-size';
             let style = document.getElementById(styleId) as HTMLStyleElement;
@@ -637,7 +643,6 @@ export const PrintLabelModal: React.FC<PrintLabelModalProps> = ({ isOpen, onClos
                 document.head.appendChild(style);
             }
             
-            // Adjust dimensions based on selection
             const heightMm = printSize === '60x30' ? '30mm' : '20mm';
             const qrSize = printSize === '60x30' ? '22mm' : '16mm';
             const titleSize = printSize === '60x30' ? '7pt' : '6pt';
@@ -702,15 +707,12 @@ export const PrintLabelModal: React.FC<PrintLabelModalProps> = ({ isOpen, onClos
 
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${data.fullCode}`;
     const displayLabel = labelType === 'ESTANTE' ? 'ESTANTE' : 'PRATELEIRA';
-    
-    // Preview Styles (approximate)
     const previewHeight = printSize === '60x30' ? '120px' : '80px';
     const previewQrSize = printSize === '60x30' ? '80px' : '60px';
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4">
             <div className="bg-white rounded-lg shadow-xl overflow-hidden w-full max-w-2xl flex flex-col">
-                {/* Header (No Print) */}
                 <div className="p-4 bg-gray-100 flex justify-between items-center no-print border-b">
                     <h3 className="font-bold text-lg text-gray-800">Visualizar Impressão</h3>
                     <div className="flex gap-2">
@@ -728,7 +730,6 @@ export const PrintLabelModal: React.FC<PrintLabelModalProps> = ({ isOpen, onClos
                     </div>
                 </div>
 
-                {/* Controls (No Print) */}
                 <div className="p-4 flex gap-4 justify-center bg-gray-50 no-print border-b">
                     <button 
                         onClick={() => setLabelType('ESTANTE')}
@@ -744,26 +745,16 @@ export const PrintLabelModal: React.FC<PrintLabelModalProps> = ({ isOpen, onClos
                     </button>
                 </div>
 
-                {/* Print Area Container (Preview Wrapper) */}
                 <div className="p-8 bg-gray-200 flex justify-center overflow-auto items-center min-h-[200px]">
-                    
-                    {/* THE LABEL (Visible in Print) */}
                     <div 
                         id="print-area-modal" 
                         className="bg-white border border-dashed border-gray-400 flex items-center box-border p-1 relative shadow-sm"
-                        style={{ 
-                            width: '240px', // Scale approx 4x
-                            height: previewHeight,
-                        }}
+                        style={{ width: '240px', height: previewHeight }}
                     >
-                        {/* Left: QR Code */}
                         <div className="flex items-center justify-center shrink-0 mr-2 qr-box" style={{width: previewQrSize, height: previewQrSize}}>
                             <img src={qrUrl} alt="QR Code" className="w-full h-full object-contain" style={{imageRendering: 'pixelated'}} />
                         </div>
-
-                        {/* Right: Info */}
                         <div className="flex-1 flex flex-col justify-center h-full info-column">
-                            {/* Black Bar Header */}
                             <div className="w-full bg-black text-white flex items-center justify-between rounded px-2 py-1 black-bar">
                                 <span className="font-bold uppercase tracking-tight label-type" style={{fontSize: '10px'}}>
                                     {displayLabel}
@@ -772,8 +763,6 @@ export const PrintLabelModal: React.FC<PrintLabelModalProps> = ({ isOpen, onClos
                                     {data.number}
                                 </span>
                             </div>
-
-                            {/* Full Coordinate Code */}
                             <div className="text-center w-full mt-1 code-text">
                                 <p className="font-black text-black tracking-wider leading-none whitespace-nowrap overflow-visible" style={{fontSize: '12px'}}>
                                     {data.fullCode}
@@ -781,10 +770,8 @@ export const PrintLabelModal: React.FC<PrintLabelModalProps> = ({ isOpen, onClos
                             </div>
                         </div>
                     </div>
-
                 </div>
 
-                {/* Footer Actions (No Print) */}
                 <div className="p-4 border-t bg-gray-50 flex justify-end gap-3 no-print">
                     <button onClick={onClose} className="px-6 py-3 rounded-lg font-bold text-gray-600 hover:bg-gray-200">
                         Cancelar
