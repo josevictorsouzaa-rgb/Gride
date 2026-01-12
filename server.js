@@ -152,7 +152,7 @@ app.get('/users', (req, res) => {
     });
 });
 
-// --- CATEGORIES ---
+// --- CATEGORIES (CORRIGIDO PROBLEMA DE CONTAGEM ZERADA) ---
 app.get('/categories', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json([]);
@@ -160,29 +160,64 @@ app.get('/categories', (req, res) => {
             if (err) { db.detach(); return res.status(500).json([]); }
             db.query('SELECT GR_COD, SG_COD, SG_DESCRI FROM SUBGRUPOPRODUTOS', [], (err, subgroups) => {
                 if (err) { db.detach(); return res.status(500).json([]); }
+                
+                // Query de Contagem - Agrupa por Grupo e Subgrupo
                 const sqlCounts = `SELECT GR_COD, SG_COD, COUNT(*) as TOTAL FROM PRODUTOS WHERE PRO_ATIVO = 'S' GROUP BY GR_COD, SG_COD`;
                 db.query(sqlCounts, [], (err, counts) => {
                     db.detach();
                     if (err) return res.status(500).json([]);
+                    
                     const countMap = new Map();
                     const groupCountMap = new Map();
+                    
+                    // Processa contagens usando chaves STRING + TRIM para evitar falhas de type/espaço
                     counts.forEach(row => {
-                        const gr = row.GR_COD;
-                        const sg = row.SG_COD;
+                        const gr = String(row.GR_COD).trim();
+                        const sg = String(row.SG_COD).trim();
                         const total = row.TOTAL;
-                        countMap.set(`${gr}-${sg}`, total);
+                        
+                        const key = `${gr}-${sg}`;
+                        countMap.set(key, total);
+                        
                         const currentGroupTotal = groupCountMap.get(gr) || 0;
                         groupCountMap.set(gr, currentGroupTotal + total);
                     });
+
+                    // Monta a árvore de resposta
                     const tree = groups.map(g => {
-                        const groupId = g.GR_COD;
+                        const groupIdRaw = g.GR_COD;
+                        const groupId = String(groupIdRaw).trim(); // Chave segura
+                        
                         const groupTotal = groupCountMap.get(groupId) || 0;
-                        const subs = subgroups.filter(s => s.GR_COD === groupId).map(s => {
-                            const subTotal = countMap.get(`${groupId}-${s.SG_COD}`) || 0;
-                            return { id: s.SG_COD.toString(), db_id: s.SG_COD, name: safeString(s.SG_DESCRI), count: subTotal, icon: 'circle' };
-                        });
-                        return { id: groupId.toString(), db_id: groupId, label: safeString(g.GR_DESCRI), icon: 'inventory_2', count: groupTotal, subcategories: subs };
+                        
+                        const subs = subgroups
+                            .filter(s => String(s.GR_COD).trim() === groupId)
+                            .map(s => {
+                                const subIdRaw = s.SG_COD;
+                                const subId = String(subIdRaw).trim();
+                                
+                                const key = `${groupId}-${subId}`;
+                                const subTotal = countMap.get(key) || 0;
+                                
+                                return { 
+                                    id: subId, 
+                                    db_id: subIdRaw, 
+                                    name: safeString(s.SG_DESCRI), 
+                                    count: subTotal, 
+                                    icon: 'circle' 
+                                };
+                            });
+                            
+                        return { 
+                            id: groupId, 
+                            db_id: groupIdRaw, 
+                            label: safeString(g.GR_DESCRI), 
+                            icon: 'inventory_2', 
+                            count: groupTotal, 
+                            subcategories: subs 
+                        };
                     });
+                    
                     res.json(tree);
                 });
             });
@@ -190,13 +225,20 @@ app.get('/categories', (req, res) => {
     });
 });
 
-// --- BLOCKS ---
+// --- BLOCKS (CORRIGIDO FILTRO POR CATEGORIA E SUBGRUPO) ---
 app.get('/blocks', (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 100;
     const search = req.query.search || '';
-    const gr_cod = req.query.gr_cod ? parseInt(req.query.gr_cod) : null;
-    const sg_cod = req.query.sg_cod ? parseInt(req.query.sg_cod) : null;
+    
+    // CORREÇÃO: Forçar conversão para Inteiro (parseInt) se o valor existir.
+    // Isso evita passar strings ("1") para campos numéricos, o que pode falhar no driver.
+    const gr_cod = req.query.gr_cod && !isNaN(parseInt(req.query.gr_cod)) ? parseInt(req.query.gr_cod) : null;
+    const sg_cod = req.query.sg_cod && !isNaN(parseInt(req.query.sg_cod)) ? parseInt(req.query.sg_cod) : null;
+    
+    const daily_meta = req.query.daily_meta === 'true';
+    const location = req.query.location || '';
+
     const skip = (page - 1) * limit;
 
     Firebird.attach(options, (err, db) => {
@@ -226,8 +268,16 @@ app.get('/blocks', (req, res) => {
                 const params = [bufferLimit, skip];
 
                 if (search) { sql += ` AND (P.PRO_DESCRI CONTAINING ? OR P.PRO_NRFABRICANTE CONTAINING ?)`; params.push(search); params.push(search); }
-                if (gr_cod) { sql += ` AND P.GR_COD = ?`; params.push(gr_cod); }
-                if (sg_cod) { sql += ` AND P.SG_COD = ?`; params.push(sg_cod); }
+                
+                // CORREÇÃO CRÍTICA:
+                // 1. Usamos o parâmetro Inteiro convertido acima (gr_cod/sg_cod).
+                // 2. Usamos TRIM() no campo do banco para garantir que espaços (padding) não quebrem a comparação.
+                // O Firebird consegue comparar TRIM(CAMPO) = INTEIRO com sucesso.
+                if (gr_cod !== null) { sql += ` AND TRIM(P.GR_COD) = ?`; params.push(gr_cod); }
+                if (sg_cod !== null) { sql += ` AND TRIM(P.SG_COD) = ?`; params.push(sg_cod); }
+                
+                if (location) { sql += ` AND P.LOCALIZACAO STARTING WITH ?`; params.push(location); }
+
                 sql += ` ORDER BY P.PRO_COD_SIMILAR, P.PRO_COD`;
 
                 db.query(sql, params, (err, products) => {
@@ -284,7 +334,8 @@ app.get('/reserved-blocks/:userId', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro DB' });
         
-        db.query('SELECT BLOCK_ID, USER_ID, USER_NAME, RESERVED_AT, ITEMS_JSON FROM GRIDE_RESERVAS WHERE USER_ID = ?', [userId], (err, reservations) => {
+        // FIX: TRIM(USER_ID) para garantir match mesmo se banco tiver padding (CHAR/VARCHAR)
+        db.query('SELECT BLOCK_ID, USER_ID, USER_NAME, RESERVED_AT, ITEMS_JSON FROM GRIDE_RESERVAS WHERE TRIM(USER_ID) = ?', [userId], (err, reservations) => {
             if (err) { db.detach(); return res.status(500).json({ error: 'Erro Reservas' }); }
             if (reservations.length === 0) { db.detach(); return res.json([]); }
             
