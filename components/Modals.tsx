@@ -498,16 +498,18 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
   instruction = "Aponte a câmera para o código" 
 }) => {
   const [error, setError] = useState<string>('');
-  const [mountKey, setMountKey] = useState(0); // Used to force full unmount/remount on retry
+  const [mountKey, setMountKey] = useState(0); 
+  const [torchOn, setTorchOn] = useState(false);
+  const [canToggleTorch, setCanToggleTorch] = useState(false);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
 
-    let scanner: Html5Qrcode | null = null;
     let isMounted = true;
 
     const startScanner = async () => {
-        // Wait for DOM to be ready inside Portal
+        // Wait for DOM to be ready
         await new Promise(r => setTimeout(r, 400));
         if (!isMounted) return;
 
@@ -526,12 +528,20 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
         }
 
         try {
-            scanner = new Html5Qrcode(elementId);
+            // Clean up previous instance if any
+            if (scannerRef.current) {
+                try { await scannerRef.current.stop(); } catch(e) {}
+                try { await scannerRef.current.clear(); } catch(e) {}
+                scannerRef.current = null;
+            }
+
+            const scanner = new Html5Qrcode(elementId);
+            scannerRef.current = scanner;
             
             const config = { 
                 fps: 10, 
-                qrbox: { width: 250, height: 250 },
-                aspectRatio: window.innerHeight / window.innerWidth 
+                qrbox: { width: 250, height: 250 }
+                // aspectRatio Removed to prevent black screen on mobile
             };
             
             await scanner.start(
@@ -540,15 +550,27 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
                 (decodedText) => {
                     if (isMounted) {
                         onScanComplete(decodedText);
-                        // No need to stop manually here, closing modal will trigger cleanup
                     }
                 },
                 () => { /* ignore failures */ }
             );
+
+            // Check for Torch capability
+            try {
+                const caps = scanner.getRunningTrackCameraCapabilities();
+                const settings = scanner.getRunningTrackSettings();
+                // Some browsers return capability in one, some in other
+                const hasTorch = (caps as any)?.torch || (settings as any)?.torch;
+                if (hasTorch) {
+                    setCanToggleTorch(true);
+                }
+            } catch(e) {
+                console.log("Torch capability check failed", e);
+            }
+
         } catch (err: any) {
             console.error("Camera Start Error:", err);
             if (isMounted) {
-                // Common errors translation
                 if (err?.name === 'NotAllowedError' || err?.message?.includes('permission')) {
                     setError("Permissão de câmera negada. Verifique as configurações do navegador.");
                 } else if (err?.name === 'NotFoundError') {
@@ -564,15 +586,14 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
 
     startScanner();
 
-    // Cleanup function: Called when component unmounts OR when isOpen changes to false
     return () => {
         isMounted = false;
-        if (scanner) {
-            scanner.stop().then(() => {
-                try { scanner?.clear(); } catch(e) {}
+        if (scannerRef.current) {
+            scannerRef.current.stop().then(() => {
+                try { scannerRef.current?.clear(); } catch(e) {}
             }).catch(err => {
                 console.warn("Failed to stop scanner", err);
-                try { scanner?.clear(); } catch(e) {}
+                try { scannerRef.current?.clear(); } catch(e) {}
             });
         }
     };
@@ -580,7 +601,20 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
 
   const handleRetry = () => {
       setError('');
-      setMountKey(prev => prev + 1); // Force effect re-run
+      setMountKey(prev => prev + 1);
+  };
+
+  const handleToggleTorch = async () => {
+      if (scannerRef.current) {
+          try {
+              await scannerRef.current.applyVideoConstraints({
+                  advanced: [{ torch: !torchOn }]
+              } as any);
+              setTorchOn(!torchOn);
+          } catch(e) {
+              console.error("Failed to toggle torch", e);
+          }
+      }
   };
 
   if (!isOpen) return null;
@@ -594,7 +628,18 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
         <div className="px-3 py-1.5 rounded-full bg-black/40 text-white text-xs font-bold backdrop-blur-md border border-white/10 uppercase tracking-wide">
           {title}
         </div>
-        <div className="w-10"></div> 
+        
+        {/* Flash Button */}
+        {canToggleTorch ? (
+            <button 
+                onClick={handleToggleTorch}
+                className={`p-2 rounded-full backdrop-blur-md border transition-colors ${torchOn ? 'bg-yellow-400 text-black border-yellow-500' : 'bg-black/40 text-white border-white/10'}`}
+            >
+                <Icon name={torchOn ? "flash_on" : "flash_off"} size={24} fill={torchOn} />
+            </button>
+        ) : (
+            <div className="w-10"></div> 
+        )}
       </div>
 
       <div className="flex-1 flex flex-col items-center justify-center relative bg-black overflow-hidden">
