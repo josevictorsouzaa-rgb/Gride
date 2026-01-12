@@ -16,6 +16,7 @@ import { BottomNav } from './components/BottomNav';
 import { Sidebar } from './components/Sidebar'; 
 import { ScannerModal } from './components/Modals';
 import { Icon } from './components/Icon'; 
+import { AutoPartsLoader } from './components/AutoPartsLoader';
 import { api, ApiCategory } from './services/api'; 
 
 const initialBlocksData: Block[] = [];
@@ -258,7 +259,9 @@ const App: React.FC = () => {
 
   return (
     <div className="flex w-full min-h-screen bg-background-light dark:bg-background-dark text-slate-900 dark:text-white transition-opacity duration-300">
-      {isLoading && <div className="fixed top-0 left-0 right-0 h-1 z-[100] bg-primary/20"><div className="h-full bg-primary animate-[shimmer_1s_infinite] w-1/3" /></div>}
+      {/* LOADING OVERLAY GLOBAL */}
+      {isLoading && <AutoPartsLoader message="Buscando Itens..." />}
+      
       <Sidebar currentScreen={activeNavTab} onNavigate={setCurrentScreen} currentUser={currentUser} onLogout={handleLogout} reservedCount={reservedCount} />
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
         <div id="main-scroll-container" className="flex-1 overflow-y-auto no-scrollbar relative w-full"><div className="w-full min-h-full animate-fade-in">{renderScreen()}</div></div>

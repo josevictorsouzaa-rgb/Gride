@@ -1,8 +1,10 @@
+
 import React, { useState, useEffect } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { Icon } from '../components/Icon';
 import { Screen, User } from '../types';
 import { ApiCategory } from '../services/api';
+import { AutoPartsLoader } from '../components/AutoPartsLoader';
 
 interface DashboardScreenProps {
   onNavigate: (screen: Screen) => void;
@@ -23,8 +25,9 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   onLogout, 
   categories 
 }) => {
+  // Use AutoPartsLoader when categories are not yet loaded
   if (!categories || !Array.isArray(categories) || categories.length === 0) { 
-      return <div className='flex-1 bg-background-dark p-10 text-white font-bold flex items-center justify-center text-center'>Conectando ao banco de dados Firebird...<br/>Aguarde um instante.</div>; 
+      return <AutoPartsLoader message="Carregando Categorias..." fullScreen={false} />;
   }
 
   const [showAllCategories, setShowAllCategories] = useState(false);
@@ -88,163 +91,4 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
            {currentUser?.isAdmin && (
              <button 
                onClick={() => onNavigate('settings')}
-               className="flex items-center justify-center rounded-full size-10 bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
-             >
-               <Icon name="settings" size={22} />
-             </button>
-           )}
-           <button 
-             onClick={onLogout}
-             className="flex items-center justify-center rounded-full size-10 bg-gray-100 dark:bg-white/5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-           >
-             <Icon name="logout" size={22} />
-           </button>
-        </div>
-        
-        <div className="hidden md:flex items-center gap-4">
-            <div className="text-right">
-                <p className="text-sm font-bold text-gray-900 dark:text-white">Armazém 04</p>
-                <p className="text-xs text-gray-500">Zona B • Setor 2</p>
-            </div>
-            <button className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary-dark transition-all hover:scale-105 shadow-lg shadow-primary/20">
-                <Icon name="qr_code_scanner" size={20} />
-                <span>Scan Rápido</span>
-            </button>
-        </div>
-      </header>
-
-      <main className="flex flex-col gap-6 p-4 md:p-8">
-        
-        {currentUser?.isAdmin && (
-            <div 
-              onClick={() => onNavigate('treatment')}
-              className="w-full bg-gradient-to-r from-orange-500 to-red-500 rounded-xl p-4 text-white shadow-lg shadow-orange-500/20 cursor-pointer active:scale-[0.98] hover:scale-[1.01] transition-all flex items-center justify-between animate-fade-in"
-            >
-              <div className="flex items-center gap-3">
-                 <div className="size-10 rounded-full bg-white/20 flex items-center justify-center backdrop-blur-sm animate-pulse">
-                    <Icon name="warning" size={24} className="text-white" />
-                 </div>
-                 <div>
-                    <h3 className="font-bold text-lg leading-none">Pendências de Estoque</h3>
-                    <p className="text-xs text-orange-100 mt-1">
-                      {pendingIssuesCount} divergências aguardando sua análise.
-                    </p>
-                 </div>
-              </div>
-              <div className="flex items-center gap-1 bg-white/20 px-3 py-1.5 rounded-lg backdrop-blur-sm hover:bg-white/30 transition-colors">
-                 <span className="text-xs font-bold">Tratar</span>
-                 <Icon name="arrow_forward" size={16} />
-              </div>
-            </div>
-        )}
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            
-            <section className="lg:col-span-1 lg:order-2">
-            <div className="flex items-center justify-between mb-3">
-                <h2 className="text-lg font-bold">Meta Diária</h2>
-                <div className="text-xs font-medium text-text-secondary bg-surface-dark/5 dark:bg-white/5 px-2 py-1 rounded">Hoje</div>
-            </div>
-            
-            <div className="rounded-xl bg-white dark:bg-surface-dark border border-gray-200 dark:border-card-border p-5 flex flex-col justify-between shadow-sm h-[320px] relative hover:shadow-md transition-shadow duration-300">
-                
-                <div className="flex-1 flex flex-col justify-center items-center relative">
-                    <div className="w-full h-[200px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                                <Pie
-                                    data={goalData}
-                                    cx="50%"
-                                    cy="50%"
-                                    innerRadius={65}
-                                    outerRadius={85}
-                                    startAngle={90}
-                                    endAngle={-270}
-                                    dataKey="value"
-                                    stroke="none"
-                                >
-                                    {goalData.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={entry.color} />
-                                    ))}
-                                </Pie>
-                            </PieChart>
-                        </ResponsiveContainer>
-                        
-                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                            <span className="text-3xl font-bold text-gray-900 dark:text-white animate-fade-in">{progressPercent}%</span>
-                            <span className="text-xs text-gray-500 font-medium">Concluído</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="grid grid-cols-3 gap-2 mt-2">
-                    <div className="flex flex-col items-center p-2 bg-gray-50 dark:bg-white/5 rounded-xl border border-gray-100 dark:border-white/5 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">
-                        <span className="text-[10px] text-gray-500 dark:text-gray-400 mb-1 whitespace-nowrap">Meta Hoje</span>
-                        <div className="flex items-baseline gap-0.5">
-                            <span className="text-lg font-bold text-primary">{countedToday}</span>
-                            <span className="text-[10px] font-medium text-gray-400">/ {dailyTarget}</span>
-                        </div>
-                    </div>
-
-                     <div className="flex flex-col items-center p-2 bg-red-50 dark:bg-red-900/10 rounded-xl border border-red-100 dark:border-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/20 transition-colors">
-                        <span className="text-[10px] text-red-600 dark:text-red-400 mb-1 whitespace-nowrap">Atrasados</span>
-                        <span className="text-lg font-bold text-red-600 dark:text-red-400">{lateCount}</span>
-                    </div>
-                    
-                    <div className="flex flex-col items-center p-2 bg-gray-50 dark:bg-white/5 rounded-xl border border-gray-100 dark:border-white/5 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">
-                        <span className="text-[10px] text-gray-500 dark:text-gray-400 mb-1 whitespace-nowrap">Qtd Total Ano</span>
-                        <span className="text-lg font-bold text-gray-900 dark:text-white">{ (totalYearCounted / 1000).toFixed(1) }k</span>
-                    </div>
-                </div>
-
-            </div>
-            </section>
-
-            <section className="lg:col-span-2 lg:order-1 flex flex-col">
-            <div className="flex items-center justify-between mb-3 h-8">
-                <h2 className="text-lg font-bold">Categorias</h2>
-                {!isDesktop && (
-                  <button 
-                  onClick={() => setShowAllCategories(!showAllCategories)}
-                  className="text-xs font-medium text-primary hover:text-primary-dark transition-colors px-2 py-1"
-                  >
-                  {showAllCategories ? 'Ver menos' : 'Ver todas'}
-                  </button>
-                )}
-            </div>
-            <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-6 gap-3">
-                {displayedCategories.length === 0 ? (
-                  <div className="col-span-full py-10 text-center text-gray-400 text-sm animate-pulse">Carregando categorias...</div>
-                ) : (
-                  displayedCategories.map((cat, idx) => {
-                    const isActive = cat.label === 'MOTOR'; 
-                    return (
-                      <button 
-                          key={idx} 
-                          onClick={() => onCategorySelect(cat.label, cat.db_id)}
-                          className={`flex flex-col items-center justify-center aspect-square rounded-xl gap-1 group active:scale-95 hover:scale-105 hover:-translate-y-1 transition-all duration-300 ${
-                          isActive 
-                          ? 'bg-surface-dark border border-primary/50 shadow-[0_0_10px_rgba(19,127,236,0.15)]' 
-                          : 'bg-surface-dark border border-card-border hover:border-gray-500 hover:shadow-lg'
-                      }`}>
-                          <Icon name={cat.icon} className={`text-3xl mb-1 ${isActive ? 'text-primary group-hover:scale-110' : 'text-text-secondary group-hover:text-white'} transition-all duration-300`} />
-                          
-                          <div className="flex flex-col items-center leading-none gap-1">
-                          <span className={`text-[10px] md:text-xs font-bold text-center px-1 ${isActive ? 'text-white' : 'text-slate-300 group-hover:text-white'}`}>
-                              {cat.label}
-                          </span>
-                          <span className={`text-[10px] md:text-[11px] font-medium text-center ${isActive ? 'text-primary/80' : 'text-text-secondary'}`}>
-                              {cat.count} itens
-                          </span>
-                          </div>
-                      </button>
-                    );
-                  })
-                )}
-            </div>
-            </section>
-        </div>
-      </main>
-    </div>
-  );
-};
+               className="flex items-center justify-center rounded-full size-10 bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/10
