@@ -225,13 +225,18 @@ app.get('/categories', (req, res) => {
     });
 });
 
-// --- BLOCKS ---
+// --- BLOCKS (CORRIGIDO PROBLEMA DE LISTAGEM VAZIA EM CATEGORIAS) ---
 app.get('/blocks', (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 100;
     const search = req.query.search || '';
-    const gr_cod = req.query.gr_cod ? parseInt(req.query.gr_cod) : null;
-    const sg_cod = req.query.sg_cod ? parseInt(req.query.sg_cod) : null;
+    
+    // Tratamento dos IDs para string limpa para comparação robusta no banco
+    const gr_cod = req.query.gr_cod ? String(req.query.gr_cod).trim() : null;
+    const sg_cod = req.query.sg_cod ? String(req.query.sg_cod).trim() : null;
+    const daily_meta = req.query.daily_meta === 'true';
+    const location = req.query.location || '';
+
     const skip = (page - 1) * limit;
 
     Firebird.attach(options, (err, db) => {
@@ -261,8 +266,11 @@ app.get('/blocks', (req, res) => {
                 const params = [bufferLimit, skip];
 
                 if (search) { sql += ` AND (P.PRO_DESCRI CONTAINING ? OR P.PRO_NRFABRICANTE CONTAINING ?)`; params.push(search); params.push(search); }
-                if (gr_cod) { sql += ` AND P.GR_COD = ?`; params.push(gr_cod); }
-                if (sg_cod) { sql += ` AND P.SG_COD = ?`; params.push(sg_cod); }
+                
+                // CORREÇÃO CRÍTICA: TRIM para garantir match entre string e campos CHAR/VARCHAR do banco
+                if (gr_cod) { sql += ` AND TRIM(P.GR_COD) = ?`; params.push(gr_cod); }
+                if (sg_cod) { sql += ` AND TRIM(P.SG_COD) = ?`; params.push(sg_cod); }
+                
                 sql += ` ORDER BY P.PRO_COD_SIMILAR, P.PRO_COD`;
 
                 db.query(sql, params, (err, products) => {
