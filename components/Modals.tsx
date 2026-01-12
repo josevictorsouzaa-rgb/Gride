@@ -65,7 +65,7 @@ interface HistoryFilterModalProps extends ModalProps {
   onClear: () => void;
 }
 
-// --- ENTRY MODAL (REFORMULADO - CENTRALIZADO E COM FLUXOS) ---
+// --- ENTRY MODAL (REFORMULADO - COMPACTO E CENTRALIZADO) ---
 
 export const EntryModal: React.FC<EntryModalProps> = ({ 
   isOpen, 
@@ -79,24 +79,20 @@ export const EntryModal: React.FC<EntryModalProps> = ({
   lastCountInfo, 
   onConfirm 
 }) => {
-  // Estado Modo: 'counting' (padrão + ajuste leve) ou 'problem' (impedimento)
   const [mode, setMode] = useState<'counting' | 'problem'>('counting');
   
-  // Estados Contagem
   const [quantity, setQuantity] = useState(systemQuantity);
   const [locGalpao, setLocGalpao] = useState('');
   const [locEstante, setLocEstante] = useState('');
   const [locPrateleira, setLocPrateleira] = useState('');
   
-  // Estado Ajuste Leve (Dentro de Contagem)
   const [isAdjustment, setIsAdjustment] = useState(false);
   const [adjustmentReason, setAdjustmentReason] = useState('');
 
-  // Estados Problema (Não contagem)
   const [problemReason, setProblemReason] = useState('');
   const [problemType, setProblemType] = useState<'not_located' | 'other'>('not_located');
 
-  // Bloquear Scroll do Body ao abrir
+  // Bloqueio de scroll do body
   useEffect(() => {
     if (isOpen) {
         document.body.style.overflow = 'hidden';
@@ -106,17 +102,15 @@ export const EntryModal: React.FC<EntryModalProps> = ({
     return () => { document.body.style.overflow = 'unset'; };
   }, [isOpen]);
 
-  // Reset ao abrir
   useEffect(() => {
     if (isOpen) {
       setMode('counting');
-      setQuantity(systemQuantity || 0); // Traz valor do sistema
+      setQuantity(systemQuantity || 0);
       setIsAdjustment(false);
       setAdjustmentReason('');
       setProblemReason('');
       setProblemType('not_located');
       
-      // Se já tiver um scan salvo (da tela pai), preenche
       if (scannedLocation) {
           parseLocation(scannedLocation);
       } else {
@@ -128,7 +122,6 @@ export const EntryModal: React.FC<EntryModalProps> = ({
   }, [isOpen, systemQuantity, scannedLocation]);
 
   const parseLocation = (code: string) => {
-      // Esperado: LOC-G01-E02-P03
       const parts = code.split('-');
       if (parts.length >= 4) {
           setLocGalpao(parts[1]);
@@ -143,38 +136,28 @@ export const EntryModal: React.FC<EntryModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Fluxo 1: Confirmar Contagem (Com ou sem ajuste leve)
   const handleConfirmCount = () => {
-      // Validação de Scan Obrigatório para CONTAR
       if (!locGalpao || !locEstante || !locPrateleira) {
-          alert("É obrigatório escanear a localização para validar a contagem.");
+          alert("É obrigatório escanear a localização.");
           return;
       }
-
-      // Validação Quantidade Igual (apenas se não for ajuste)
       if (quantity === systemQuantity && !isAdjustment) {
-          const confirmSame = window.confirm("A quantidade contada é igual à do sistema. Confirma?");
+          const confirmSame = window.confirm("Quantidade igual ao sistema. Confirma?");
           if (!confirmSame) return;
       }
-
-      // Se marcou ajuste, obriga texto
       if (isAdjustment && adjustmentReason.trim().length < 5) {
-          alert("Por favor, descreva o motivo do ajuste/erro de cadastro.");
+          alert("Descreva o motivo do ajuste.");
           return;
       }
-
-      // Envia como 'counted'. Se tiver adjustmentReason, o backend/tela pai trata como divergência leve.
       onConfirm(quantity, 'counted', isAdjustment ? adjustmentReason : undefined);
       onClose();
   };
 
-  // Fluxo 2: Reportar Problema (Bloqueio)
   const handleReportProblem = () => {
-      if (problemReason.trim().length < 10) {
-          alert("Descreva detalhadamente o problema (mínimo 10 caracteres).");
+      if (problemReason.trim().length < 5) {
+          alert("Descreva o problema.");
           return;
       }
-      // Envia como 'not_located' ou 'issue' e quantidade 0 (ou ignorada)
       onConfirm(0, problemType === 'not_located' ? 'not_located' : 'issue', problemReason);
       onClose();
   };
@@ -183,127 +166,115 @@ export const EntryModal: React.FC<EntryModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-      {/* Backdrop */}
       <div className="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity" onClick={onClose} />
       
-      {/* Modal Card - Centralized */}
-      <div className="relative z-10 w-full max-w-md bg-white dark:bg-surface-dark rounded-2xl shadow-2xl overflow-hidden animate-scale-up flex flex-col max-h-[90vh]">
+      {/* Container Principal - Altura Maxima controlada para não estourar a tela */}
+      <div className="relative z-10 w-full max-w-sm bg-white dark:bg-surface-dark rounded-2xl shadow-2xl flex flex-col max-h-[90dvh] animate-scale-up overflow-hidden">
         
-        {/* Header Produto */}
-        <div className="bg-[#182335] p-4 text-white shrink-0 shadow-md z-20">
-          <div className="flex justify-between items-start">
-              <div>
-                <h3 className="text-lg font-bold leading-tight line-clamp-2">{itemName || 'Item Desconhecido'}</h3>
-                <div className="flex items-center gap-2 mt-1 opacity-90 text-sm">
-                    <span className="font-mono bg-white/10 px-1.5 rounded">{itemSku}</span>
-                    <span>•</span>
-                    <span className="font-bold uppercase">{itemBrand}</span>
-                </div>
-              </div>
-              <button onClick={onClose} className="text-white/50 hover:text-white p-1"><Icon name="close" /></button>
+        {/* Header Compacto */}
+        <div className="bg-[#182335] p-3 text-white shrink-0 shadow-md z-20 flex justify-between items-start">
+          <div className="flex-1 min-w-0 pr-2">
+            <h3 className="text-sm font-bold leading-tight line-clamp-2 text-white/90">{itemName || 'Item Desconhecido'}</h3>
+            <div className="flex items-center gap-2 mt-1 opacity-80 text-[10px] font-mono">
+                <span className="bg-white/10 px-1 rounded">{itemSku}</span>
+                <span>•</span>
+                <span className="uppercase">{itemBrand}</span>
+            </div>
           </div>
+          <button onClick={onClose} className="text-white/50 hover:text-white p-1 -mr-1"><Icon name="close" size={20} /></button>
         </div>
 
-        <div className="overflow-y-auto p-5 space-y-5 bg-white dark:bg-surface-dark">
+        {/* Corpo com Scroll se necessário */}
+        <div className="overflow-y-auto p-4 space-y-4 bg-white dark:bg-surface-dark">
            
-           {/* Info Cards: Sistema & Última Contagem */}
-           <div className="flex gap-3">
-               <div className="flex-1 bg-blue-50 dark:bg-blue-900/20 p-3 rounded-xl border border-blue-100 dark:border-blue-900/30 flex flex-col items-center justify-center text-center">
-                   <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wide">Qtd. Sistema</span>
-                   <span className="text-2xl font-black text-blue-700 dark:text-blue-300">{systemQuantity}</span>
+           {/* Cards Lado a Lado Compactos */}
+           <div className="flex gap-2">
+               <div className="flex-1 bg-blue-50 dark:bg-blue-900/20 p-2 rounded-lg border border-blue-100 dark:border-blue-900/30 flex flex-col items-center justify-center text-center">
+                   <span className="text-[9px] font-bold text-blue-500 uppercase tracking-wide">Sistema</span>
+                   <span className="text-lg font-black text-blue-700 dark:text-blue-300">{systemQuantity}</span>
                </div>
-               <div className="flex-[1.5] bg-gray-50 dark:bg-white/5 p-3 rounded-xl border border-gray-100 dark:border-white/10 flex flex-col justify-center">
-                   <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Última Contagem</span>
+               <div className="flex-[1.5] bg-gray-50 dark:bg-white/5 p-2 rounded-lg border border-gray-100 dark:border-white/10 flex flex-col justify-center pl-3">
+                   <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-0.5">Última Vez</span>
                    {lastCountInfo ? (
-                       <div className="text-xs text-gray-600 dark:text-gray-300">
+                       <div className="text-[10px] text-gray-600 dark:text-gray-300 leading-tight">
                            <strong>{lastCountInfo.quantity} un</strong> por {lastCountInfo.user.split(' ')[0]}
                            <br/><span className="opacity-70">{lastCountInfo.date}</span>
                        </div>
                    ) : (
-                       <span className="text-xs font-medium text-orange-500">Nunca contado</span>
+                       <span className="text-[10px] font-medium text-orange-500">Nunca contado</span>
                    )}
                </div>
            </div>
 
            {mode === 'counting' ? (
                <>
-                   {/* Seção Localização (Scan Obrigatório) */}
-                   <div className="space-y-2">
-                       <label className="text-xs font-bold text-gray-500 uppercase flex justify-between items-center">
-                           Localização Física
+                   {/* Localização Compacta */}
+                   <div className="space-y-1">
+                       <div className="flex justify-between items-center">
+                           <label className="text-[10px] font-bold text-gray-500 uppercase">Localização</label>
                            {!isLocationScanned ? (
-                               <span className="text-red-500 text-[10px] bg-red-50 dark:bg-red-900/20 px-1.5 py-0.5 rounded">Scan Obrigatório</span>
+                               <span className="text-red-500 text-[9px] font-bold bg-red-50 dark:bg-red-900/20 px-1.5 py-0.5 rounded">Scan Obrigatório</span>
                            ) : (
-                               <span className="text-green-500 text-[10px] flex items-center gap-1"><Icon name="check_circle" size={12} /> Confirmada</span>
+                               <span className="text-green-500 text-[9px] font-bold flex items-center gap-1"><Icon name="check_circle" size={10} /> Ok</span>
                            )}
-                       </label>
+                       </div>
                        
-                       <div className="flex gap-2">
-                           <div className="flex-1 flex gap-2">
-                               <div className="flex-1">
-                                   <input placeholder="G" readOnly value={locGalpao} className="w-full text-center text-sm font-bold p-3 bg-gray-100 dark:bg-black/40 rounded-lg border border-gray-200 dark:border-white/5 text-gray-700 dark:text-white" />
-                               </div>
-                               <div className="flex-1">
-                                   <input placeholder="E" readOnly value={locEstante} className="w-full text-center text-sm font-bold p-3 bg-gray-100 dark:bg-black/40 rounded-lg border border-gray-200 dark:border-white/5 text-gray-700 dark:text-white" />
-                               </div>
-                               <div className="flex-1">
-                                   <input placeholder="P" readOnly value={locPrateleira} className="w-full text-center text-sm font-bold p-3 bg-gray-100 dark:bg-black/40 rounded-lg border border-gray-200 dark:border-white/5 text-gray-700 dark:text-white" />
-                               </div>
+                       <div className="flex gap-2 h-10">
+                           <div className="flex-1 flex gap-1">
+                               <input placeholder="G" readOnly value={locGalpao} className="w-full text-center text-sm font-bold bg-gray-100 dark:bg-black/40 rounded border border-gray-200 dark:border-white/5 text-gray-700 dark:text-white" />
+                               <input placeholder="E" readOnly value={locEstante} className="w-full text-center text-sm font-bold bg-gray-100 dark:bg-black/40 rounded border border-gray-200 dark:border-white/5 text-gray-700 dark:text-white" />
+                               <input placeholder="P" readOnly value={locPrateleira} className="w-full text-center text-sm font-bold bg-gray-100 dark:bg-black/40 rounded border border-gray-200 dark:border-white/5 text-gray-700 dark:text-white" />
                            </div>
-                           
                            <button 
                              onClick={onRequestScan}
-                             className={`px-4 rounded-xl flex items-center justify-center transition-all shadow-sm ${
+                             className={`w-12 rounded flex items-center justify-center transition-all shadow-sm ${
                                  isLocationScanned 
                                  ? 'bg-green-100 text-green-700 border border-green-200' 
                                  : 'bg-primary text-white hover:bg-primary-dark animate-pulse shadow-primary/30'
                              }`}
                            >
-                               <Icon name="qr_code_scanner" size={24} />
+                               <Icon name="qr_code_scanner" size={20} />
                            </button>
                        </div>
                    </div>
 
-                   {/* Seção Quantidade */}
-                   <div className="flex flex-col items-center pt-2">
-                      <label className="text-xs font-bold text-gray-500 uppercase mb-3">Quantidade Encontrada</label>
-                      <div className="flex items-center gap-6">
+                   {/* Quantidade Compacta */}
+                   <div className="flex flex-col items-center pt-1">
+                      <label className="text-[10px] font-bold text-gray-500 uppercase mb-2">Contagem</label>
+                      <div className="flex items-center gap-4">
                          <button 
                             onClick={() => setQuantity(Math.max(0, quantity - 1))} 
-                            className="size-14 rounded-2xl bg-gray-100 dark:bg-white/10 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-white/20 active:scale-95 transition-all text-gray-600 dark:text-white shadow-sm border border-gray-200 dark:border-white/5"
+                            className="size-12 rounded-xl bg-gray-100 dark:bg-white/10 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-white/20 active:scale-95 transition-all text-gray-600 dark:text-white shadow-sm border border-gray-200 dark:border-white/5"
                          >
-                            <Icon name="remove" size={28} />
+                            <Icon name="remove" size={20} />
                          </button>
                          
-                         <div className="relative">
+                         <div className="relative w-24 text-center">
                              <input 
                                 type="number" 
                                 value={quantity} 
                                 onChange={(e) => setQuantity(Number(e.target.value))}
-                                className="w-32 text-center text-5xl font-black bg-transparent border-none focus:ring-0 p-0 text-gray-900 dark:text-white"
+                                className="w-full text-center text-4xl font-black bg-transparent border-none focus:ring-0 p-0 text-gray-900 dark:text-white"
                              />
-                             <div className="absolute -bottom-4 left-0 right-0 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
-                                <div className="h-full bg-primary w-1/2 mx-auto rounded-full" />
-                             </div>
                          </div>
 
                          <button 
                             onClick={() => setQuantity(quantity + 1)} 
-                            className="size-14 rounded-2xl bg-gray-100 dark:bg-white/10 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-white/20 active:scale-95 transition-all text-gray-600 dark:text-white shadow-sm border border-gray-200 dark:border-white/5"
+                            className="size-12 rounded-xl bg-gray-100 dark:bg-white/10 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-white/20 active:scale-95 transition-all text-gray-600 dark:text-white shadow-sm border border-gray-200 dark:border-white/5"
                          >
-                            <Icon name="add" size={28} />
+                            <Icon name="add" size={20} />
                          </button>
                       </div>
                    </div>
 
-                   {/* Toggle Divergência Leve (Ajuste) */}
-                   <div className="pt-2">
+                   {/* Checkbox Divergência */}
+                   <div>
                        <button 
                          onClick={() => setIsAdjustment(!isAdjustment)}
-                         className={`flex items-center gap-2 text-xs font-bold transition-colors ${isAdjustment ? 'text-orange-500' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'}`}
+                         className={`w-full flex items-center justify-center gap-2 text-[10px] font-bold py-2 rounded-lg transition-colors border border-dashed ${isAdjustment ? 'text-orange-500 border-orange-300 bg-orange-50 dark:bg-orange-900/10' : 'text-gray-400 border-gray-300 dark:border-gray-600 hover:text-gray-600 dark:hover:text-gray-200'}`}
                        >
-                           <Icon name={isAdjustment ? "check_box" : "check_box_outline_blank"} size={18} />
-                           Informar erro de cadastro ou descrição (Item contado)
+                           <Icon name={isAdjustment ? "check_box" : "check_box_outline_blank"} size={14} />
+                           Informar erro de cadastro / descrição
                        </button>
                        
                        {isAdjustment && (
@@ -311,8 +282,8 @@ export const EntryModal: React.FC<EntryModalProps> = ({
                                autoFocus
                                value={adjustmentReason}
                                onChange={(e) => setAdjustmentReason(e.target.value)}
-                               className="w-full mt-2 p-3 rounded-xl bg-orange-50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-800 text-sm resize-none focus:ring-2 focus:ring-orange-500 outline-none animate-slide-up"
-                               placeholder="Ex: Descrição incorreta, código na caixa diferente, embalagem danificada..."
+                               className="w-full mt-2 p-2 rounded-lg bg-orange-50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-800 text-xs resize-none focus:ring-1 focus:ring-orange-500 outline-none animate-slide-up"
+                               placeholder="Descreva a divergência..."
                                rows={2}
                            />
                        )}
@@ -320,20 +291,20 @@ export const EntryModal: React.FC<EntryModalProps> = ({
                </>
            ) : (
                /* Modo Reportar Problema */
-               <div className="animate-fade-in space-y-4">
-                   <div className="p-4 bg-red-50 dark:bg-red-900/10 rounded-xl border border-red-100 dark:border-red-900/30 flex items-start gap-3">
-                       <Icon name="block" className="text-red-500 mt-1" />
-                       <p className="text-xs text-red-800 dark:text-red-200 leading-relaxed">
-                           A contagem será cancelada (zerada) e o item será enviado para <strong>Tratamento de Divergência</strong>.
+               <div className="animate-fade-in space-y-3">
+                   <div className="p-3 bg-red-50 dark:bg-red-900/10 rounded-lg border border-red-100 dark:border-red-900/30 flex items-start gap-2">
+                       <Icon name="block" className="text-red-500 mt-0.5" size={16} />
+                       <p className="text-[10px] text-red-800 dark:text-red-200 leading-relaxed">
+                           A contagem será zerada e enviada para <strong>Tratamento</strong>.
                        </p>
                    </div>
                    
-                   <div className="space-y-3">
-                       <label className="text-xs font-bold text-gray-500 uppercase block">Qual o Problema?</label>
+                   <div className="space-y-2">
+                       <label className="text-[10px] font-bold text-gray-500 uppercase block">Tipo</label>
                        <div className="flex gap-2">
                            <button 
                              onClick={() => setProblemType('not_located')}
-                             className={`flex-1 py-3 px-2 rounded-lg border text-xs font-bold transition-all ${
+                             className={`flex-1 py-2 rounded-lg border text-[10px] font-bold transition-all ${
                                  problemType === 'not_located' 
                                  ? 'bg-gray-800 text-white border-gray-800 dark:bg-white dark:text-black' 
                                  : 'bg-white dark:bg-transparent border-gray-200 dark:border-gray-700 text-gray-500'
@@ -343,29 +314,24 @@ export const EntryModal: React.FC<EntryModalProps> = ({
                            </button>
                            <button 
                              onClick={() => setProblemType('other')}
-                             className={`flex-1 py-3 px-2 rounded-lg border text-xs font-bold transition-all ${
+                             className={`flex-1 py-2 rounded-lg border text-[10px] font-bold transition-all ${
                                  problemType === 'other' 
                                  ? 'bg-gray-800 text-white border-gray-800 dark:bg-white dark:text-black' 
                                  : 'bg-white dark:bg-transparent border-gray-200 dark:border-gray-700 text-gray-500'
                              }`}
                            >
-                               Outro / Impeditivo
+                               Outro
                            </button>
                        </div>
 
                        <div>
-                           <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">
-                               Descrição do Ocorrido <span className="text-red-500">*</span>
-                           </label>
+                           <label className="text-[10px] font-bold text-gray-500 uppercase mb-1 block">Descrição *</label>
                            <textarea 
                                value={problemReason}
                                onChange={(e) => setProblemReason(e.target.value)}
-                               className="w-full h-28 p-4 rounded-xl bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 resize-none focus:ring-2 focus:ring-red-500 outline-none text-sm"
-                               placeholder={problemType === 'not_located' ? "Onde você procurou? A caixa estava vazia?" : "Explique por que não foi possível contar..."}
+                               className="w-full h-20 p-3 rounded-lg bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 resize-none focus:ring-1 focus:ring-red-500 outline-none text-xs"
+                               placeholder="O que houve?"
                            />
-                           <p className={`text-[10px] text-right mt-1 font-bold ${problemReason.length < 10 ? 'text-red-500' : 'text-green-500'}`}>
-                               {problemReason.length} / 10 caracteres
-                           </p>
                        </div>
                    </div>
                </div>
@@ -373,44 +339,45 @@ export const EntryModal: React.FC<EntryModalProps> = ({
 
         </div>
 
-        {/* Footer Actions */}
-        <div className="p-5 border-t border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-black/20 pb-safe">
+        {/* Footer Actions Compacto */}
+        <div className="p-3 border-t border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-black/20 shrink-0">
             {mode === 'counting' ? (
-                <div className="flex gap-3">
+                <div className="flex gap-2">
                     <button 
                         onClick={() => setMode('problem')}
-                        className="flex-1 py-4 rounded-xl border border-red-200 dark:border-red-900/30 text-red-500 dark:text-red-400 font-bold text-sm hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors"
+                        className="flex-[0.8] h-11 rounded-lg border border-red-200 dark:border-red-900/30 text-red-500 dark:text-red-400 font-bold text-xs hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors flex flex-col items-center justify-center leading-none"
                     >
-                        Reportar Problema
+                        <span>Reportar</span>
+                        <span className="text-[9px] opacity-70 mt-0.5">Problema</span>
                     </button>
                     
                     <button 
                         onClick={handleConfirmCount}
                         disabled={!isLocationScanned}
-                        className={`flex-[2] py-4 rounded-xl font-bold text-lg text-white shadow-lg transition-all flex items-center justify-center gap-2 ${
+                        className={`flex-[2] h-11 rounded-lg font-bold text-sm text-white shadow-lg transition-all flex items-center justify-center gap-2 ${
                             isLocationScanned 
                             ? 'bg-primary hover:bg-primary-dark active:scale-[0.98]' 
                             : 'bg-gray-300 dark:bg-gray-700 cursor-not-allowed opacity-70'
                         }`}
                     >
-                        <Icon name="check_circle" size={24} />
+                        <Icon name="check_circle" size={20} />
                         Confirmar
                     </button>
                 </div>
             ) : (
-                <div className="flex gap-3">
+                <div className="flex gap-2">
                     <button 
                         onClick={() => setMode('counting')}
-                        className="flex-1 py-3 rounded-xl border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 font-bold text-sm hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
+                        className="flex-1 h-11 rounded-lg border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 font-bold text-xs hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
                     >
                         Voltar
                     </button>
                     <button 
                         onClick={handleReportProblem}
-                        className="flex-[1.5] py-3 rounded-xl bg-red-600 text-white font-bold text-base shadow-lg shadow-red-600/20 hover:bg-red-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                        className="flex-[1.5] h-11 rounded-lg bg-red-600 text-white font-bold text-sm shadow-lg shadow-red-600/20 hover:bg-red-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
                     >
-                        <Icon name="send" />
-                        Enviar Report
+                        <Icon name="send" size={18} />
+                        Enviar
                     </button>
                 </div>
             )}
@@ -728,20 +695,16 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
           html5QrCode = new Html5Qrcode("reader");
           scannerRef.current = html5QrCode;
           
-          // Configuração dinâmica para evitar "Zoom" excessivo (corte digital)
-          // Usar 'environment' e solicitar resolução ideal (HD)
           const config = {
               fps: 15,
               qrbox: { width: 250, height: 250 },
-              // Importante: aspectRatio indefinido ou calculado pode ajudar, 
-              // mas solicitar uma resolução especifica (constraints) é mais eficaz para wide.
               aspectRatio: window.innerHeight / window.innerWidth
           };
 
           const constraints = { 
               facingMode: "environment",
-              focusMode: "continuous", // Tenta foco contínuo
-              width: { min: 640, ideal: 1280, max: 1920 }, // Solicita HD/Full HD para evitar crop em resoluções baixas
+              focusMode: "continuous", 
+              width: { min: 640, ideal: 1280, max: 1920 }, 
               height: { min: 480, ideal: 720, max: 1080 }
           };
 
@@ -757,11 +720,9 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
             (errorMessage) => { }
           );
 
-          // Verificar suporte a Flash (Torch) após iniciar
           try {
-             // getRunningTrackCameraCapabilities retorna MediaTrackSettings
              const capabilities = html5QrCode.getRunningTrackCameraCapabilities();
-             const cap: any = capabilities; // Type casting para acessar 'torch' se existir
+             const cap: any = capabilities; 
              if (cap && (cap.torch || cap.fillLightMode)) {
                  setCanToggleTorch(true);
              }
@@ -809,7 +770,18 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
   };
 
   const handleRetryPermission = () => {
-      setRetryTrigger(prev => prev + 1);
+      // Forçar desmontagem/remontagem lógica
+      if (scannerRef.current) {
+          scannerRef.current.stop().then(() => {
+              scannerRef.current = null;
+              setRetryTrigger(prev => prev + 1);
+          }).catch(() => {
+              scannerRef.current = null;
+              setRetryTrigger(prev => prev + 1);
+          });
+      } else {
+          setRetryTrigger(prev => prev + 1);
+      }
   };
 
   const handleToggleTorch = async () => {
@@ -862,7 +834,7 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
                 </h3>
                 <p className="text-gray-400 text-sm mb-8 max-w-xs leading-relaxed">
                     {isPermDenied 
-                        ? "O aplicativo precisa da câmera para ler códigos QR. Verifique se você bloqueou o acesso nas configurações do navegador." 
+                        ? "O navegador bloqueou a câmera. Habilite nas configurações do site e tente novamente." 
                         : error}
                 </p>
                 <div className="flex flex-col gap-3 w-full max-w-xs">
@@ -876,7 +848,7 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
                         onClick={handleClose} 
                         className="w-full bg-white/10 hover:bg-white/20 text-white px-6 py-3.5 rounded-xl font-bold text-sm transition-colors"
                     >
-                        Fechar e Digitar Código
+                        Fechar
                     </button>
                 </div>
             </div>
