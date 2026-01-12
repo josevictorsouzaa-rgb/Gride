@@ -1,3 +1,4 @@
+
 // --- ESTRUTURA DO BANCO DE DADOS: TABELA GRUPOS ---
 export const DB_CATEGORIES = [
   { GR_COD: 1, GR_DESCRI: 'MOTOR' },
@@ -166,7 +167,7 @@ export const DB_SUBGROUPS = [
 
 // Função auxiliar para determinar o ícone com base no nome do subgrupo
 // Mapeamento extenso para cobrir peças automotivas específicas
-const getIconByTerm = (term: string): string => {
+export const getIconByTerm = (term: string): string => {
     const t = term.toUpperCase();
 
     // -- Itens Genéricos ou Administrativos --
@@ -258,7 +259,7 @@ const getIconByTerm = (term: string): string => {
 };
 
 // Mapa manual apenas para os Grupos Principais (Ícones das Categorias)
-const GROUP_ICONS: Record<number, string> = {
+export const GROUP_ICONS: Record<number, string> = {
   1: 'car_repair',        // MOTOR
   2: 'local_gas_station', // ALIMENTACAO
   3: 'mode_fan',          // REFRIGERACAO

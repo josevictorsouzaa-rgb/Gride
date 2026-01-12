@@ -62,7 +62,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   return (
     <div className="relative flex flex-col w-full min-h-screen pb-24 md:pb-0 bg-background-light dark:bg-background-dark md:bg-transparent">
       {/* Header */}
-      <header className="flex items-center justify-between bg-background-light dark:bg-background-dark md:bg-transparent p-4 sticky top-0 md:static z-30 border-b md:border-b-0 border-gray-200 dark:border-card-border/30 backdrop-blur-md md:backdrop-blur-none bg-opacity-90 dark:bg-opacity-90">
+      <header className="flex items-center justify-between bg-background-light dark:bg-background-dark md:bg-transparent p-4 md:px-8 md:pt-8 md:pb-4 sticky top-0 md:static z-30 border-b md:border-b-0 border-gray-200 dark:border-card-border/30 backdrop-blur-md md:backdrop-blur-none bg-opacity-90 dark:bg-opacity-90">
         <div className="flex items-center gap-3">
           <div className="relative md:hidden">
             <div className="size-10 rounded-full bg-primary text-white font-bold flex items-center justify-center border-2 border-white dark:border-surface-dark shadow-sm">
@@ -99,7 +99,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
         </div>
       </header>
 
-      <main className="flex flex-col p-4 md:p-0 md:mt-4 gap-6 md:grid md:grid-cols-3">
+      <main className="flex flex-col p-4 md:px-8 md:pb-8 gap-6 md:grid md:grid-cols-3">
         
         {/* KPI: Daily Goal Card */}
         <div className="md:col-span-1 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border p-5 relative overflow-hidden group hover:border-primary/50 transition-colors duration-300">
@@ -196,7 +196,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
                    <span className="text-xs font-bold text-gray-700 dark:text-gray-300 text-center uppercase tracking-tight group-hover:text-primary transition-colors line-clamp-1">
                       {cat.label}
                    </span>
-                   <span className="text-[10px] text-gray-400 mt-1 font-medium bg-gray-100 dark:bg-white/5 px-2 py-0.5 rounded-full">
+                   <span className="text-xs text-gray-400 mt-1 font-medium bg-gray-100 dark:bg-white/5 px-2 py-0.5 rounded-full">
                       {cat.count} itens
                    </span>
                 </button>

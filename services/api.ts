@@ -1,5 +1,6 @@
 
 import { User, WMSAddress, WarehouseLayout, Block } from '../types';
+import { getIconByTerm, GROUP_ICONS } from '../data/categories';
 
 export interface ApiProduct {
   id: number | string;
@@ -95,7 +96,17 @@ export const api = {
     try {
       const response = await fetch(`${API_BASE_URL}/categories`);
       if (!response.ok) throw new Error('Erro');
-      return await response.json();
+      const data: ApiCategory[] = await response.json();
+      
+      // Enforce frontend icons mapping for better visual representation
+      return data.map(cat => ({
+          ...cat,
+          icon: GROUP_ICONS[cat.db_id] || 'inventory_2',
+          subcategories: cat.subcategories.map(sub => ({
+              ...sub,
+              icon: getIconByTerm(sub.name)
+          }))
+      }));
     } catch (error) { return []; }
   },
 
@@ -253,6 +264,5 @@ export const api = {
   getLayout: async (): Promise<WarehouseLayout | null> => { return null; },
   saveLayout: async (layout: WarehouseLayout) => { return { success: true }; },
   
-  // Deprecated shim to avoid errors if called
   getProducts: async () => { return []; } 
 };
