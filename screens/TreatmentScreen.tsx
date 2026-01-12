@@ -1,49 +1,18 @@
-import React, { useState, useMemo } from 'react';
+
+import React, { useState, useEffect, useMemo } from 'react';
 import { Icon } from '../components/Icon';
-import { Screen } from '../types';
+import { Screen, TreatmentItem } from '../types';
 import { HistoryFilterModal } from '../components/Modals';
+import { api } from '../services/api';
+import { AutoPartsLoader } from '../components/AutoPartsLoader';
 
 interface TreatmentScreenProps {
   onNavigate: (screen: Screen) => void;
 }
 
-// Mock data for items with issues
-const initialTreatmentItems = [
-  {
-    id: 1,
-    name: 'BOMBA D\'ÁGUA',
-    sku: 'UB0625',
-    loc: 'A-04-2',
-    issueType: 'not_located',
-    reportedBy: 'Carlos Silva',
-    reportedAt: 'Hoje, 10:20',
-    rawDate: new Date().toISOString().split('T')[0],
-  },
-  {
-    id: 2,
-    name: 'Junta Cabeçote',
-    sku: '829102',
-    loc: 'B-10-1',
-    issueType: 'divergence_info',
-    description: 'SKU na caixa é 829103, diferente do sistema.',
-    reportedBy: 'Mariana Santos',
-    reportedAt: 'Ontem, 16:45',
-    rawDate: new Date(Date.now() - 86400000).toISOString().split('T')[0],
-  },
-  {
-    id: 3,
-    name: 'Filtro de Óleo',
-    sku: 'WO-200',
-    loc: 'C-01-4',
-    issueType: 'not_located',
-    reportedBy: 'João Pedro',
-    reportedAt: '22/10, 09:00',
-    rawDate: '2023-10-22',
-  }
-];
-
 export const TreatmentScreen: React.FC<TreatmentScreenProps> = ({ onNavigate }) => {
-  const [items, setItems] = useState(initialTreatmentItems);
+  const [items, setItems] = useState<TreatmentItem[]>([]);
+  const [loading, setLoading] = useState(false);
   
   // Search and Filter State
   const [searchText, setSearchText] = useState('');
@@ -54,11 +23,46 @@ export const TreatmentScreen: React.FC<TreatmentScreenProps> = ({ onNavigate }) 
     users: [] as string[]
   });
 
+  // Calculate Lead Time (Human Readable)
+  const getLeadTime = (dateStr: string) => {
+      const start = new Date(dateStr);
+      const now = new Date();
+      const diffMs = now.getTime() - start.getTime();
+      const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
+      
+      if (diffHrs < 1) return 'Recente';
+      if (diffHrs < 24) return `${diffHrs}h`;
+      const days = Math.floor(diffHrs / 24);
+      return `${days}d ${diffHrs % 24}h`;
+  };
+
+  const loadData = async () => {
+      setLoading(true);
+      const data = await api.getTreatmentItems();
+      setItems(data);
+      setLoading(false);
+  };
+
+  useEffect(() => {
+      loadData();
+  }, []);
+
+  const handleResolve = async (id: number, action: 'adjust' | 'inactivate' | 'ignore') => {
+      const note = prompt("Observação da resolução:");
+      if (note === null) return; // Cancelled
+
+      await api.resolveTreatment(id, note || 'Sem observação', 'Gestor', action); // Hardcoded 'Gestor' as current user for now
+      
+      // Optimistic update
+      setItems(prev => prev.filter(i => i.id !== id));
+      alert("Item resolvido com sucesso.");
+  };
+
   // Extract unique users
   const uniqueUsers = useMemo(() => {
-    const users = new Set(initialTreatmentItems.map(i => i.reportedBy));
+    const users = new Set(items.map(i => i.reportedBy));
     return Array.from(users);
-  }, []);
+  }, [items]);
 
   // Filter Logic
   const filteredItems = useMemo(() => {
@@ -69,7 +73,7 @@ export const TreatmentScreen: React.FC<TreatmentScreenProps> = ({ onNavigate }) 
         searchText === '' ||
         item.name.toLowerCase().includes(searchLower) ||
         item.sku.toLowerCase().includes(searchLower) ||
-        item.loc.toLowerCase().includes(searchLower) ||
+        item.location.toLowerCase().includes(searchLower) ||
         item.reportedBy.toLowerCase().includes(searchLower);
 
       if (!matchesText) return false;
@@ -79,9 +83,11 @@ export const TreatmentScreen: React.FC<TreatmentScreenProps> = ({ onNavigate }) 
         return false;
       }
 
-      // 3. Date Range
-      if (activeFilters.startDate && item.rawDate < activeFilters.startDate) return false;
-      if (activeFilters.endDate && item.rawDate > activeFilters.endDate) return false;
+      // 3. Date Range (Simple string comparison works for ISO dates yyyy-mm-dd)
+      // item.reportedAt might be ISO string
+      const itemDate = new Date(item.reportedAt).toISOString().split('T')[0];
+      if (activeFilters.startDate && itemDate < activeFilters.startDate) return false;
+      if (activeFilters.endDate && itemDate > activeFilters.endDate) return false;
 
       return true;
     });
@@ -89,11 +95,12 @@ export const TreatmentScreen: React.FC<TreatmentScreenProps> = ({ onNavigate }) 
 
   const hasActiveFilters = activeFilters.startDate || activeFilters.endDate || activeFilters.users.length > 0;
 
+  if (loading) return <AutoPartsLoader message="Carregando Divergências..." />;
+
   return (
     <div className="relative flex flex-col w-full min-h-screen pb-safe bg-background-light dark:bg-background-dark">
       <header className="sticky top-0 z-20 bg-background-light dark:bg-background-dark/95 backdrop-blur-md border-b border-gray-200 dark:border-card-border">
         <div className="flex items-center p-4 gap-3">
-           {/* Back Button Added */}
            <button 
              onClick={() => onNavigate('dashboard')}
              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-gray-700 dark:text-white hover:bg-gray-100 dark:hover:bg-surface-dark transition-colors"
@@ -184,35 +191,45 @@ export const TreatmentScreen: React.FC<TreatmentScreenProps> = ({ onNavigate }) 
              <div key={item.id} className="bg-white dark:bg-surface-dark rounded-xl p-4 border border-gray-200 dark:border-card-border shadow-sm animate-fade-in">
                 <div className="flex justify-between items-start mb-3">
                    <div>
-                      <h3 className="font-bold text-gray-900 dark:text-white">{item.name}</h3>
+                      <h3 className="font-bold text-gray-900 dark:text-white line-clamp-1">{item.name}</h3>
                       <p className="text-xs text-gray-500">SKU: {item.sku}</p>
                    </div>
-                   <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${
-                     item.issueType === 'not_located' 
-                       ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' 
-                       : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
-                   }`}>
-                      {item.issueType === 'not_located' ? 'Não Localizado' : 'Erro Cadastro'}
-                   </span>
+                   <div className="flex flex-col items-end gap-1">
+                       <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${
+                         item.issueType === 'not_located' 
+                           ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' 
+                           : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
+                       }`}>
+                          {item.issueType === 'not_located' ? 'Não Localizado' : 'Divergência'}
+                       </span>
+                       <span className="text-[10px] font-bold text-red-500 flex items-center gap-1">
+                          <Icon name="timer" size={12} />
+                          {getLeadTime(item.reportedAt)}
+                       </span>
+                   </div>
                 </div>
 
-                {item.description && (
-                  <div className="mb-3 p-3 bg-gray-50 dark:bg-black/20 rounded-lg text-sm text-gray-700 dark:text-gray-300 italic border-l-2 border-orange-400">
-                    "{item.description}"
-                  </div>
-                )}
+                <div className="mb-3 p-3 bg-gray-50 dark:bg-black/20 rounded-lg text-sm text-gray-700 dark:text-gray-300 italic border-l-4 border-orange-400">
+                    "{item.description || 'Sem descrição'}"
+                </div>
 
                 <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 mb-4">
                    <Icon name="person" size={14} />
-                   <span>Reportado por {item.reportedBy} • {item.reportedAt}</span>
+                   <span>Reportado por {item.reportedBy} • {new Date(item.reportedAt).toLocaleDateString('pt-BR')}</span>
                 </div>
 
                 <div className="flex gap-3 pt-3 border-t border-gray-100 dark:border-white/5">
-                   <button className="flex-1 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 text-xs font-bold hover:bg-gray-50 dark:hover:bg-white/5">
-                     Inativar Produto
+                   <button 
+                     onClick={() => handleResolve(item.id, 'inactivate')}
+                     className="flex-1 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 text-xs font-bold hover:bg-gray-50 dark:hover:bg-white/5"
+                   >
+                     Inativar / Ignorar
                    </button>
-                   <button className="flex-1 py-2.5 rounded-lg bg-primary text-white text-xs font-bold hover:bg-primary-dark shadow-sm">
-                     Ajustar Cadastro
+                   <button 
+                     onClick={() => handleResolve(item.id, 'adjust')}
+                     className="flex-1 py-2.5 rounded-lg bg-primary text-white text-xs font-bold hover:bg-primary-dark shadow-sm"
+                   >
+                     Confirmar & Resolver
                    </button>
                 </div>
              </div>
@@ -220,7 +237,6 @@ export const TreatmentScreen: React.FC<TreatmentScreenProps> = ({ onNavigate }) 
          )}
       </main>
 
-      {/* Reusing HistoryFilterModal */}
       <HistoryFilterModal 
         isOpen={showFilterModal}
         onClose={() => setShowFilterModal(false)}

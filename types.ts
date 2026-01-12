@@ -94,3 +94,16 @@ export interface Mission {
   completedItems: number;
   items: InventoryItem[];
 }
+
+export interface TreatmentItem {
+  id: number;
+  sku: string;
+  name: string;
+  location: string;
+  issueType: 'not_located' | 'divergence_info';
+  description: string;
+  reportedBy: string;
+  reportedAt: string; // ISO Date
+  status: 'PENDING' | 'RESOLVED';
+  leadTimeHours?: number; // Calculado no front ou back
+}

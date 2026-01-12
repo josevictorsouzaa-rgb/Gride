@@ -1,5 +1,5 @@
 
-import { User, WMSAddress, WarehouseLayout, Block } from '../types';
+import { User, WMSAddress, WarehouseLayout, Block, TreatmentItem } from '../types';
 import { getIconByTerm, GROUP_ICONS } from '../data/categories';
 
 export interface ApiProduct {
@@ -190,6 +190,27 @@ export const api = {
     } catch (error) { return []; }
   },
 
+  // --- TRATAMENTO ---
+  getTreatmentItems: async (): Promise<TreatmentItem[]> => {
+      try {
+          const response = await fetch(`${API_BASE_URL}/treatment-items`);
+          if (response.ok) return await response.json();
+          return [];
+      } catch (e) { return []; }
+  },
+
+  resolveTreatment: async (id: number, resolution: string, userId: string, action: 'adjust' | 'inactivate' | 'ignore') => {
+      try {
+          const response = await fetch(`${API_BASE_URL}/resolve-treatment`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id, resolution, userId, action })
+          });
+          return await response.json();
+      } catch (e) { return { success: false }; }
+  },
+
+  // --- ADDRESS & WAREHOUSE ---
   getAddresses: async (): Promise<WMSAddress[]> => {
     try {
         const response = await fetch(`${API_BASE_URL}/addresses`);
