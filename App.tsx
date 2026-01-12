@@ -21,6 +21,7 @@ import { api, ApiCategory } from './services/api';
 
 const initialBlocksData: Block[] = [];
 const INACTIVITY_LIMIT = 15 * 60 * 1000;
+const MIN_LOADING_TIME = 600; // ms - Tempo mínimo para o loader ficar visível
 
 const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<Screen>('login');
@@ -110,23 +111,39 @@ const App: React.FC = () => {
         }
 
         setIsLoading(true);
+        // Delay mínimo artificial para evitar "flash" de tela
+        const minDelay = new Promise(resolve => setTimeout(resolve, MIN_LOADING_TIME));
+
         try {
             if (isListScreen) {
-                // META DIÁRIA: Carrega blocos para meta
-                const metaBlocks = await api.getBlocks(1, 100, '', undefined, undefined, true);
+                // META DIÁRIA
+                const [metaBlocks] = await Promise.all([
+                    api.getBlocks(1, 100, '', undefined, undefined, true),
+                    minDelay
+                ]);
                 setBlocks(metaBlocks);
             } else if (isFilteredList) {
-                // EXPLORAR: Carrega com filtros de GR e SG
+                // EXPLORAR
                 if (segmentFilter !== 'Resultado da Busca' && selectedGrCod) {
-                    const filteredBlocks = await api.getBlocks(browsePage, BROWSE_LIMIT, '', selectedGrCod, selectedSgCod);
+                    const [filteredBlocks] = await Promise.all([
+                        api.getBlocks(browsePage, BROWSE_LIMIT, '', selectedGrCod, selectedSgCod),
+                        minDelay
+                    ]);
                     setBlocks(filteredBlocks);
+                } else {
+                    // Caso não precise buscar (ex: paginação local ou estado mantido), espera só o delay
+                    await minDelay;
                 }
             } else if (currentScreen === 'reserved' && currentUser) {
-                // RESERVADOS: Rota específica
-                const myReserved = await api.getReservedBlocks(currentUser.id);
+                // RESERVADOS
+                const [myReserved] = await Promise.all([
+                    api.getReservedBlocks(currentUser.id),
+                    minDelay
+                ]);
                 setBlocks(myReserved);
-                // Also update count to ensure sync
                 setReservedCount(myReserved.length);
+            } else {
+                await minDelay; // Garante suavidade mesmo sem fetch
             }
         } catch (error) {
             console.error("Erro ao carregar dados:", error);
@@ -178,11 +195,16 @@ const App: React.FC = () => {
     setShowScanner(false);
     const cleanCode = code.trim().toUpperCase();
     
-    if (cleanCode.startsWith('LOC-')) {
-        setIsLoading(true);
-        try {
+    setIsLoading(true);
+    const minDelay = new Promise(resolve => setTimeout(resolve, MIN_LOADING_TIME));
+
+    try {
+        if (cleanCode.startsWith('LOC-')) {
             const rawLocation = cleanCode.replace('LOC-', ''); 
-            const results = await api.getBlocks(1, 100, '', undefined, undefined, false, rawLocation);
+            const [results] = await Promise.all([
+                api.getBlocks(1, 100, '', undefined, undefined, false, rawLocation),
+                minDelay
+            ]);
             
             if (results.length > 0) {
                 setBlocks(results);
@@ -194,17 +216,13 @@ const App: React.FC = () => {
             } else {
                 alert(`Nenhum item encontrado na localização: ${cleanCode}`);
             }
-        } catch (error) {
-            console.error(error);
-            alert("Erro ao buscar itens por localização.");
-        } finally {
-            setIsLoading(false);
-        }
-    } else {
-        setIsLoading(true);
-        try {
+        } else {
             // Busca produto por código
-            const results = await api.getBlocks(1, 50, cleanCode);
+            const [results] = await Promise.all([
+                api.getBlocks(1, 50, cleanCode),
+                minDelay
+            ]);
+
             if (results.length > 0) {
                 setBlocks(results);
                 setSegmentFilter('Resultado da Busca');
@@ -215,11 +233,12 @@ const App: React.FC = () => {
             } else {
                 alert(`Nenhum item encontrado com o código: ${code}`);
             }
-        } catch (e) {
-            alert("Erro na busca.");
-        } finally {
-            setIsLoading(false);
         }
+    } catch (error) {
+        console.error(error);
+        alert("Erro na busca.");
+    } finally {
+        setIsLoading(false);
     }
   };
 
@@ -275,7 +294,12 @@ const App: React.FC = () => {
         treatmentCount={treatmentCount} 
       />
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
-        <div id="main-scroll-container" className="flex-1 overflow-y-auto no-scrollbar relative w-full"><div className="w-full min-h-full animate-fade-in">{renderScreen()}</div></div>
+        <div id="main-scroll-container" className="flex-1 overflow-y-auto no-scrollbar relative w-full">
+            {/* Chave 'key={currentScreen}' força o React a recriar o elemento e disparar a animação CSS a cada troca de tela */}
+            <div key={currentScreen} className="w-full min-h-full animate-fade-in">
+                {renderScreen()}
+            </div>
+        </div>
         {showNav && <BottomNav currentScreen={activeNavTab} onNavigate={setCurrentScreen} onScanClick={() => setShowScanner(true)} isAdmin={currentUser?.isAdmin} reservedCount={reservedCount} />}
       </div>
       <ScannerModal isOpen={showScanner} onClose={() => setShowScanner(false)} onScanComplete={handleScanComplete} title="Escanear Código" instruction="Aponte para QR Code" />
