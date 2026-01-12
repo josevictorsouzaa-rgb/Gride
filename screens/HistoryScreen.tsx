@@ -32,24 +32,29 @@ export const HistoryScreen: React.FC = () => {
         
         const blockGroups = new Map();
 
-        // Agrupamento mais inteligente:
-        // Usa BLOCK_REF se disponível, senão tenta fallback com o Similar.
-        // O BLOCK_REF é gravado na finalização e garante que os itens fiquem juntos.
+        // Agrupamento Cirúrgico:
+        // Usa BLOCK_REF como identificador único absoluto do lote (ex: "SYL1402||171000000").
+        // Se não tiver (legado), usa fallback.
         
         data.forEach((entry: any) => {
-            const dateKey = new Date(entry.DATA_HORA).toISOString().split('T')[0]; // Dia
-            const hourKey = new Date(entry.DATA_HORA).getHours(); // Hora (agrupamento horario)
+            const blockRefRaw = entry.BLOCK_REF || '';
+            const dateKey = new Date(entry.DATA_HORA).toISOString().split('T')[0];
+            const hourKey = new Date(entry.DATA_HORA).getHours(); 
             
-            // PRIORIDADE: BLOCK_REF vindo do banco.
-            const blockRef = entry.BLOCK_REF || (entry.PRO_COD_SIMILAR ? String(entry.PRO_COD_SIMILAR) : entry.SKU);
+            // Prioridade total para o BLOCK_REF que contém o ID do lote
+            let blockKey = blockRefRaw;
             
-            // Chave única para o "Evento de Contagem do Bloco"
-            const blockKey = `${blockRef}_${entry.USUARIO_ID}_${dateKey}_${hourKey}`;
+            // Fallback para dados antigos sem ID de lote
+            if (!blockKey) {
+                 const fallbackRef = entry.PRO_COD_SIMILAR ? String(entry.PRO_COD_SIMILAR) : entry.SKU;
+                 blockKey = `${fallbackRef}_${entry.USUARIO_ID}_${dateKey}_${hourKey}`;
+            }
 
             if (!blockGroups.has(blockKey)) {
-                // Nome do bloco: Se tiver BLOCK_REF e não for número puro (ID), usa ele.
-                // Caso contrário, tenta montar algo legível.
-                let displayName = entry.BLOCK_REF;
+                // Extração do Nome Visual: "NOME||ID" -> "NOME"
+                let displayName = blockRefRaw.includes('||') ? blockRefRaw.split('||')[0] : blockRefRaw;
+                
+                // Fallback nome
                 if (!displayName || /^\d+$/.test(displayName)) {
                      displayName = entry.PRO_COD_SIMILAR ? `BLOCO ${entry.PRO_COD_SIMILAR}` : entry.SKU;
                 }

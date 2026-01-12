@@ -45,8 +45,9 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
         ...b,
         items: b.items.map(i => ({
             ...i,
-            status: i.status || 'pending',
-            countedQty: i.countedQty || 0
+            // FIX: Ensure status is strictly respected from backend logic
+            status: (i.status && i.status !== 'pending') ? i.status : 'pending',
+            countedQty: i.countedQty !== undefined ? i.countedQty : 0
         }))
       }));
     setLocalBlocks(initialized);

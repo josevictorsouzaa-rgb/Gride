@@ -303,7 +303,7 @@ app.get('/reserved-blocks/:userId', (req, res) => {
                         const savedItems = JSON.parse(jsonStr);
                         if (Array.isArray(savedItems)) {
                             savedItems.forEach(item => {
-                                // FIX: Use a composite key that is robust to SKU casing/spaces
+                                // FIX: Rigorous trimming for progress persistence
                                 const cleanRef = String(item.ref).trim();
                                 progressMap.set(`${bId}-${cleanRef}`, item);
                             });
@@ -317,7 +317,7 @@ app.get('/reserved-blocks/:userId', (req, res) => {
             
             db.query("SELECT SKU FROM GRIDE_TRATAMENTO WHERE STATUS = 'PENDING'", [], (err, treatments) => {
                 const treatmentSet = new Set();
-                if(treatments) treatments.forEach(t => treatmentSet.add(safeString(t.SKU)));
+                if(treatments) treatments.forEach(t => treatmentSet.add(safeString(t.SKU).trim()));
 
                 const sql = `SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, P.MAR_COD, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE FROM PRODUTOS P WHERE P.PRO_ATIVO = 'S' AND (P.PRO_COD_SIMILAR IN (${idsList}) OR (P.PRO_COD_SIMILAR IS NULL AND P.PRO_COD IN (${idsList})))`;
                 db.query(sql, [], (err, products) => {
@@ -326,7 +326,8 @@ app.get('/reserved-blocks/:userId', (req, res) => {
                     const groups = new Map();
                     products.forEach(p => {
                         const similarId = p.PRO_COD_SIMILAR ? safeString(p.PRO_COD_SIMILAR) : safeString(p.PRO_COD);
-                        const sku = safeString(p.PRO_NRFABRICANTE);
+                        // FIX: Rigorous trimming for database SKU match
+                        const sku = safeString(p.PRO_NRFABRICANTE).trim();
                         
                         // FIX: Lookup using the robust key
                         const savedProgress = progressMap.get(`${similarId}-${sku}`);
@@ -341,8 +342,8 @@ app.get('/reserved-blocks/:userId', (req, res) => {
                             balance: parseFloat(p.PRO_EST_ATUAL || 0), 
                             location: 'GERAL', 
                             inTreatment: treatmentSet.has(sku),
-                            // Restore progress if exists
-                            status: savedProgress ? savedProgress.status : 'pending',
+                            // Restore progress if exists with strict priority to saved status
+                            status: savedProgress && savedProgress.status ? savedProgress.status : 'pending',
                             countedQty: savedProgress ? savedProgress.countedQty : 0,
                             divergenceReason: savedProgress ? savedProgress.divergenceReason : '',
                             lastCount: savedProgress && savedProgress.lastCount ? savedProgress.lastCount : null
@@ -417,7 +418,7 @@ app.post('/release-block', (req, res) => {
 });
 
 app.post('/finalize-block', (req, res) => {
-    const { block_id, user_id, user_name, items, parent_ref } = req.body; // ALTERAÇÃO: Recebe parent_ref
+    const { block_id, user_id, user_name, items, parent_ref } = req.body; 
     
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro DB' });
@@ -426,18 +427,22 @@ app.post('/finalize-block', (req, res) => {
             if (err) { db.detach(); return res.status(500).json({ error: 'Erro Transação' }); }
 
             try {
+                // ALTERAÇÃO: Criar ID único de lote (TIMESTAMP) para agrupar histórico
+                // O formato é "NOME_DO_BLOCO||TIMESTAMP" para permitir display e unicidade
+                const batchId = Date.now().toString();
+                const uniqueBlockRef = `${parent_ref || 'BLOCO'}||${batchId}`;
+
                 for (const item of items) {
-                    // ALTERAÇÃO: Salvar BLOCK_REF (parent_ref) no LOG
                     const sqlLog = `INSERT INTO GRIDE_INVENTARIO_LOG (SKU, NOME_PRODUTO, USUARIO_ID, USUARIO_NOME, QTD_SISTEMA, QTD_CONTADA, LOCALIZACAO, STATUS, DIVERGENCIA_MOTIVO, BLOCK_REF, DATA_HORA) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP) RETURNING ID`;
                     
                     const qtdContada = item.countedQty !== undefined ? item.countedQty : 0;
                     const status = item.status || 'pending';
                     const localizacao = (item.lastCount && item.lastCount.location) ? item.lastCount.location : (item.location || 'GERAL');
                     const motivo = item.divergenceReason || '';
-                    const blockRef = parent_ref || item.ref; // Fallback se parent_ref não vier
-
+                    
+                    // Usa o uniqueBlockRef para todos os itens deste laço
                     await new Promise((resolve, reject) => {
-                        transaction.query(sqlLog, [item.ref, item.name, user_id, user_name, item.balance, qtdContada, localizacao, status, motivo, blockRef], (err, result) => {
+                        transaction.query(sqlLog, [item.ref, item.name, user_id, user_name, item.balance, qtdContada, localizacao, status, motivo, uniqueBlockRef], (err, result) => {
                             if (err) return reject(err);
                             
                             const logId = result.ID;
