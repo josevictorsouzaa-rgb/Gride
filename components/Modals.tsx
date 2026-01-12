@@ -509,7 +509,6 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
     let isMounted = true;
 
     const startScanner = async () => {
-        // Wait for DOM to be ready
         await new Promise(r => setTimeout(r, 400));
         if (!isMounted) return;
 
@@ -521,14 +520,12 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
             return;
         }
 
-        // HTTPS Check
         if (!window.isSecureContext && window.location.hostname !== 'localhost') {
             setError("Acesso à câmera requer HTTPS ou Localhost.");
             return;
         }
 
         try {
-            // Clean up previous instance if any
             if (scannerRef.current) {
                 try { await scannerRef.current.stop(); } catch(e) {}
                 try { await scannerRef.current.clear(); } catch(e) {}
@@ -540,8 +537,7 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
             
             const config = { 
                 fps: 10, 
-                qrbox: { width: 250, height: 250 }
-                // aspectRatio Removed to prevent black screen on mobile
+                qrbox: { width: 320, height: 320 } // AUMENTADO de 250 para 320
             };
             
             await scanner.start(
@@ -555,18 +551,29 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
                 () => { /* ignore failures */ }
             );
 
-            // Check for Torch capability
-            try {
-                const caps = scanner.getRunningTrackCameraCapabilities();
-                const settings = scanner.getRunningTrackSettings();
-                // Some browsers return capability in one, some in other
-                const hasTorch = (caps as any)?.torch || (settings as any)?.torch;
-                if (hasTorch) {
-                    setCanToggleTorch(true);
+            // Tentar detectar capacidade de flash após iniciar
+            setTimeout(() => {
+                try {
+                    const track = scanner.getRunningTrackCameraCapabilities();
+                    const settings = scanner.getRunningTrackSettings();
+                    const hasTorch = (track as any)?.torch || (settings as any)?.torch;
+                    
+                    if (hasTorch) {
+                        setCanToggleTorch(true);
+                    } else {
+                        // Fallback manual check: tente pegar do video element se disponivel
+                        const videoEl = document.querySelector(`#${elementId} video`) as HTMLVideoElement;
+                        if (videoEl && videoEl.srcObject) {
+                             const stream = videoEl.srcObject as MediaStream;
+                             const track = stream.getVideoTracks()[0];
+                             const caps = track.getCapabilities() as any;
+                             if (caps.torch) setCanToggleTorch(true);
+                        }
+                    }
+                } catch(e) {
+                    console.log("Falha ao checar flash", e);
                 }
-            } catch(e) {
-                console.log("Torch capability check failed", e);
-            }
+            }, 1000);
 
         } catch (err: any) {
             console.error("Camera Start Error:", err);
@@ -613,6 +620,7 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
               setTorchOn(!torchOn);
           } catch(e) {
               console.error("Failed to toggle torch", e);
+              alert("Não foi possível ativar o flash.");
           }
       }
   };
@@ -629,7 +637,7 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
           {title}
         </div>
         
-        {/* Flash Button */}
+        {/* Flash Button - Only renders if capability detected */}
         {canToggleTorch ? (
             <button 
                 onClick={handleToggleTorch}
@@ -673,17 +681,24 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
 
          {!error && (
              <>
-                <div className="absolute inset-0 pointer-events-none border-[40px] border-black/50 z-10 flex items-center justify-center">
-                   <div className="relative w-64 h-64 border-2 border-white/20 rounded-lg shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
-                      <div className="absolute top-0 left-0 w-6 h-6 border-l-4 border-t-4 border-primary rounded-tl-lg" />
-                      <div className="absolute top-0 right-0 w-6 h-6 border-r-4 border-t-4 border-primary rounded-tr-lg" />
-                      <div className="absolute bottom-0 left-0 w-6 h-6 border-l-4 border-b-4 border-primary rounded-bl-lg" />
-                      <div className="absolute bottom-0 right-0 w-6 h-6 border-r-4 border-b-4 border-primary rounded-br-lg" />
-                      <div className="absolute top-0 left-0 right-0 h-0.5 bg-primary/80 shadow-[0_0_15px_rgba(19,127,236,0.8)] animate-[slideUp_2s_ease-in-out_infinite]" />
+                <div className="absolute inset-0 pointer-events-none border-[100vh] border-black/60 z-10 flex items-center justify-center" style={{ borderWidth: 'clamp(20px, 20vw, 1000px)' }}>
+                   {/* This is a trick: very thick borders simulate overlay, leaving center transparent. 
+                       However, box-shadow is better for responsive center cutout. */}
+                </div>
+                {/* Better Overlay Method */}
+                <div className="absolute inset-0 pointer-events-none z-10 shadow-[0_0_0_9999px_rgba(0,0,0,0.6)] flex items-center justify-center overflow-hidden">
+                   {/* The Cutout Area */}
+                   <div className="relative w-[80vw] max-w-[350px] aspect-square border-2 border-white/30 rounded-3xl shadow-2xl">
+                      <div className="absolute top-0 left-0 w-8 h-8 border-l-4 border-t-4 border-primary rounded-tl-2xl" />
+                      <div className="absolute top-0 right-0 w-8 h-8 border-r-4 border-t-4 border-primary rounded-tr-2xl" />
+                      <div className="absolute bottom-0 left-0 w-8 h-8 border-l-4 border-b-4 border-primary rounded-bl-2xl" />
+                      <div className="absolute bottom-0 right-0 w-8 h-8 border-r-4 border-b-4 border-primary rounded-br-2xl" />
+                      <div className="absolute top-0 left-0 right-0 h-0.5 bg-primary/80 shadow-[0_0_20px_rgba(19,127,236,0.8)] animate-[slideUp_2s_ease-in-out_infinite]" />
                    </div>
                 </div>
+
                 <div className="absolute bottom-10 left-0 right-0 z-20 flex justify-center pb-safe">
-                    <p className="text-white/90 text-sm font-medium bg-black/60 px-6 py-3 rounded-full backdrop-blur-md border border-white/10 text-center">
+                    <p className="text-white/90 text-sm font-medium bg-black/60 px-6 py-3 rounded-full backdrop-blur-md border border-white/10 text-center shadow-lg">
                     {instruction}
                     </p>
                 </div>
