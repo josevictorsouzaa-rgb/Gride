@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { Icon } from '../components/Icon';
 import { Screen, Block } from '../types';
@@ -100,6 +101,8 @@ export const ListScreen: React.FC<ListScreenProps> = ({
   const filteredBlocks = useMemo(() => {
     return blocks.filter(block => {
       // 0. Base Status Check
+      // Apenas esconde 'progress' se não estivermos na tela de Reservados (que usa outro componente)
+      // Aqui assumimos que ListScreen mostra itens disponíveis ou meta
       if (block.status === 'progress') return false; 
       
       // LOGIC SPLIT BASED ON MODE
@@ -115,10 +118,10 @@ export const ListScreen: React.FC<ListScreenProps> = ({
            if (!matchesItems && !matchesLoc) return false;
         }
       } else {
-        if (segmentFilter) {
-            const matchesSegment = block.subcategory === segmentFilter || block.parentRef.includes(segmentFilter);
-            if (!matchesSegment) return false;
-        }
+        // BROWSE MODE (Explorar Estoque)
+        // A filtragem por Categoria/Subcategoria já foi feita no Backend (API).
+        // NÃO devemos filtrar por 'segmentFilter' aqui, pois o backend retorna subcategory='Geral'.
+        
         if (searchText) {
            const lowerSearch = searchText.toLowerCase();
            const matchesItems = block.items.some(item => 
@@ -147,7 +150,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
     });
   }, [blocks, segmentFilter, searchText, timeFilter, mode]);
 
-  const displayedBlocks = showAllBlocks ? filteredBlocks : filteredBlocks.slice(0, 10);
+  const displayedBlocks = showAllBlocks || mode === 'browse' ? filteredBlocks : filteredBlocks.slice(0, 10);
 
   const getPageTitle = () => {
      if (mode === 'daily_meta') return 'Meta Diária';
