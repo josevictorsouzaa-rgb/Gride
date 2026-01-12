@@ -195,7 +195,20 @@ app.get('/blocks', (req, res) => {
                 lockMap.set(safeString(r.BLOCK_ID), { userId: safeString(r.USER_ID), userName: safeString(r.USER_NAME), timestamp: r.RESERVED_AT });
             });
 
-            let sql = `SELECT FIRST ? SKIP ? P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, P.MAR_COD, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE FROM PRODUTOS P WHERE P.PRO_ATIVO = 'S'`;
+            // Query principal de produtos (Blocos Disponíveis)
+            // FILTRO: NÃO TRAZER PRODUTOS QUE ESTEJAM EM 'PENDING' NA TABELA DE TRATAMENTO
+            let sql = `
+                SELECT FIRST ? SKIP ? 
+                    P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, P.MAR_COD, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE 
+                FROM PRODUTOS P 
+                WHERE P.PRO_ATIVO = 'S' 
+                AND NOT EXISTS (
+                    SELECT 1 FROM GRIDE_TRATAMENTO T 
+                    WHERE T.SKU = P.PRO_NRFABRICANTE 
+                    AND T.STATUS = 'PENDING'
+                )
+            `;
+            
             const bufferLimit = limit * 5; 
             const params = [bufferLimit, skip];
 
@@ -291,12 +304,23 @@ app.post('/reserve-block', (req, res) => {
     const { block_id, user_id, user_name } = req.body;
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro DB' });
-        db.query('SELECT USER_NAME FROM GRIDE_RESERVAS WHERE BLOCK_ID = ?', [block_id], (err, result) => {
-            if (result && result.length > 0) { db.detach(); return res.json({ success: false, message: `Bloco já reservado por ${safeString(result[0].USER_NAME)}` }); }
-            db.query('INSERT INTO GRIDE_RESERVAS (BLOCK_ID, USER_ID, USER_NAME, RESERVED_AT) VALUES (?, ?, ?, CURRENT_TIMESTAMP)', [block_id, user_id, user_name], (err) => {
-                db.detach();
-                if (err) return res.status(500).json({ success: false });
-                res.json({ success: true });
+        // Validação extra: verificar se não está em tratamento antes de reservar
+        // (Embora o GET /blocks já filtre, um usuário pode tentar reservar algo antigo)
+        const sqlCheckTreat = `SELECT 1 FROM GRIDE_TRATAMENTO WHERE SKU IN (SELECT PRO_NRFABRICANTE FROM PRODUTOS WHERE PRO_COD = ? OR PRO_COD_SIMILAR = ?) AND STATUS = 'PENDING'`;
+        
+        db.query(sqlCheckTreat, [block_id, block_id], (err, treatResult) => {
+             if (treatResult && treatResult.length > 0) {
+                 db.detach();
+                 return res.json({ success: false, message: 'Item em tratamento pendente.' });
+             }
+
+             db.query('SELECT USER_NAME FROM GRIDE_RESERVAS WHERE BLOCK_ID = ?', [block_id], (err, result) => {
+                if (result && result.length > 0) { db.detach(); return res.json({ success: false, message: `Bloco já reservado por ${safeString(result[0].USER_NAME)}` }); }
+                db.query('INSERT INTO GRIDE_RESERVAS (BLOCK_ID, USER_ID, USER_NAME, RESERVED_AT) VALUES (?, ?, ?, CURRENT_TIMESTAMP)', [block_id, user_id, user_name], (err) => {
+                    db.detach();
+                    if (err) return res.status(500).json({ success: false });
+                    res.json({ success: true });
+                });
             });
         });
     });

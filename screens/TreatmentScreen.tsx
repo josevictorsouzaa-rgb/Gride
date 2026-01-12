@@ -23,17 +23,21 @@ export const TreatmentScreen: React.FC<TreatmentScreenProps> = ({ onNavigate }) 
     users: [] as string[]
   });
 
-  // Calculate Lead Time (Human Readable)
+  // Calculate Lead Time (Updated Format: 1min atrás, 2h atrás, 59d atrás)
   const getLeadTime = (dateStr: string) => {
       const start = new Date(dateStr);
       const now = new Date();
       const diffMs = now.getTime() - start.getTime();
-      const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
       
-      if (diffHrs < 1) return 'Recente';
-      if (diffHrs < 24) return `${diffHrs}h`;
-      const days = Math.floor(diffHrs / 24);
-      return `${days}d ${diffHrs % 24}h`;
+      const diffMins = Math.floor(diffMs / 60000); // Minutes
+      if (diffMins < 1) return 'Agora';
+      if (diffMins < 60) return `${diffMins}min atrás`;
+      
+      const diffHrs = Math.floor(diffMins / 60); // Hours
+      if (diffHrs < 24) return `${diffHrs}h atrás`;
+      
+      const diffDays = Math.floor(diffHrs / 24); // Days
+      return `${diffDays}d atrás`;
   };
 
   const loadData = async () => {
