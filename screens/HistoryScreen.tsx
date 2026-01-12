@@ -42,6 +42,9 @@ export const HistoryScreen: React.FC = () => {
             }
 
             const group = groups.get(groupKey);
+            // Verifica se está com pendência ativa no tratamento
+            const isLocked = entry.TRATAMENTO_STATUS === 'PENDING';
+
             group.items.push({
                 id: entry.ID,
                 name: entry.NOME_PRODUTO,
@@ -49,7 +52,8 @@ export const HistoryScreen: React.FC = () => {
                 brand: '---', // Log doesn't save brand currently
                 qty: entry.QTD_CONTADA,
                 countedBy: entry.USUARIO_NOME,
-                countedAt: `${dateKey} ${timeKey}`
+                countedAt: `${dateKey} ${timeKey}`,
+                isLocked: isLocked // Flag para ícone de cadeado
             });
             
             // If any item in the group has divergence, mark group
@@ -257,9 +261,10 @@ export const HistoryScreen: React.FC = () => {
                           }`}
                         >
                             <div className="flex justify-between items-start">
-                              <h3 className="text-sm font-extrabold text-gray-700 dark:text-gray-300 uppercase tracking-tight flex-1">
+                              <h3 className={`text-sm font-extrabold uppercase tracking-tight flex-1 ${item.isLocked ? 'text-gray-400 line-through' : 'text-gray-700 dark:text-gray-300'}`}>
                                 {item.name}
                               </h3>
+                              {item.isLocked && <Icon name="lock" size={16} className="text-orange-500" />}
                             </div>
                             <div className="flex flex-wrap items-center gap-y-1 text-[11px] text-gray-500 dark:text-gray-400 font-medium uppercase tracking-wide">
                               <span className="mr-2">REF: {item.ref}</span>

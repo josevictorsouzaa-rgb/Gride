@@ -268,6 +268,9 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                   const visibleItems = isExpanded ? block.items : block.items.slice(0, 3);
                   const hiddenCount = block.items.length - 3;
                   const hasStaleItems = block.items.some(i => !i.lastCount || getDaysSince(i.lastCount.date) > 30);
+                  
+                  // Verificar se há itens em tratamento
+                  const hasTreatmentItems = block.items.some((i: any) => i.inTreatment);
 
                   return (
                     <div key={block.id} className="bg-white dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-card-border shadow-sm p-4 flex flex-col gap-3 animate-fade-in">
@@ -309,9 +312,12 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                               >
                                   {/* Row 1: Name */}
                                   <div className="flex justify-between items-start">
-                                    <span className="font-bold text-sm text-gray-800 dark:text-gray-200 leading-tight group-hover:text-primary transition-colors">
-                                        {item.name}
-                                    </span>
+                                    <div className="flex items-center gap-2 flex-1">
+                                        <span className={`font-bold text-sm leading-tight transition-colors ${item.inTreatment ? 'text-gray-400 line-through' : 'text-gray-800 dark:text-gray-200 group-hover:text-primary'}`}>
+                                            {item.name}
+                                        </span>
+                                        {item.inTreatment && <Icon name="lock" size={12} className="text-orange-500" />}
+                                    </div>
                                     <Icon name="info" size={14} className="text-gray-300 group-hover:text-primary transition-colors" />
                                   </div>
                                   
@@ -354,13 +360,20 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                       </div>
 
                       {/* Footer Action */}
-                      <button 
-                        onClick={(e) => handleReserve(block.id, e)}
-                        className="w-full h-10 rounded-lg bg-slate-800 hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 text-white text-xs font-bold uppercase tracking-wide flex items-center justify-center gap-2 transition-all active:scale-95"
-                      >
-                         Reservar
-                         <Icon name="lock" size={14} />
-                      </button>
+                      {hasTreatmentItems ? (
+                          <div className="w-full h-10 rounded-lg bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 text-xs font-bold uppercase tracking-wide flex items-center justify-center gap-2 cursor-not-allowed">
+                             Aguardando Regularização
+                             <Icon name="lock_clock" size={16} />
+                          </div>
+                      ) : (
+                          <button 
+                            onClick={(e) => handleReserve(block.id, e)}
+                            className="w-full h-10 rounded-lg bg-slate-800 hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 text-white text-xs font-bold uppercase tracking-wide flex items-center justify-center gap-2 transition-all active:scale-95"
+                          >
+                             Reservar
+                             <Icon name="lock" size={14} />
+                          </button>
+                      )}
                     </div>
                   );
                 })

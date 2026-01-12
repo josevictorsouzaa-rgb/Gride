@@ -91,6 +91,7 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
 
     // Normaliza status para o padrão do backend
     const finalStatus = status === 'issue' ? 'divergence_info' : status;
+    const finalLocation = scannedCode || selectedItem.location || 'GERAL';
 
     // SAVE TO API (BALLAST)
     if (currentUser) {
@@ -102,7 +103,7 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
             usuario_nome: currentUser.name,
             qtd_sistema: selectedItem.balance || 0,
             qtd_contada: qty,
-            localizacao: scannedCode || selectedItem.location || 'N/A', // Usa o código escaneado como prova de local
+            localizacao: finalLocation, // Usa o código escaneado como prova de local
             status: finalStatus,
             divergencia_motivo: reason
         });
@@ -126,7 +127,8 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                         lastCount: {
                             user: currentUser?.name || 'Você',
                             date: 'Agora',
-                            qty: qty
+                            qty: qty,
+                            location: finalLocation // Armazena a localização informada
                         }
                     };
                 }
@@ -151,6 +153,10 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
 
   const handleFinalizeConfirm = () => {
       if (blockToFinalize) {
+          // Lógica de finalização: apenas remove visualmente e libera
+          // O backend já recebeu os saveCount individuais.
+          // Se houver item com problema, ele já foi para tratamento no saveCount.
+          
           alert(`Bloco ${blockToFinalize.parentRef} finalizado com sucesso!`);
           
           setLocalBlocks(prev => prev.filter(b => b.id !== blockToFinalize.id));
@@ -278,6 +284,11 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                                 const isProcessed = isCounted || isIssue;
                                 const hasDivergenceReason = !!item.divergenceReason;
                                 
+                                // DETERMINAR LOCALIZAÇÃO A EXIBIR
+                                // Se já foi contado e tem local no lastCount, usa ele.
+                                // Caso contrário usa a geral do bloco ou do item se houver.
+                                const displayLocation = item.lastCount?.location || item.location || block.location;
+
                                 return (
                                 <div 
                                     key={idx}
@@ -335,7 +346,8 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                                     <div className="flex items-end justify-between gap-4">
                                         <div className="flex flex-col">
                                             <span className="text-[10px] font-bold uppercase text-gray-400 tracking-wider">Localização</span>
-                                            <span className="text-sm font-bold text-gray-800 dark:text-white">{block.location}</span>
+                                            {/* EXIBIÇÃO DA LOCALIZAÇÃO ESPECÍFICA */}
+                                            <span className="text-sm font-bold text-gray-800 dark:text-white">{displayLocation}</span>
                                         </div>
 
                                         {isProcessed ? (

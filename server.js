@@ -188,6 +188,8 @@ app.get('/blocks', (req, res) => {
 
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro DB' });
+        
+        // 1. Busca Reservas
         db.query('SELECT * FROM GRIDE_RESERVAS', [], (err, reservations) => {
             if (err) { db.detach(); return res.status(500).json({ error: 'Erro Reservas' }); }
             const lockMap = new Map();
@@ -195,72 +197,80 @@ app.get('/blocks', (req, res) => {
                 lockMap.set(safeString(r.BLOCK_ID), { userId: safeString(r.USER_ID), userName: safeString(r.USER_NAME), timestamp: r.RESERVED_AT });
             });
 
-            // Query principal de produtos (Blocos Disponíveis)
-            // FILTRO: NÃO TRAZER PRODUTOS QUE ESTEJAM EM 'PENDING' NA TABELA DE TRATAMENTO
-            let sql = `
-                SELECT FIRST ? SKIP ? 
-                    P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, P.MAR_COD, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE 
-                FROM PRODUTOS P 
-                WHERE P.PRO_ATIVO = 'S' 
-                AND NOT EXISTS (
-                    SELECT 1 FROM GRIDE_TRATAMENTO T 
-                    WHERE T.SKU = P.PRO_NRFABRICANTE 
-                    AND T.STATUS = 'PENDING'
-                )
-            `;
-            
-            // AUMENTO SIGNIFICATIVO DO BUFFER PARA GARANTIR BLOCOS COMPLETOS
-            const bufferLimit = limit * 20; 
-            const params = [bufferLimit, skip];
-
-            if (search) { sql += ` AND (P.PRO_DESCRI CONTAINING ? OR P.PRO_NRFABRICANTE CONTAINING ?)`; params.push(search); params.push(search); }
-            if (gr_cod) { sql += ` AND P.GR_COD = ?`; params.push(gr_cod); }
-            if (sg_cod) { sql += ` AND P.SG_COD = ?`; params.push(sg_cod); }
-            sql += ` ORDER BY P.PRO_COD_SIMILAR, P.PRO_COD`;
-
-            db.query(sql, params, (err, products) => {
-                db.detach();
-                if (err) return res.status(500).json({ error: err.message });
+            // 2. Busca Itens em Tratamento (PENDING) para marcar os itens/blocos
+            db.query("SELECT SKU FROM GRIDE_TRATAMENTO WHERE STATUS = 'PENDING'", [], (err, treatments) => {
+                if (err) { db.detach(); return res.status(500).json({ error: 'Erro Tratamento' }); }
                 
-                // Verificar se a consulta atingiu o limite (o que pode significar corte de grupo)
-                const hitLimit = products.length >= bufferLimit;
+                const treatmentSet = new Set();
+                treatments.forEach(t => treatmentSet.add(safeString(t.SKU)));
 
-                const groups = new Map();
-                products.forEach(p => {
-                    const similarId = p.PRO_COD_SIMILAR ? safeString(p.PRO_COD_SIMILAR) : safeString(p.PRO_COD);
-                    if (!groups.has(similarId)) groups.set(similarId, []);
-                    groups.get(similarId).push({
-                        id: safeString(p.PRO_COD),
-                        db_pro_cod: p.PRO_COD,
-                        name: safeString(p.PRO_DESCRI),
-                        ref: safeString(p.PRO_NRFABRICANTE),
-                        brand: `MARCA ${p.MAR_COD}`,
-                        balance: parseFloat(p.PRO_EST_ATUAL || 0),
-                        location: 'GERAL',
-                        lastCount: null
-                    });
-                });
+                // 3. Query principal de produtos (Blocos)
+                // REMOVIDO: Filtro que excluia blocos com tratamento. Agora eles vêm, mas o frontend trata.
+                let sql = `
+                    SELECT FIRST ? SKIP ? 
+                        P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, P.MAR_COD, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE 
+                    FROM PRODUTOS P 
+                    WHERE P.PRO_ATIVO = 'S' 
+                `;
                 
-                const blocks = [];
-                groups.forEach((items, key) => {
-                    const blockId = key;
-                    const parentItem = items.find(i => i.id === blockId) || items[0];
-                    const displayRef = parentItem.ref || parentItem.name;
-                    const isLocked = lockMap.get(blockId);
-                    blocks.push({
-                        id: blockId, parentRef: displayRef, location: items[0].location,
-                        status: isLocked ? 'progress' : 'pending', date: 'Hoje', subcategory: 'Geral', items: items,
-                        lockedBy: isLocked ? { userId: isLocked.userId, userName: isLocked.userName, timestamp: isLocked.timestamp } : null
+                const bufferLimit = limit * 20; 
+                const params = [bufferLimit, skip];
+
+                if (search) { sql += ` AND (P.PRO_DESCRI CONTAINING ? OR P.PRO_NRFABRICANTE CONTAINING ?)`; params.push(search); params.push(search); }
+                if (gr_cod) { sql += ` AND P.GR_COD = ?`; params.push(gr_cod); }
+                if (sg_cod) { sql += ` AND P.SG_COD = ?`; params.push(sg_cod); }
+                sql += ` ORDER BY P.PRO_COD_SIMILAR, P.PRO_COD`;
+
+                db.query(sql, params, (err, products) => {
+                    db.detach();
+                    if (err) return res.status(500).json({ error: err.message });
+                    
+                    const hitLimit = products.length >= bufferLimit;
+
+                    const groups = new Map();
+                    products.forEach(p => {
+                        const similarId = p.PRO_COD_SIMILAR ? safeString(p.PRO_COD_SIMILAR) : safeString(p.PRO_COD);
+                        const sku = safeString(p.PRO_NRFABRICANTE);
+                        
+                        if (!groups.has(similarId)) groups.set(similarId, []);
+                        groups.get(similarId).push({
+                            id: safeString(p.PRO_COD),
+                            db_pro_cod: p.PRO_COD,
+                            name: safeString(p.PRO_DESCRI),
+                            ref: sku,
+                            brand: `MARCA ${p.MAR_COD}`,
+                            balance: parseFloat(p.PRO_EST_ATUAL || 0),
+                            location: 'GERAL',
+                            lastCount: null,
+                            inTreatment: treatmentSet.has(sku) // Flag para o frontend
+                        });
                     });
+                    
+                    const blocks = [];
+                    groups.forEach((items, key) => {
+                        const blockId = key;
+                        const parentItem = items.find(i => i.id === blockId) || items[0];
+                        const displayRef = parentItem.ref || parentItem.name;
+                        const isLocked = lockMap.get(blockId);
+                        
+                        blocks.push({
+                            id: blockId, 
+                            parentRef: displayRef, 
+                            location: items[0].location,
+                            status: isLocked ? 'progress' : 'pending', 
+                            date: 'Hoje', 
+                            subcategory: 'Geral', 
+                            items: items,
+                            lockedBy: isLocked ? { userId: isLocked.userId, userName: isLocked.userName, timestamp: isLocked.timestamp } : null
+                        });
+                    });
+
+                    if (hitLimit && blocks.length > 1) {
+                        blocks.pop();
+                    }
+
+                    res.json(blocks.slice(0, limit));
                 });
-
-                // Se atingiu o limite e temos blocos, descartamos o último bloco pois ele pode estar incompleto
-                // devido ao corte da query SQL no meio dos itens do grupo.
-                if (hitLimit && blocks.length > 1) {
-                    blocks.pop();
-                }
-
-                res.json(blocks.slice(0, limit));
             });
         });
     });
@@ -273,6 +283,7 @@ app.get('/reserved-blocks/:userId', (req, res) => {
         db.query('SELECT BLOCK_ID, USER_ID, USER_NAME, RESERVED_AT FROM GRIDE_RESERVAS WHERE USER_ID = ?', [userId], (err, reservations) => {
             if (err) { db.detach(); return res.status(500).json({ error: 'Erro Reservas' }); }
             if (reservations.length === 0) { db.detach(); return res.json([]); }
+            
             const lockMap = new Map();
             const blockIds = [];
             reservations.forEach(r => {
@@ -281,32 +292,41 @@ app.get('/reserved-blocks/:userId', (req, res) => {
                 lockMap.set(bId, { userId: safeString(r.USER_ID), userName: safeString(r.USER_NAME), timestamp: r.RESERVED_AT });
             });
             const idsList = blockIds.map(id => `'${id}'`).join(',');
-            const sql = `SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, P.MAR_COD, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE FROM PRODUTOS P WHERE P.PRO_ATIVO = 'S' AND (P.PRO_COD_SIMILAR IN (${idsList}) OR (P.PRO_COD_SIMILAR IS NULL AND P.PRO_COD IN (${idsList})))`;
-            db.query(sql, [], (err, products) => {
-                db.detach();
-                if (err) return res.status(500).json({ error: err.message });
-                // Reuse logic
-                const groups = new Map();
-                products.forEach(p => {
-                    const similarId = p.PRO_COD_SIMILAR ? safeString(p.PRO_COD_SIMILAR) : safeString(p.PRO_COD);
-                    if (!groups.has(similarId)) groups.set(similarId, []);
-                    groups.get(similarId).push({
-                        id: safeString(p.PRO_COD), db_pro_cod: p.PRO_COD, name: safeString(p.PRO_DESCRI), ref: safeString(p.PRO_NRFABRICANTE), brand: `MARCA ${p.MAR_COD}`, balance: parseFloat(p.PRO_EST_ATUAL || 0), location: 'GERAL', lastCount: null
+            
+            // Busca itens em tratamento também para exibir corretamente no reservados (caso haja concorrência ou atualização)
+            db.query("SELECT SKU FROM GRIDE_TRATAMENTO WHERE STATUS = 'PENDING'", [], (err, treatments) => {
+                const treatmentSet = new Set();
+                if(treatments) treatments.forEach(t => treatmentSet.add(safeString(t.SKU)));
+
+                const sql = `SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, P.MAR_COD, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE FROM PRODUTOS P WHERE P.PRO_ATIVO = 'S' AND (P.PRO_COD_SIMILAR IN (${idsList}) OR (P.PRO_COD_SIMILAR IS NULL AND P.PRO_COD IN (${idsList})))`;
+                db.query(sql, [], (err, products) => {
+                    db.detach();
+                    if (err) return res.status(500).json({ error: err.message });
+                    // Reuse logic
+                    const groups = new Map();
+                    products.forEach(p => {
+                        const similarId = p.PRO_COD_SIMILAR ? safeString(p.PRO_COD_SIMILAR) : safeString(p.PRO_COD);
+                        const sku = safeString(p.PRO_NRFABRICANTE);
+                        if (!groups.has(similarId)) groups.set(similarId, []);
+                        groups.get(similarId).push({
+                            id: safeString(p.PRO_COD), db_pro_cod: p.PRO_COD, name: safeString(p.PRO_DESCRI), ref: sku, brand: `MARCA ${p.MAR_COD}`, balance: parseFloat(p.PRO_EST_ATUAL || 0), location: 'GERAL', lastCount: null,
+                            inTreatment: treatmentSet.has(sku)
+                        });
                     });
-                });
-                const blocks = [];
-                groups.forEach((items, key) => {
-                    const blockId = key;
-                    const parentItem = items.find(i => i.id === blockId) || items[0];
-                    const displayRef = parentItem.ref || parentItem.name;
-                    const isLocked = lockMap.get(blockId);
-                    blocks.push({
-                        id: blockId, parentRef: displayRef, location: items[0].location,
-                        status: isLocked ? 'progress' : 'pending', date: 'Hoje', subcategory: 'Geral', items: items,
-                        lockedBy: isLocked ? { userId: isLocked.userId, userName: isLocked.userName, timestamp: isLocked.timestamp } : null
+                    const blocks = [];
+                    groups.forEach((items, key) => {
+                        const blockId = key;
+                        const parentItem = items.find(i => i.id === blockId) || items[0];
+                        const displayRef = parentItem.ref || parentItem.name;
+                        const isLocked = lockMap.get(blockId);
+                        blocks.push({
+                            id: blockId, parentRef: displayRef, location: items[0].location,
+                            status: isLocked ? 'progress' : 'pending', date: 'Hoje', subcategory: 'Geral', items: items,
+                            lockedBy: isLocked ? { userId: isLocked.userId, userName: isLocked.userName, timestamp: isLocked.timestamp } : null
+                        });
                     });
+                    res.json(blocks);
                 });
-                res.json(blocks);
             });
         });
     });
@@ -317,7 +337,6 @@ app.post('/reserve-block', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro DB' });
         // Validação extra: verificar se não está em tratamento antes de reservar
-        // (Embora o GET /blocks já filtre, um usuário pode tentar reservar algo antigo)
         const sqlCheckTreat = `SELECT 1 FROM GRIDE_TRATAMENTO WHERE SKU IN (SELECT PRO_NRFABRICANTE FROM PRODUTOS WHERE PRO_COD = ? OR PRO_COD_SIMILAR = ?) AND STATUS = 'PENDING'`;
         
         db.query(sqlCheckTreat, [block_id, block_id], (err, treatResult) => {
@@ -445,13 +464,35 @@ app.post('/resolve-treatment', (req, res) => {
             
             // Se a ação for inativar, faz update no produto
             if (action === 'inactivate') {
-                // Precisamos buscar o SKU do tratamento primeiro, mas vamos assumir que o front mandou ID correto
-                // Query aninhada complexa no Firebird antigo, vamos fazer em 2 passos se necessário, ou assumir manual.
-                // Simplificação: Apenas marca resolvido no tratamento. A inativação real exigiria o PRO_COD.
+                // Simplificação: Apenas marca resolvido no tratamento.
             }
             
             db.detach();
             res.json({ success: true });
+        });
+    });
+});
+
+app.get('/history', (req, res) => {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 30;
+    const skip = (page - 1) * limit;
+
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.status(500).json([]);
+        // JOIN com GRIDE_TRATAMENTO para saber se aquele log gerou uma pendencia que AINDA esta PENDING
+        // Se T.ID for not null, significa que tem tratamento. Se STATUS for PENDING, mostra cadeado.
+        const sql = `
+            SELECT FIRST ? SKIP ? 
+                L.*, T.STATUS as TRATAMENTO_STATUS 
+            FROM GRIDE_INVENTARIO_LOG L
+            LEFT JOIN GRIDE_TRATAMENTO T ON T.LOG_ID = L.ID
+            ORDER BY L.DATA_HORA DESC
+        `;
+        db.query(sql, [limit, skip], (err, result) => {
+            db.detach();
+            if (err) return res.json([]);
+            res.json(result);
         });
     });
 });
