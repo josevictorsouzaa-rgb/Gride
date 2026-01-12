@@ -33,21 +33,30 @@ export const HistoryScreen: React.FC = () => {
         const blockGroups = new Map();
 
         // Agrupamento mais inteligente:
-        // Blocos são definidos por: Codigo Similar + Usuario + (Data aproximada)
-        // Isso garante que se o mesmo bloco for contado duas vezes em dias diferentes, apareçam separados.
+        // Usa BLOCK_REF se disponível, senão tenta fallback com o Similar.
+        // O BLOCK_REF é gravado na finalização e garante que os itens fiquem juntos.
         
         data.forEach((entry: any) => {
-            const similarId = entry.PRO_COD_SIMILAR ? String(entry.PRO_COD_SIMILAR) : entry.SKU;
             const dateKey = new Date(entry.DATA_HORA).toISOString().split('T')[0]; // Dia
             const hourKey = new Date(entry.DATA_HORA).getHours(); // Hora (agrupamento horario)
             
+            // PRIORIDADE: BLOCK_REF vindo do banco.
+            const blockRef = entry.BLOCK_REF || (entry.PRO_COD_SIMILAR ? String(entry.PRO_COD_SIMILAR) : entry.SKU);
+            
             // Chave única para o "Evento de Contagem do Bloco"
-            const blockKey = `${similarId}_${entry.USUARIO_ID}_${dateKey}_${hourKey}`;
+            const blockKey = `${blockRef}_${entry.USUARIO_ID}_${dateKey}_${hourKey}`;
 
             if (!blockGroups.has(blockKey)) {
+                // Nome do bloco: Se tiver BLOCK_REF e não for número puro (ID), usa ele.
+                // Caso contrário, tenta montar algo legível.
+                let displayName = entry.BLOCK_REF;
+                if (!displayName || /^\d+$/.test(displayName)) {
+                     displayName = entry.PRO_COD_SIMILAR ? `BLOCO ${entry.PRO_COD_SIMILAR}` : entry.SKU;
+                }
+
                 blockGroups.set(blockKey, {
                     id: blockKey,
-                    parentRef: entry.PRO_COD_SIMILAR ? `BLOCO ${entry.PRO_COD_SIMILAR}` : entry.SKU,
+                    parentRef: displayName,
                     name: entry.PROD_DESC_ATUAL || entry.NOME_PRODUTO, 
                     location: entry.LOCALIZACAO || 'GERAL',
                     latestDate: entry.DATA_HORA, 

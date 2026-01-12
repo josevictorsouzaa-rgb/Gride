@@ -176,7 +176,8 @@ export const api = {
       } catch (e) { return false; }
   },
 
-  finalizeBlock: async (data: { block_id: string|number, user_id: string, user_name: string, items: any[] }) => {
+  // ALTERAÇÃO: Adicionado parent_ref
+  finalizeBlock: async (data: { block_id: string|number, user_id: string, user_name: string, items: any[], parent_ref?: string }) => {
       try {
           const response = await fetch(`${API_BASE_URL}/finalize-block`, {
               method: 'POST',

@@ -51,6 +51,9 @@ const initDb = () => {
 
         runQuery(`CREATE TABLE GRIDE_INVENTARIO_LOG (ID INTEGER NOT NULL PRIMARY KEY, SKU VARCHAR(50), NOME_PRODUTO VARCHAR(200), USUARIO_ID VARCHAR(20), USUARIO_NOME VARCHAR(100), QTD_SISTEMA DECIMAL(15,4), QTD_CONTADA DECIMAL(15,4), LOCALIZACAO VARCHAR(100), STATUS VARCHAR(20), DIVERGENCIA_MOTIVO VARCHAR(255), DATA_HORA TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
         
+        // ALTERAÇÃO: Adicionar coluna BLOCK_REF para garantir agrupamento correto no histórico
+        runQuery(`ALTER TABLE GRIDE_INVENTARIO_LOG ADD BLOCK_REF VARCHAR(50)`);
+
         runQuery(`CREATE TABLE GRIDE_TRATAMENTO (
             ID INTEGER NOT NULL PRIMARY KEY,
             LOG_ID INTEGER,
@@ -91,9 +94,12 @@ const safeString = (value) => {
     return String(value).trim();
 };
 
+// FIX: Improved Blob handling
 const blobToString = (blob) => {
-    if (!blob) return null;
-    if (Buffer.isBuffer(blob)) return blob.toString();
+    if (blob === null || blob === undefined) return null;
+    if (Buffer.isBuffer(blob)) return blob.toString('utf8'); // Force UTF-8 decoding
+    if (typeof blob === 'string') return blob;
+    if (typeof blob === 'function') return null; // Stream handle not implemented here, assuming sync
     return String(blob);
 };
 
@@ -146,7 +152,7 @@ app.get('/users', (req, res) => {
     });
 });
 
-// --- CATEGORIES (RESTORED) ---
+// --- CATEGORIES ---
 app.get('/categories', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json([]);
@@ -297,11 +303,13 @@ app.get('/reserved-blocks/:userId', (req, res) => {
                         const savedItems = JSON.parse(jsonStr);
                         if (Array.isArray(savedItems)) {
                             savedItems.forEach(item => {
-                                progressMap.set(`${bId}-${item.ref}`, item);
+                                // FIX: Use a composite key that is robust to SKU casing/spaces
+                                const cleanRef = String(item.ref).trim();
+                                progressMap.set(`${bId}-${cleanRef}`, item);
                             });
                         }
                     } catch (e) {
-                        console.error("Erro parse JSON items:", e);
+                        console.error("Erro parse JSON items para bloco " + bId, e);
                     }
                 }
             });
@@ -320,6 +328,7 @@ app.get('/reserved-blocks/:userId', (req, res) => {
                         const similarId = p.PRO_COD_SIMILAR ? safeString(p.PRO_COD_SIMILAR) : safeString(p.PRO_COD);
                         const sku = safeString(p.PRO_NRFABRICANTE);
                         
+                        // FIX: Lookup using the robust key
                         const savedProgress = progressMap.get(`${similarId}-${sku}`);
                         
                         if (!groups.has(similarId)) groups.set(similarId, []);
@@ -332,6 +341,7 @@ app.get('/reserved-blocks/:userId', (req, res) => {
                             balance: parseFloat(p.PRO_EST_ATUAL || 0), 
                             location: 'GERAL', 
                             inTreatment: treatmentSet.has(sku),
+                            // Restore progress if exists
                             status: savedProgress ? savedProgress.status : 'pending',
                             countedQty: savedProgress ? savedProgress.countedQty : 0,
                             divergenceReason: savedProgress ? savedProgress.divergenceReason : '',
@@ -383,12 +393,14 @@ app.post('/reserve-block', (req, res) => {
 
 app.post('/update-reservation-progress', (req, res) => {
     const { block_id, items } = req.body;
+    // FIX: Save as Buffer with UTF-8 encoding to prevent charset issues with Firebird BLOBs
     const jsonStr = JSON.stringify(items);
+    const buffer = Buffer.from(jsonStr, 'utf8');
     
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro DB' });
         const sql = 'UPDATE GRIDE_RESERVAS SET ITEMS_JSON = ? WHERE BLOCK_ID = ?';
-        db.query(sql, [jsonStr, block_id], (err) => {
+        db.query(sql, [buffer, block_id], (err) => {
             db.detach();
             if (err) return res.status(500).json({ success: false, error: err.message });
             res.json({ success: true });
@@ -405,7 +417,7 @@ app.post('/release-block', (req, res) => {
 });
 
 app.post('/finalize-block', (req, res) => {
-    const { block_id, user_id, user_name, items } = req.body;
+    const { block_id, user_id, user_name, items, parent_ref } = req.body; // ALTERAÇÃO: Recebe parent_ref
     
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro DB' });
@@ -415,15 +427,17 @@ app.post('/finalize-block', (req, res) => {
 
             try {
                 for (const item of items) {
-                    const sqlLog = `INSERT INTO GRIDE_INVENTARIO_LOG (SKU, NOME_PRODUTO, USUARIO_ID, USUARIO_NOME, QTD_SISTEMA, QTD_CONTADA, LOCALIZACAO, STATUS, DIVERGENCIA_MOTIVO, DATA_HORA) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP) RETURNING ID`;
+                    // ALTERAÇÃO: Salvar BLOCK_REF (parent_ref) no LOG
+                    const sqlLog = `INSERT INTO GRIDE_INVENTARIO_LOG (SKU, NOME_PRODUTO, USUARIO_ID, USUARIO_NOME, QTD_SISTEMA, QTD_CONTADA, LOCALIZACAO, STATUS, DIVERGENCIA_MOTIVO, BLOCK_REF, DATA_HORA) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP) RETURNING ID`;
                     
                     const qtdContada = item.countedQty !== undefined ? item.countedQty : 0;
                     const status = item.status || 'pending';
                     const localizacao = (item.lastCount && item.lastCount.location) ? item.lastCount.location : (item.location || 'GERAL');
                     const motivo = item.divergenceReason || '';
+                    const blockRef = parent_ref || item.ref; // Fallback se parent_ref não vier
 
                     await new Promise((resolve, reject) => {
-                        transaction.query(sqlLog, [item.ref, item.name, user_id, user_name, item.balance, qtdContada, localizacao, status, motivo], (err, result) => {
+                        transaction.query(sqlLog, [item.ref, item.name, user_id, user_name, item.balance, qtdContada, localizacao, status, motivo, blockRef], (err, result) => {
                             if (err) return reject(err);
                             
                             const logId = result.ID;

@@ -147,7 +147,8 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
               block_id: blockToFinalize.id,
               user_id: currentUser.id,
               user_name: currentUser.name,
-              items: blockToFinalize.items
+              items: blockToFinalize.items,
+              parent_ref: blockToFinalize.parentRef // Envia o nome do bloco para o log
           });
           
           alert(`Bloco ${blockToFinalize.parentRef} finalizado com sucesso!`);
