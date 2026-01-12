@@ -4,6 +4,7 @@ import { Icon } from '../components/Icon';
 import { WMSAddress } from '../types';
 import { api, Warehouse } from '../services/api';
 import QRCode from 'qrcode';
+import { AutoPartsLoader } from '../components/AutoPartsLoader';
 
 interface AddressManagerScreenProps {
   onBack: () => void;
@@ -56,7 +57,6 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
     ]);
     setAddresses(addrData);
     setWarehouses(warData);
-    // REMOVIDO: Auto-seleção do primeiro galpão. Agora começa limpo.
     setLoading(false);
   };
 
@@ -242,10 +242,6 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
         const nivelNum = item.p ? item.p.replace(/\D/g, '') : '';
         const isShelfLabel = !item.p;
 
-        // Logic: 
-        // Se for Prateleira (Nivel), o título é "PRATELEIRA"
-        // Se for Estante, o título é "ESTANTE".
-        
         const labelTitle = isShelfLabel ? 'ESTANTE' : 'PRATELEIRA';
         const labelNum = isShelfLabel ? estanteNum : nivelNum;
         
@@ -392,15 +388,13 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
       executePrint(printItems);
   };
 
-  // --- PRINT LOGIC (Shelf Only) ---
   const handlePrintShelfLabel = (galpao: string, estante: string) => {
-      // Create a virtual item for the Shelf
       const code = `LOC-${galpao}-${estante}`; 
       const item = {
           code: code,
           g: galpao,
           e: estante,
-          p: undefined // No Prateleira = Shelf Label
+          p: undefined 
       };
       executePrint([item]);
   };
@@ -413,13 +407,16 @@ export const AddressManagerScreen: React.FC<AddressManagerScreenProps> = ({ onBa
       </div>
   );
 
+  if (loading) {
+      return <AutoPartsLoader message="Carregando Endereços..." />;
+  }
+
   return (
     <div className="flex flex-col h-screen bg-background-light dark:bg-background-dark overflow-hidden">
         
         {/* Header */}
         <header className="flex items-center justify-between px-6 py-4 bg-white dark:bg-surface-dark border-b border-gray-200 dark:border-white/5 shadow-sm z-10">
              <div className="flex items-center gap-4">
-                 {/* Removed Back Button */}
                  <div>
                      <h1 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
                         <Icon name="warehouse" className="text-primary" />

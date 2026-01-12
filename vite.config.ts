@@ -11,6 +11,5 @@ export default defineConfig({
   ],
   server: {
     host: true, // Permite acesso via IP (ex: 192.168.x.x)
-    https: true // Força o modo seguro
   }
 })

@@ -1,8 +1,10 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { Icon } from '../components/Icon';
 import { EntryModal, HistoryFilterModal } from '../components/Modals';
 import { ItemDetailModal } from '../components/ItemDetailModal';
 import { api } from '../services/api';
+import { AutoPartsLoader } from '../components/AutoPartsLoader';
 
 export const HistoryScreen: React.FC = () => {
   const [historyBlocks, setHistoryBlocks] = useState<any[]>([]);
@@ -121,6 +123,10 @@ export const HistoryScreen: React.FC = () => {
     }
   };
 
+  if (loading) {
+      return <AutoPartsLoader message="Carregando Histórico..." />;
+  }
+
   return (
     <div className="relative flex flex-col w-full min-h-screen pb-24 md:pb-0 bg-background-light dark:bg-background-dark md:bg-transparent">
       {/* Header */}
@@ -193,13 +199,13 @@ export const HistoryScreen: React.FC = () => {
 
       <div className="px-4 pt-2 pb-2 flex items-center justify-between">
          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-           {loading ? 'Carregando...' : filteredBlocks.length > 0 ? `${filteredBlocks.length} registros` : 'Nenhum resultado'}
+           {filteredBlocks.length > 0 ? `${filteredBlocks.length} registros` : 'Nenhum resultado'}
          </p>
       </div>
 
       {/* Blocks List */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6 px-4 pb-28 md:pb-0">
-        {!loading && filteredBlocks.length === 0 ? (
+        {filteredBlocks.length === 0 ? (
           <div className="col-span-full flex flex-col items-center justify-center py-12 text-gray-400 opacity-60">
              <Icon name="manage_search" size={64} className="mb-2" />
              <p className="text-sm font-medium">Nenhum histórico encontrado.</p>
