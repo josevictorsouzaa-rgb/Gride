@@ -36,7 +36,6 @@ export const HistoryScreen: React.FC = () => {
         // Data is ordered by DATE DESC from backend
         data.forEach((entry: any) => {
             // Usa o código similar como chave do bloco, se não tiver usa o SKU (bloco de 1 item)
-            // Backend retorna PRO_COD_SIMILAR (number or string)
             const blockId = entry.PRO_COD_SIMILAR ? String(entry.PRO_COD_SIMILAR) : entry.SKU;
             const itemKey = entry.SKU; // Unique key per item in the block
 
@@ -46,7 +45,6 @@ export const HistoryScreen: React.FC = () => {
                     parentRef: entry.PRO_COD_SIMILAR ? `BLOCO ${entry.PRO_COD_SIMILAR}` : entry.SKU,
                     name: entry.PROD_DESC_ATUAL || entry.NOME_PRODUTO, // Nome do produto principal (do bloco)
                     latestDate: entry.DATA_HORA, // First entry is the latest due to sort
-                    user: entry.USUARIO_NOME, // Last user to count an item in this block
                     status: 'concluido', // Default
                     itemsMap: new Map() // Map to ensure unique items (latest state)
                 });
@@ -69,7 +67,7 @@ export const HistoryScreen: React.FC = () => {
                     qty: entry.QTD_CONTADA,
                     countedBy: entry.USUARIO_NOME,
                     countedAt: entry.DATA_HORA,
-                    location: entry.LOCALIZACAO || 'GERAL', // Location is now an attribute of the item count
+                    location: entry.LOCALIZACAO || 'GERAL',
                     isLocked: isLocked,
                     status: entry.STATUS
                 });
@@ -105,7 +103,6 @@ export const HistoryScreen: React.FC = () => {
     // Collect all users from all items in all blocks
     const users = new Set<string>();
     historyBlocks.forEach(b => {
-        users.add(b.user);
         b.items.forEach((i: any) => users.add(i.countedBy));
     });
     return Array.from(users);
@@ -120,14 +117,15 @@ export const HistoryScreen: React.FC = () => {
         block.parentRef.toLowerCase().includes(searchLower) ||
         block.items.some((item: any) => 
           item.ref.toLowerCase().includes(searchLower) ||
-          item.location.toLowerCase().includes(searchLower)
+          item.location.toLowerCase().includes(searchLower) ||
+          item.countedBy.toLowerCase().includes(searchLower)
         );
 
       if (!matchesText) return false;
 
-      // Filter by Block User (Last one) OR Item User? Let's check Block user first
+      // Filter by Item User
       if (activeFilters.users.length > 0) {
-          const hasUser = activeFilters.users.includes(block.user) || block.items.some((i:any) => activeFilters.users.includes(i.countedBy));
+          const hasUser = block.items.some((i:any) => activeFilters.users.includes(i.countedBy));
           if (!hasUser) return false;
       }
 
@@ -224,91 +222,110 @@ export const HistoryScreen: React.FC = () => {
           filteredBlocks.map((block) => {
            const status = getStatusConfig(block.status);
            const isExpanded = expandedBlocks.includes(block.id);
-           const visibleItems = isExpanded ? block.items : block.items.slice(0, 2);
-           const hiddenCount = block.items.length - 2;
+           const visibleItems = isExpanded ? block.items : block.items.slice(0, 3);
+           const hiddenCount = block.items.length - 3;
 
            return (
-             <div key={block.id} className="flex flex-col shadow-sm animate-fade-in h-full group">
-                <div className="bg-[#1e293b] text-white p-3 rounded-t-xl flex justify-between items-start shadow-md z-10 border border-[#334155]">
-                    <div className="flex-1 min-w-0 pr-2">
-                        <div className="flex items-center gap-2 mb-1">
-                            <span className="text-[10px] font-bold bg-white/10 px-1.5 py-0.5 rounded uppercase tracking-wider text-gray-300">
-                                {block.parentRef}
-                            </span>
-                            <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border bg-[#0f172a] border-[#334155] ${status.color}`}>
-                                <Icon name={status.icon} size={10} />
-                                {status.label}
+             <div key={block.id} className="flex flex-col shadow-sm animate-fade-in h-full group bg-white dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-card-border overflow-hidden">
+                {/* CARD HEADER - BLOCK INFO */}
+                <div className="p-3 border-b border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-white/5">
+                    <div className="flex justify-between items-start gap-2">
+                        <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                                <span className="text-[10px] font-bold bg-gray-200 dark:bg-white/10 px-1.5 py-0.5 rounded uppercase tracking-wider text-gray-600 dark:text-gray-300">
+                                    {block.parentRef}
+                                </span>
+                                <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border ${status.color} ${status.border} bg-transparent`}>
+                                    <Icon name={status.icon} size={10} />
+                                    {status.label}
+                                </div>
                             </div>
+                            <h3 className="font-bold text-sm leading-tight text-gray-900 dark:text-white line-clamp-1">
+                                {block.name}
+                            </h3>
                         </div>
-                        <h3 className="font-bold text-sm leading-tight text-white line-clamp-2">
-                            {block.name}
-                        </h3>
+                        <div className="text-[10px] text-gray-400 flex items-center gap-1 pt-1">
+                            <Icon name="update" size={12} />
+                            {block.timeAgo}
+                        </div>
                     </div>
                 </div>
 
-                <div className="flex-1 relative flex flex-col bg-white dark:bg-surface-dark rounded-b-xl border border-gray-200 dark:border-card-border border-t-0 overflow-hidden">
-                  
-                  <div className="flex justify-between items-center px-4 py-2 bg-gray-50/50 dark:bg-white/5 border-b border-gray-100 dark:border-white/5 text-xs text-gray-500">
-                      <span className="flex items-center gap-1 font-medium">
-                          <Icon name="history" size={14} />
-                          {block.timeAgo}
-                      </span>
-                      <span className="flex items-center gap-1 font-medium">
-                          <Icon name="person" size={14} />
-                          {block.user.split(' ')[0]}
-                      </span>
-                  </div>
-
-                  <div className="flex flex-col flex-1">
-                      {visibleItems.map((item: any, index: number) => (
+                {/* CARD BODY - ITEMS LIST */}
+                <div className="flex-col divide-y divide-gray-100 dark:divide-white/5">
+                      {visibleItems.map((item: any, index: number) => {
+                        const itemStatusColor = item.status === 'divergence_info' || item.status === 'not_located' 
+                            ? 'text-orange-600 dark:text-orange-400' 
+                            : 'text-green-600 dark:text-green-400';
+                        
+                        return (
                         <div 
                           key={item.id} 
                           onClick={() => setSelectedItem(item)}
-                          className={`group/item p-3 flex flex-col gap-1 cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-white/5 ${
-                            index !== visibleItems.length - 1 ? 'border-b border-gray-100 dark:border-card-border/50' : ''
-                          }`}
+                          className="group/item p-3 cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-white/5"
                         >
-                            <div className="flex justify-between items-start">
-                              <div className="flex flex-col">
-                                  <span className={`text-[11px] font-bold uppercase ${item.isLocked ? 'text-gray-400 line-through' : 'text-gray-700 dark:text-gray-300'}`}>
+                            {/* Line 1: Name and Quantity */}
+                            <div className="flex justify-between items-start mb-1">
+                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                    {item.isLocked && <Icon name="lock" size={14} className="text-orange-500 shrink-0" />}
+                                    <span className={`text-xs font-bold text-gray-800 dark:text-gray-200 truncate ${item.isLocked ? 'line-through opacity-70' : ''}`}>
+                                        {item.name}
+                                    </span>
+                                </div>
+                                <div className="pl-2">
+                                    <span className={`text-xs font-bold ${itemStatusColor} bg-opacity-10 px-2 py-0.5 rounded-full border border-current`}>
+                                        {item.qty} un
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Line 2: Details Grid */}
+                            <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 gap-y-1 text-[10px] text-gray-500 dark:text-gray-400 items-center">
+                                {/* SKU */}
+                                <div className="flex items-center gap-1 font-mono text-gray-400 dark:text-gray-500 truncate">
+                                    <Icon name="barcode" size={12} />
                                     {item.ref}
-                                  </span>
-                                  <span className="text-[10px] text-gray-400 dark:text-gray-500 flex items-center gap-1">
-                                     <Icon name="place" size={12} />
-                                     {item.location}
-                                  </span>
-                              </div>
-                              
-                              <div className="flex items-center gap-2">
-                                  {item.isLocked && <Icon name="lock" size={14} className="text-orange-500" />}
-                                  <span className="text-[11px] font-bold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2 py-0.5 rounded border border-green-100 dark:border-green-900/30">
-                                    {item.qty} un
-                                  </span>
-                              </div>
+                                </div>
+                                
+                                {/* Location */}
+                                <div className="flex items-center gap-1 font-medium text-gray-700 dark:text-gray-300">
+                                    <Icon name="place" size={12} className="text-primary opacity-70" />
+                                    {item.location}
+                                </div>
+
+                                {/* User & Time */}
+                                <div className="flex items-center gap-1.5 justify-end">
+                                    <span className="flex items-center gap-1 text-gray-600 dark:text-gray-300 font-medium bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded">
+                                        <Icon name="person" size={10} />
+                                        {item.countedBy.split(' ')[0]}
+                                    </span>
+                                    <span>{getTimeAgo(item.countedAt)}</span>
+                                </div>
                             </div>
                         </div>
-                      ))}
-                  </div>
+                        );
+                      })}
+                </div>
 
-                  {!isExpanded && hiddenCount > 0 && (
+                {/* CARD FOOTER - EXPAND CONTROLS */}
+                {(!isExpanded && hiddenCount > 0) && (
                       <div 
                         onClick={() => toggleBlock(block.id)}
-                        className="flex items-center justify-center py-3 bg-gray-50 dark:bg-black/20 border-t border-gray-100 dark:border-white/5 cursor-pointer hover:bg-gray-100 dark:hover:bg-white/5 transition-colors text-xs font-bold text-gray-500 gap-1"
+                        className="flex items-center justify-center py-2 bg-gray-50 dark:bg-black/20 border-t border-gray-100 dark:border-white/5 cursor-pointer hover:bg-gray-100 dark:hover:bg-white/10 transition-colors text-xs font-bold text-gray-500 gap-1"
                       >
                         Ver mais {hiddenCount} itens
                         <Icon name="expand_more" size={16} />
                       </div>
-                  )}
-                  {isExpanded && block.items.length > 2 && (
+                )}
+                {(isExpanded && block.items.length > 3) && (
                       <div 
                         onClick={() => toggleBlock(block.id)}
-                        className="flex items-center justify-center py-3 bg-gray-50 dark:bg-black/20 border-t border-gray-100 dark:border-white/5 cursor-pointer hover:bg-gray-100 dark:hover:bg-white/5 transition-colors text-xs font-bold text-gray-500 gap-1"
+                        className="flex items-center justify-center py-2 bg-gray-50 dark:bg-black/20 border-t border-gray-100 dark:border-white/5 cursor-pointer hover:bg-gray-100 dark:hover:bg-white/10 transition-colors text-xs font-bold text-gray-500 gap-1"
                       >
                         Mostrar menos
                         <Icon name="expand_less" size={16} />
                       </div>
-                  )}
-                </div>
+                )}
              </div>
            );
         }))}
