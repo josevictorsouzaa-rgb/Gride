@@ -33,6 +33,7 @@ const getInitials = (name: string) => {
 export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onRefreshCount, onNavigate }) => {
   const [historyBlocks, setHistoryBlocks] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [reservingId, setReservingId] = useState<string | null>(null);
 
   // Fetch History from Backend
   useEffect(() => {
@@ -160,16 +161,22 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onRef
   const handleReReserve = async (blockId: string, e: React.MouseEvent) => {
       e.stopPropagation();
       if (!currentUser) return alert("Você precisa estar logado para reservar.");
+      if (reservingId) return; // Prevent double click
 
       if (confirm(`Deseja re-reservar o bloco ${blockId}?`)) {
+          setReservingId(blockId);
           // O blockId aqui é a chave lógica (ex: SYL1402)
           const res = await api.reserveBlock(blockId, currentUser);
+          
           if (res.success) {
-              alert(`Bloco ${blockId} reservado com sucesso!`);
+              // Sucesso: Atualiza contadores e navega
               if(onRefreshCount) onRefreshCount();
-              // REDIRECIONAMENTO AUTOMÁTICO
-              onNavigate('reserved');
+              setTimeout(() => {
+                  setReservingId(null);
+                  onNavigate('reserved');
+              }, 500); // Pequeno delay visual para UX
           } else {
+              setReservingId(null);
               alert(res.message || "Não foi possível reservar o bloco. Verifique se há pendências.");
           }
       }
@@ -247,51 +254,58 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onRef
            const hiddenCount = block.items.length - 3;
            const hasDivergence = block.status === 'divergencia';
            const formattedDate = new Date(block.latestDate).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+           const isReserving = reservingId === block.id;
 
            return (
              <div key={block.id} className="flex flex-col shadow-lg shadow-black/20 h-full group bg-[#182335] dark:bg-surface-dark rounded-xl border border-white/5 overflow-hidden transition-all hover:border-white/10">
-                {/* CARD HEADER - REESTRUTURADO PARA HIERARQUIA TEMPORAL */}
+                {/* CARD HEADER - REESTRUTURADO CRONOLOGICAMENTE */}
                 <div className="p-4 border-b border-white/5 bg-[#182335] dark:bg-surface-dark relative">
-                    <div className="flex justify-between items-start mb-3">
+                    <div className="flex justify-between items-start">
                         {/* Esquerda: Identificação do Bloco */}
                         <div className="flex-1 pr-2">
                             <h3 className="text-xl font-black text-white leading-tight flex items-center gap-2 mb-1">
                                 {block.parentRef}
                             </h3>
+                            <div className="flex items-center gap-1 text-xs text-gray-400 font-medium mt-1">
+                                <Icon name="place" size={14} className="text-gray-500" />
+                                {block.location}
+                            </div>
                             {hasDivergence && (
-                                <span className="text-[9px] font-bold text-orange-400 flex items-center gap-1 bg-orange-900/20 px-2 py-0.5 rounded border border-orange-900/30 w-fit">
+                                <span className="mt-2 text-[9px] font-bold text-orange-400 flex items-center gap-1 bg-orange-900/20 px-2 py-0.5 rounded border border-orange-900/30 w-fit">
                                     <Icon name="warning" size={10} />
                                     Divergência
                                 </span>
                             )}
                         </div>
 
-                        {/* Direita: Hierarquia Temporal (Tempo Decorrido em Destaque) */}
-                        <div className="flex flex-col items-end">
-                            <span className="text-lg font-bold text-primary leading-none tracking-tight mb-1">
-                                {block.timeAgo}
-                            </span>
-                            <span className="text-[10px] font-medium text-gray-500 bg-black/20 px-1.5 py-0.5 rounded">
-                                {formattedDate}
-                            </span>
-                        </div>
-                    </div>
+                        {/* Direita: Data e Ação */}
+                        <div className="flex items-center gap-3">
+                            <div className="flex flex-col items-end">
+                                <span className="text-sm font-bold text-white leading-none tracking-tight mb-1">
+                                    {formattedDate}
+                                </span>
+                                <span className="text-[10px] font-medium text-gray-400">
+                                    {block.timeAgo}
+                                </span>
+                            </div>
 
-                    {/* Linha Inferior: Localização e Botão de Ação */}
-                    <div className="flex justify-between items-end">
-                        <div className="flex items-center gap-1 text-xs text-gray-400 font-medium bg-white/5 px-2 py-1.5 rounded-lg border border-white/5">
-                            <Icon name="place" size={14} className="text-gray-500" />
-                            {block.location}
+                            <button 
+                                onClick={(e) => handleReReserve(block.id, e)}
+                                disabled={isReserving}
+                                className={`flex items-center justify-center w-10 h-10 rounded-lg transition-all shadow-lg ${
+                                    isReserving 
+                                    ? 'bg-gray-600 cursor-not-allowed' 
+                                    : 'bg-blue-600 hover:bg-blue-500 text-white active:scale-95 shadow-blue-900/20'
+                                }`}
+                                title="Re-reservar para contagem"
+                            >
+                                {isReserving ? (
+                                    <Icon name="sync" size={20} className="animate-spin text-white/50" />
+                                ) : (
+                                    <Icon name="bookmark_add" size={20} />
+                                )}
+                            </button>
                         </div>
-
-                        <button 
-                            onClick={(e) => handleReReserve(block.id, e)}
-                            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold uppercase tracking-wide shadow-lg shadow-blue-900/20 transition-all active:scale-95 border border-blue-500/50"
-                            title="Re-reservar para contagem"
-                        >
-                            <Icon name="bookmark_add" size={16} />
-                            Re-reservar
-                        </button>
                     </div>
                 </div>
 
