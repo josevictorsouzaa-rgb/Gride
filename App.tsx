@@ -42,8 +42,9 @@ const App: React.FC = () => {
   const [showScanner, setShowScanner] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
-  // Global Badge Counter for Reserved Items
+  // Global Badge Counters
   const [reservedCount, setReservedCount] = useState(0);
+  const [treatmentCount, setTreatmentCount] = useState(3); // Mockado inicialmente como 3
 
   const handleLogout = useCallback(() => {
     setCurrentUser(null);
@@ -62,6 +63,9 @@ const App: React.FC = () => {
           try {
               const reserved = await api.getReservedBlocks(currentUser.id);
               setReservedCount(reserved.length);
+              // Aqui futuramente buscaria o tratamento real da API
+              // const treatment = await api.getTreatmentItems();
+              // setTreatmentCount(treatment.length);
           } catch (e) {
               console.error("Erro ao atualizar badge de reservados", e);
           }
@@ -262,7 +266,14 @@ const App: React.FC = () => {
       {/* LOADING OVERLAY GLOBAL */}
       {isLoading && <AutoPartsLoader message="Buscando Itens..." />}
       
-      <Sidebar currentScreen={activeNavTab} onNavigate={setCurrentScreen} currentUser={currentUser} onLogout={handleLogout} reservedCount={reservedCount} />
+      <Sidebar 
+        currentScreen={activeNavTab} 
+        onNavigate={setCurrentScreen} 
+        currentUser={currentUser} 
+        onLogout={handleLogout} 
+        reservedCount={reservedCount}
+        treatmentCount={treatmentCount} 
+      />
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
         <div id="main-scroll-container" className="flex-1 overflow-y-auto no-scrollbar relative w-full"><div className="w-full min-h-full animate-fade-in">{renderScreen()}</div></div>
         {showNav && <BottomNav currentScreen={activeNavTab} onNavigate={setCurrentScreen} onScanClick={() => setShowScanner(true)} isAdmin={currentUser?.isAdmin} reservedCount={reservedCount} />}

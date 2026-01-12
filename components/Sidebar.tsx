@@ -9,23 +9,36 @@ interface SidebarProps {
   currentUser: User | null;
   onLogout?: () => void;
   reservedCount?: number;
+  treatmentCount?: number;
 }
 
 const getInitials = (name: string) => {
     return name ? name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() : 'US';
 };
 
-export const Sidebar: React.FC<SidebarProps> = ({ currentScreen, onNavigate, currentUser, onLogout, reservedCount = 0 }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ 
+  currentScreen, 
+  onNavigate, 
+  currentUser, 
+  onLogout, 
+  reservedCount = 0,
+  treatmentCount = 0 
+}) => {
   const isAdmin = currentUser?.isAdmin;
 
+  // Definição da ordem exata solicitada com propriedades de espaçamento
   const navItems = [
     { id: 'dashboard', label: 'Hub de Controle', icon: 'grid_view' },
     ...(isAdmin ? [{ id: 'analytics', label: 'Indicadores', icon: 'insights' }] : []),
     { id: 'list', label: 'Meta Diária', icon: 'checklist' },
-    { id: 'history', label: 'Histórico', icon: 'history' },
-    ...(isAdmin ? [{ id: 'treatment', label: 'Tratamento', icon: 'admin_panel_settings' }] : []),
-    ...(isAdmin ? [{ id: 'address_manager', label: 'Endereçamento', icon: 'qr_code_2' }] : []),
     { id: 'reserved', label: 'Meus Reservados', icon: 'assignment' },
+    { id: 'history', label: 'Histórico', icon: 'history' },
+    
+    // Grupo Tratamento (Separado)
+    ...(isAdmin ? [{ id: 'treatment', label: 'Tratamento', icon: 'admin_panel_settings', spacer: true }] : []),
+    
+    // Grupo Endereçamento (Separado)
+    ...(isAdmin ? [{ id: 'address_manager', label: 'Endereçamento', icon: 'qr_code_2', spacer: true }] : []),
   ];
 
   return (
@@ -55,15 +68,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentScreen, onNavigate, cur
         </div>
       </div>
 
-      <nav className="flex-1 px-4 py-2 space-y-1 overflow-y-auto">
+      <nav className="flex-1 px-4 py-2 space-y-1 overflow-y-auto no-scrollbar">
         <p className="px-2 text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 mt-2">Menu Principal</p>
+        
         {navItems.map((item) => {
           const isActive = currentScreen === item.id;
+          // Apply top margin if it's a spacer item
+          const spacerClass = (item as any).spacer ? 'mt-6' : '';
+          
           return (
             <button
               key={item.id}
               onClick={() => onNavigate(item.id as Screen)}
-              className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all duration-200 group ${
+              className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all duration-200 group ${spacerClass} ${
                 isActive 
                   ? 'bg-primary text-white shadow-lg shadow-primary/20 translate-x-1' 
                   : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 hover:translate-x-1'
@@ -71,9 +88,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentScreen, onNavigate, cur
             >
               <div className="relative">
                 <Icon name={item.icon} className={isActive ? 'text-white' : 'text-gray-500 dark:text-gray-400 group-hover:text-gray-900 dark:group-hover:text-white transition-colors'} />
+                
+                {/* Badge para Reservados (Maior) */}
                 {item.id === 'reserved' && reservedCount > 0 && (
-                  <span className="absolute -top-1 -right-1 flex h-3 w-3 items-center justify-center rounded-full bg-red-500 text-[8px] font-bold text-white border border-white dark:border-surface-dark animate-pulse">
+                  <span className="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white border-2 border-white dark:border-surface-dark animate-pulse shadow-sm">
                     {reservedCount}
+                  </span>
+                )}
+
+                {/* Badge para Tratamento */}
+                {item.id === 'treatment' && treatmentCount > 0 && (
+                  <span className="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-orange-500 text-[10px] font-bold text-white border-2 border-white dark:border-surface-dark animate-bounce shadow-sm">
+                    {treatmentCount}
                   </span>
                 )}
               </div>
