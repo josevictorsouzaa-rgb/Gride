@@ -30,28 +30,31 @@ export const HistoryScreen: React.FC = () => {
         // Increase limit to get a better snapshot of "latest" items
         const data = await api.getHistory(1, 200);
         
-        // --- LOGIC: Group by Location (Block) & Keep Latest Entry per Item ---
-        const locationGroups = new Map();
+        // --- LOGIC: Group by Block (PRO_COD_SIMILAR) & Keep Latest Entry per Item (SKU) ---
+        const blockGroups = new Map();
 
         // Data is ordered by DATE DESC from backend
         data.forEach((entry: any) => {
-            const locKey = entry.LOCALIZACAO || 'SEM LOCAL';
-            const itemKey = entry.SKU; // Unique key per item in location
+            // Usa o código similar como chave do bloco, se não tiver usa o SKU (bloco de 1 item)
+            // Backend retorna PRO_COD_SIMILAR (number or string)
+            const blockId = entry.PRO_COD_SIMILAR ? String(entry.PRO_COD_SIMILAR) : entry.SKU;
+            const itemKey = entry.SKU; // Unique key per item in the block
 
-            if (!locationGroups.has(locKey)) {
-                locationGroups.set(locKey, {
-                    id: locKey, // Use location as ID
-                    location: locKey,
+            if (!blockGroups.has(blockId)) {
+                blockGroups.set(blockId, {
+                    id: blockId,
+                    parentRef: entry.PRO_COD_SIMILAR ? `BLOCO ${entry.PRO_COD_SIMILAR}` : entry.SKU,
+                    name: entry.PROD_DESC_ATUAL || entry.NOME_PRODUTO, // Nome do produto principal (do bloco)
                     latestDate: entry.DATA_HORA, // First entry is the latest due to sort
-                    user: entry.USUARIO_NOME, // Last user to count here
+                    user: entry.USUARIO_NOME, // Last user to count an item in this block
                     status: 'concluido', // Default
                     itemsMap: new Map() // Map to ensure unique items (latest state)
                 });
             }
 
-            const group = locationGroups.get(locKey);
+            const group = blockGroups.get(blockId);
             
-            // Check if item already exists in this location group (if so, we skip, as we want the latest state)
+            // Check if item already exists in this block group (if so, we skip, as we want the latest state)
             if (!group.itemsMap.has(itemKey)) {
                 const isLocked = entry.TRATAMENTO_STATUS === 'PENDING';
                 const hasDivergence = entry.STATUS === 'divergence_info' || entry.STATUS === 'not_located';
@@ -62,9 +65,11 @@ export const HistoryScreen: React.FC = () => {
                     id: entry.ID,
                     name: entry.NOME_PRODUTO,
                     ref: entry.SKU,
+                    brand: entry.MAR_COD ? `MARCA ${entry.MAR_COD}` : '---',
                     qty: entry.QTD_CONTADA,
                     countedBy: entry.USUARIO_NOME,
                     countedAt: entry.DATA_HORA,
+                    location: entry.LOCALIZACAO || 'GERAL', // Location is now an attribute of the item count
                     isLocked: isLocked,
                     status: entry.STATUS
                 });
@@ -72,7 +77,7 @@ export const HistoryScreen: React.FC = () => {
         });
 
         // Convert Maps to Arrays for rendering
-        const blocks = Array.from(locationGroups.values()).map((g: any) => ({
+        const blocks = Array.from(blockGroups.values()).map((g: any) => ({
             ...g,
             items: Array.from(g.itemsMap.values()),
             timeAgo: getTimeAgo(g.latestDate)
@@ -85,7 +90,7 @@ export const HistoryScreen: React.FC = () => {
     fetchHistory();
   }, []);
 
-  const [expandedBlocks, setExpandedBlocks] = useState<string[]>([]); // Changed to string for Location ID
+  const [expandedBlocks, setExpandedBlocks] = useState<string[]>([]); 
   const [selectedItem, setSelectedItem] = useState<any | null>(null);
 
   const [searchText, setSearchText] = useState('');
@@ -111,10 +116,11 @@ export const HistoryScreen: React.FC = () => {
       const searchLower = searchText.toLowerCase();
       const matchesText = 
         searchText === '' ||
-        block.location.toLowerCase().includes(searchLower) ||
+        block.name.toLowerCase().includes(searchLower) ||
+        block.parentRef.toLowerCase().includes(searchLower) ||
         block.items.some((item: any) => 
-          item.name.toLowerCase().includes(searchLower) ||
-          item.ref.toLowerCase().includes(searchLower)
+          item.ref.toLowerCase().includes(searchLower) ||
+          item.location.toLowerCase().includes(searchLower)
         );
 
       if (!matchesText) return false;
@@ -223,28 +229,33 @@ export const HistoryScreen: React.FC = () => {
 
            return (
              <div key={block.id} className="flex flex-col shadow-sm animate-fade-in h-full group">
-                <div className="bg-[#1e293b] text-white p-3 rounded-t-xl flex justify-between items-center shadow-md z-10 border border-[#334155]">
-                    <div className="flex items-center gap-2">
-                        <div className="p-1.5 bg-white/10 rounded-lg">
-                            <Icon name="place" size={16} />
+                <div className="bg-[#1e293b] text-white p-3 rounded-t-xl flex justify-between items-start shadow-md z-10 border border-[#334155]">
+                    <div className="flex-1 min-w-0 pr-2">
+                        <div className="flex items-center gap-2 mb-1">
+                            <span className="text-[10px] font-bold bg-white/10 px-1.5 py-0.5 rounded uppercase tracking-wider text-gray-300">
+                                {block.parentRef}
+                            </span>
+                            <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border bg-[#0f172a] border-[#334155] ${status.color}`}>
+                                <Icon name={status.icon} size={10} />
+                                {status.label}
+                            </div>
                         </div>
-                        <span className="font-bold text-sm tracking-wide">{block.location}</span>
-                    </div>
-                    <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border bg-[#0f172a] border-[#334155] ${status.color}`}>
-                        <Icon name={status.icon} size={12} />
-                        {status.label}
+                        <h3 className="font-bold text-sm leading-tight text-white line-clamp-2">
+                            {block.name}
+                        </h3>
                     </div>
                 </div>
 
                 <div className="flex-1 relative flex flex-col bg-white dark:bg-surface-dark rounded-b-xl border border-gray-200 dark:border-card-border border-t-0 overflow-hidden">
                   
                   <div className="flex justify-between items-center px-4 py-2 bg-gray-50/50 dark:bg-white/5 border-b border-gray-100 dark:border-white/5 text-xs text-gray-500">
-                      <span className="flex items-center gap-1">
+                      <span className="flex items-center gap-1 font-medium">
                           <Icon name="history" size={14} />
                           {block.timeAgo}
                       </span>
-                      <span className="font-medium">
-                          Por {block.user}
+                      <span className="flex items-center gap-1 font-medium">
+                          <Icon name="person" size={14} />
+                          {block.user.split(' ')[0]}
                       </span>
                   </div>
 
@@ -253,23 +264,27 @@ export const HistoryScreen: React.FC = () => {
                         <div 
                           key={item.id} 
                           onClick={() => setSelectedItem(item)}
-                          className={`group/item p-4 flex flex-col gap-1 cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-white/5 ${
+                          className={`group/item p-3 flex flex-col gap-1 cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-white/5 ${
                             index !== visibleItems.length - 1 ? 'border-b border-gray-100 dark:border-card-border/50' : ''
                           }`}
                         >
                             <div className="flex justify-between items-start">
-                              <h3 className={`text-sm font-extrabold uppercase tracking-tight flex-1 ${item.isLocked ? 'text-gray-400 line-through' : 'text-gray-700 dark:text-gray-300'}`}>
-                                {item.name}
-                              </h3>
-                              {item.isLocked && <Icon name="lock" size={16} className="text-orange-500" />}
-                            </div>
-                            <div className="flex flex-wrap items-center justify-between mt-1">
-                              <span className="text-[11px] font-mono text-gray-500 dark:text-gray-400 uppercase">
-                                REF: {item.ref}
-                              </span>
-                              <span className="text-[11px] font-bold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2 py-0.5 rounded border border-green-100 dark:border-green-900/30">
-                                QTD: {item.qty}
-                              </span>
+                              <div className="flex flex-col">
+                                  <span className={`text-[11px] font-bold uppercase ${item.isLocked ? 'text-gray-400 line-through' : 'text-gray-700 dark:text-gray-300'}`}>
+                                    {item.ref}
+                                  </span>
+                                  <span className="text-[10px] text-gray-400 dark:text-gray-500 flex items-center gap-1">
+                                     <Icon name="place" size={12} />
+                                     {item.location}
+                                  </span>
+                              </div>
+                              
+                              <div className="flex items-center gap-2">
+                                  {item.isLocked && <Icon name="lock" size={14} className="text-orange-500" />}
+                                  <span className="text-[11px] font-bold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2 py-0.5 rounded border border-green-100 dark:border-green-900/30">
+                                    {item.qty} un
+                                  </span>
+                              </div>
                             </div>
                         </div>
                       ))}

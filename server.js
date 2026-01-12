@@ -465,11 +465,17 @@ app.get('/history', (req, res) => {
 
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json([]);
+        // JOIN COM PRODUTOS PARA PEGAR O CÓDIGO SIMILAR (BLOCO)
         const sql = `
             SELECT FIRST ? SKIP ? 
-                L.*, T.STATUS as TRATAMENTO_STATUS 
+                L.*, 
+                T.STATUS as TRATAMENTO_STATUS,
+                P.PRO_COD_SIMILAR,
+                P.PRO_DESCRI as PROD_DESC_ATUAL,
+                P.MAR_COD
             FROM GRIDE_INVENTARIO_LOG L
             LEFT JOIN GRIDE_TRATAMENTO T ON T.LOG_ID = L.ID
+            LEFT JOIN PRODUTOS P ON P.PRO_NRFABRICANTE = L.SKU
             ORDER BY L.DATA_HORA DESC
         `;
         db.query(sql, [limit, skip], (err, result) => {
