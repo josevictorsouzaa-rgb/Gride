@@ -27,41 +27,46 @@ export const HistoryScreen: React.FC = () => {
   useEffect(() => {
     const fetchHistory = async () => {
         setLoading(true);
-        // Increase limit to get a better snapshot of "latest" items
-        const data = await api.getHistory(1, 200);
+        // Increase limit to capture full block contexts
+        const data = await api.getHistory(1, 300);
         
-        // --- LOGIC: Group by Block (PRO_COD_SIMILAR) & Keep Latest Entry per Item (SKU) ---
         const blockGroups = new Map();
 
-        // Data is ordered by DATE DESC from backend
+        // Agrupamento mais inteligente:
+        // Blocos são definidos por: Codigo Similar + Usuario + (Data aproximada)
+        // Isso garante que se o mesmo bloco for contado duas vezes em dias diferentes, apareçam separados.
+        
         data.forEach((entry: any) => {
-            // Usa o código similar como chave do bloco, se não tiver usa o SKU (bloco de 1 item)
-            const blockId = entry.PRO_COD_SIMILAR ? String(entry.PRO_COD_SIMILAR) : entry.SKU;
-            const itemKey = entry.SKU; // Unique key per item in the block
+            const similarId = entry.PRO_COD_SIMILAR ? String(entry.PRO_COD_SIMILAR) : entry.SKU;
+            const dateKey = new Date(entry.DATA_HORA).toISOString().split('T')[0]; // Dia
+            const hourKey = new Date(entry.DATA_HORA).getHours(); // Hora (agrupamento horario)
+            
+            // Chave única para o "Evento de Contagem do Bloco"
+            const blockKey = `${similarId}_${entry.USUARIO_ID}_${dateKey}_${hourKey}`;
 
-            if (!blockGroups.has(blockId)) {
-                blockGroups.set(blockId, {
-                    id: blockId,
+            if (!blockGroups.has(blockKey)) {
+                blockGroups.set(blockKey, {
+                    id: blockKey,
                     parentRef: entry.PRO_COD_SIMILAR ? `BLOCO ${entry.PRO_COD_SIMILAR}` : entry.SKU,
-                    name: entry.PROD_DESC_ATUAL || entry.NOME_PRODUTO, // Nome do produto principal (do bloco)
+                    name: entry.PROD_DESC_ATUAL || entry.NOME_PRODUTO, 
                     location: entry.LOCALIZACAO || 'GERAL',
-                    latestDate: entry.DATA_HORA, // First entry is the latest due to sort
-                    user: entry.USUARIO_NOME, // Last user to count an item in this block
-                    status: 'concluido', // Default
-                    itemsMap: new Map() // Map to ensure unique items (latest state)
+                    latestDate: entry.DATA_HORA, 
+                    user: entry.USUARIO_NOME,
+                    status: 'concluido',
+                    itemsMap: new Map() // Garante unicidade do SKU DENTRO deste evento
                 });
             }
 
-            const group = blockGroups.get(blockId);
+            const group = blockGroups.get(blockKey);
             
-            // Check if item already exists in this block group (if so, we skip, as we want the latest state)
-            if (!group.itemsMap.has(itemKey)) {
+            // Adiciona item ao grupo
+            if (!group.itemsMap.has(entry.SKU)) {
                 const isLocked = entry.TRATAMENTO_STATUS === 'PENDING';
                 const hasDivergence = entry.STATUS === 'divergence_info' || entry.STATUS === 'not_located';
                 
                 if (hasDivergence) group.status = 'divergencia';
 
-                group.itemsMap.set(itemKey, {
+                group.itemsMap.set(entry.SKU, {
                     id: entry.ID,
                     name: entry.NOME_PRODUTO,
                     ref: entry.SKU,
@@ -76,7 +81,6 @@ export const HistoryScreen: React.FC = () => {
             }
         });
 
-        // Convert Maps to Arrays for rendering
         const blocks = Array.from(blockGroups.values()).map((g: any) => ({
             ...g,
             items: Array.from(g.itemsMap.values()),

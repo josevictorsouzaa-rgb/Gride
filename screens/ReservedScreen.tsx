@@ -66,7 +66,6 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
 
   const handleRequestScan = () => {
       // Fecha temporariamente o EntryModal para abrir o Scanner
-      // O EntryModal será reaberto no handleScanComplete
       setShowEntryModal(false);
       setShowScanner(true);
   };
@@ -93,26 +92,8 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
     const finalStatus = status === 'issue' ? 'divergence_info' : status;
     const finalLocation = scannedCode || selectedItem.location || 'GERAL';
 
-    // SAVE TO API (BALLAST)
-    if (currentUser) {
-        // Encontrar o bloco para pegar a localização correta
-        await api.saveCount({
-            sku: selectedItem.ref,
-            nome_produto: selectedItem.name,
-            usuario_id: currentUser.id,
-            usuario_nome: currentUser.name,
-            qtd_sistema: selectedItem.balance || 0,
-            qtd_contada: qty,
-            localizacao: finalLocation, // Usa o código escaneado como prova de local
-            status: finalStatus,
-            divergencia_motivo: reason
-        });
-        
-        // Se houve divergência/problema, atualiza o contador global imediatamente
-        if (onRefreshCount) onRefreshCount();
-    }
-
-    setLocalBlocks(prev => prev.map(block => {
+    // 1. ATUALIZA ESTADO LOCAL
+    const updatedBlocks = localBlocks.map(block => {
         if (block.id !== activeBlockId) return block;
         
         return {
@@ -121,21 +102,29 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                 if (item.ref === selectedItem.ref) { 
                     return {
                         ...item,
-                        status: finalStatus, // counted, not_located, divergence_info
+                        status: finalStatus,
                         countedQty: qty,
                         divergenceReason: reason,
                         lastCount: {
                             user: currentUser?.name || 'Você',
                             date: 'Agora',
                             qty: qty,
-                            location: finalLocation // Armazena a localização informada
+                            location: finalLocation
                         }
                     };
                 }
                 return item;
             })
         };
-    }));
+    });
+
+    setLocalBlocks(updatedBlocks);
+
+    // 2. SALVA PROGRESSO NO BLOB JSON DA RESERVA (SEM LOGAR NO HISTORICO AINDA)
+    const activeBlock = updatedBlocks.find(b => b.id === activeBlockId);
+    if (activeBlock) {
+        await api.updateReservationProgress(activeBlockId, activeBlock.items);
+    }
 
     setShowEntryModal(false);
     setSelectedItem(null);
@@ -153,7 +142,7 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
 
   const handleFinalizeConfirm = async () => {
       if (blockToFinalize && currentUser) {
-          // CALL API TO REMOVE RESERVATION
+          // CALL API TO FINALIZE (Save logs, update stock, remove reservation)
           await api.finalizeBlock({
               block_id: blockToFinalize.id,
               user_id: currentUser.id,
@@ -171,7 +160,6 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
       }
   };
 
-  // --- Logic for Giving Up ---
   const handleRequestGiveUp = (block: Block) => {
       setBlockToGiveUp(block);
       setShowGiveUpModal(true);
@@ -181,23 +169,16 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
       if (!blockToGiveUp) return;
       
       const idToRemove = blockToGiveUp.id;
-
-      // 1. Close Modal
       setShowGiveUpModal(false);
-      
-      // 2. Trigger Animation
       setExitingBlockId(idToRemove);
-
-      // 3. API Call (background)
       await api.releaseBlock(idToRemove); 
       
-      // 4. Wait for animation to finish before removing from DOM
       setTimeout(() => {
           setLocalBlocks(prev => prev.filter(b => b.id !== idToRemove));
           setExitingBlockId(null);
           setBlockToGiveUp(null);
           if (onRefreshCount) onRefreshCount();
-      }, 500); // Matches the duration-500 class
+      }, 500); 
   };
 
   return (
@@ -289,9 +270,6 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                                 const isProcessed = isCounted || isIssue;
                                 const hasDivergenceReason = !!item.divergenceReason;
                                 
-                                // DETERMINAR LOCALIZAÇÃO A EXIBIR
-                                // Se já foi contado e tem local no lastCount, usa ele.
-                                // Caso contrário usa a geral do bloco ou do item se houver.
                                 const displayLocation = item.lastCount?.location || item.location || block.location;
 
                                 return (
@@ -351,7 +329,6 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                                     <div className="flex items-end justify-between gap-4">
                                         <div className="flex flex-col">
                                             <span className="text-[10px] font-bold uppercase text-gray-400 tracking-wider">Localização</span>
-                                            {/* EXIBIÇÃO DA LOCALIZAÇÃO ESPECÍFICA */}
                                             <span className="text-sm font-bold text-gray-800 dark:text-white">{displayLocation}</span>
                                         </div>
 

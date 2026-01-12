@@ -153,6 +153,18 @@ export const api = {
       } catch (e) { return { success: false, message: 'Erro de conexão' }; }
   },
 
+  // NOVA FUNÇÃO: Atualizar progresso sem finalizar
+  updateReservationProgress: async (blockId: number | string, items: any[]) => {
+      try {
+          await fetch(`${API_BASE_URL}/update-reservation-progress`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ block_id: blockId, items: items })
+          });
+          return { success: true };
+      } catch (e) { return { success: false }; }
+  },
+
   releaseBlock: async (blockId: number | string) => {
       try {
           await fetch(`${API_BASE_URL}/release-block`, {
@@ -175,7 +187,9 @@ export const api = {
       } catch (e) { return { success: false, error: 'Erro ao finalizar' }; }
   },
 
+  // saveCount REMOVIDO/DEPRECADO para este fluxo (usado apenas em ad-hoc se necessário, mas aqui controlamos tudo pelo finalize)
   saveCount: async (data: InventoryLogEntry) => {
+    // Mantido apenas para compatibilidade com MissionDetailScreen se ainda usar
     try {
       await fetch(`${API_BASE_URL}/save-count`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
       return { success: true };
