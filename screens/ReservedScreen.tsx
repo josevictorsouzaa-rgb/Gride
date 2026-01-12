@@ -11,9 +11,10 @@ interface ReservedScreenProps {
   blocks: Block[];
   onStartBlock: (block: Block) => void;
   currentUser: User | null;
+  onRefreshCount?: () => void;
 }
 
-export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, blocks, onStartBlock, currentUser }) => {
+export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, blocks, onStartBlock, currentUser, onRefreshCount }) => {
   const [localBlocks, setLocalBlocks] = useState<Block[]>([]);
   
   const [selectedItem, setSelectedItem] = useState<any | null>(null);
@@ -26,6 +27,9 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
   // States for Giving Up (Desistir)
   const [showGiveUpModal, setShowGiveUpModal] = useState(false);
   const [blockToGiveUp, setBlockToGiveUp] = useState<Block | null>(null);
+  
+  // State for Animation
+  const [exitingBlockId, setExitingBlockId] = useState<number | null>(null);
 
   useEffect(() => {
     // Ensures status fields are populated correctly from props to prevent stale empty bars
@@ -113,8 +117,14 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
 
   const handleFinalizeConfirm = () => {
       if (blockToFinalize) {
+          // TODO: Implement actual Finalize API call if needed (currently mocked in frontend as just removing)
+          // Actually api.finalizeBlock exists in api service, we should probably use it or just release/finish.
+          // For now, consistent with existing logic:
           alert(`Bloco ${blockToFinalize.parentRef} finalizado com sucesso!`);
+          
           setLocalBlocks(prev => prev.filter(b => b.id !== blockToFinalize.id));
+          if (onRefreshCount) onRefreshCount();
+          
           setShowConfirmModal(false);
       }
   };
@@ -128,14 +138,24 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
   const handleGiveUpConfirm = async () => {
       if (!blockToGiveUp) return;
       
-      // Call API to release
-      await api.releaseBlock(blockToGiveUp.id);
-      
-      // Remove from local UI immediately
-      setLocalBlocks(prev => prev.filter(b => b.id !== blockToGiveUp.id));
-      
+      const idToRemove = blockToGiveUp.id;
+
+      // 1. Close Modal
       setShowGiveUpModal(false);
-      setBlockToGiveUp(null);
+      
+      // 2. Trigger Animation
+      setExitingBlockId(idToRemove);
+
+      // 3. API Call (background)
+      await api.releaseBlock(idToRemove); 
+      
+      // 4. Wait for animation to finish before removing from DOM
+      setTimeout(() => {
+          setLocalBlocks(prev => prev.filter(b => b.id !== idToRemove));
+          setExitingBlockId(null);
+          setBlockToGiveUp(null);
+          if (onRefreshCount) onRefreshCount();
+      }, 500); // Matches the duration-500 class
   };
 
   return (
@@ -166,9 +186,9 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
             </div>
           </div>
 
-          <div className="flex flex-col gap-8">
+          <div className="flex flex-col gap-8 overflow-hidden">
             {localBlocks.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-20 text-gray-400 dark:text-gray-600 border border-dashed border-gray-300 dark:border-card-border rounded-xl">
+                <div className="flex flex-col items-center justify-center py-20 text-gray-400 dark:text-gray-600 border border-dashed border-gray-300 dark:border-card-border rounded-xl animate-fade-in">
                     <Icon name="playlist_add_check" size={64} className="mb-4 opacity-30" />
                     <p className="text-base font-medium text-center max-w-[220px]">
                         Você não possui itens reservados no momento.
@@ -187,9 +207,17 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                     const totalItems = block.items.length;
                     const completedItems = totalItems - pendingCount;
                     const progress = totalItems > 0 ? (completedItems / totalItems) * 100 : 0;
+                    const isExiting = exitingBlockId === block.id;
 
                     return (
-                    <div key={block.id} className="flex flex-col animate-fade-in">
+                    <div 
+                        key={block.id} 
+                        className={`flex flex-col transition-all duration-500 ease-in-out transform origin-top ${
+                            isExiting 
+                            ? 'opacity-0 -translate-x-full scale-95 max-h-0 margin-0 overflow-hidden' 
+                            : 'opacity-100 translate-x-0 scale-100 max-h-[2000px] animate-fade-in'
+                        }`}
+                    >
                         
                         <div className="flex items-center justify-between mb-2 px-1">
                             <div className="bg-[#e11d48] text-white text-xs font-bold px-3 py-1 rounded-md uppercase tracking-wider shadow-sm">

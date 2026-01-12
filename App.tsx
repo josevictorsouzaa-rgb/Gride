@@ -40,16 +40,32 @@ const App: React.FC = () => {
   const [activeBlock, setActiveBlock] = useState<any | null>(null);
   const [showScanner, setShowScanner] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  
+  // Global Badge Counter for Reserved Items
+  const [reservedCount, setReservedCount] = useState(0);
 
   const handleLogout = useCallback(() => {
     setCurrentUser(null);
     setCurrentScreen('login');
+    setReservedCount(0);
   }, []);
 
   const handleLogin = (user: User) => {
     setCurrentUser(user);
     setCurrentScreen('dashboard');
   };
+
+  // Helper to refresh reserved count globally
+  const refreshReservedCount = useCallback(async () => {
+      if (currentUser) {
+          try {
+              const reserved = await api.getReservedBlocks(currentUser.id);
+              setReservedCount(reserved.length);
+          } catch (e) {
+              console.error("Erro ao atualizar badge de reservados", e);
+          }
+      }
+  }, [currentUser]);
 
   useEffect(() => {
     if (currentScreen === 'login') return;
@@ -64,12 +80,16 @@ const App: React.FC = () => {
     return () => { clearTimeout(timeoutId); events.forEach(event => window.removeEventListener(event, resetTimer)); };
   }, [currentScreen, handleLogout]);
 
-  // Carrega Categorias ao entrar no sistema
+  // Carrega Categorias ao entrar no sistema e atualiza badge
   useEffect(() => {
+      if (currentUser && currentScreen !== 'login') {
+          refreshReservedCount();
+      }
+      
       if (currentScreen === 'dashboard') {
           api.getCategories().then(setCategories);
       }
-  }, [currentScreen]);
+  }, [currentScreen, currentUser, refreshReservedCount]);
 
   // Lógica principal de carregamento de blocos baseada na tela e filtros
   useEffect(() => {
@@ -100,6 +120,8 @@ const App: React.FC = () => {
                 // RESERVADOS: Rota específica
                 const myReserved = await api.getReservedBlocks(currentUser.id);
                 setBlocks(myReserved);
+                // Also update count to ensure sync
+                setReservedCount(myReserved.length);
             }
         } catch (error) {
             console.error("Erro ao carregar dados:", error);
@@ -111,7 +133,6 @@ const App: React.FC = () => {
     fetchBlocks();
   }, [currentScreen, selectedGrCod, selectedSgCod, currentUser, browsePage]);
 
-  const reservedCount = blocks.filter(b => b.status === 'progress' && (!b.lockedBy || b.lockedBy.userId === currentUser?.id)).length;
   
   const handleCategorySelect = (categoryLabel: string, dbId: number) => {
     setSelectedCategoryLabel(categoryLabel);
@@ -137,6 +158,7 @@ const App: React.FC = () => {
               lockedBy: { userId: currentUser.id, userName: currentUser.name, timestamp: new Date().toISOString() } 
           } : b
         ));
+        refreshReservedCount(); // Update badge immediately
     } else {
         alert(res.message || 'Erro ao reservar.');
     }
@@ -218,7 +240,7 @@ const App: React.FC = () => {
             page={browsePage}
             onPageChange={handlePageChange}
         />;
-      case 'reserved': return <ReservedScreen onNavigate={setCurrentScreen} blocks={blocks} onStartBlock={handleStartBlock} currentUser={currentUser} />;
+      case 'reserved': return <ReservedScreen onNavigate={setCurrentScreen} blocks={blocks} onStartBlock={handleStartBlock} currentUser={currentUser} onRefreshCount={refreshReservedCount} />;
       case 'history': return <HistoryScreen />;
       case 'analytics': return <AnalyticsScreen onNavigate={setCurrentScreen} />;
       case 'mission_detail': return <MissionDetailScreen blockData={activeBlock} onBack={() => { setCurrentScreen('reserved'); }} currentUser={currentUser} />;
