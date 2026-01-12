@@ -6,7 +6,7 @@ import { ApiCategory } from '../services/api';
 
 interface DashboardScreenProps {
   onNavigate: (screen: Screen) => void;
-  onCategorySelect: (category: string) => void;
+  onCategorySelect: (category: string, dbId: number) => void;
   currentUser: User | null;
   onLogout?: () => void;
   categories: ApiCategory[]; 
@@ -221,7 +221,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
                     return (
                       <button 
                           key={idx} 
-                          onClick={() => onCategorySelect(cat.label)}
+                          onClick={() => onCategorySelect(cat.label, cat.db_id)}
                           className={`flex flex-col items-center justify-center aspect-square rounded-xl gap-1 group active:scale-95 hover:scale-105 hover:-translate-y-1 transition-all duration-300 ${
                           isActive 
                           ? 'bg-surface-dark border border-primary/50 shadow-[0_0_10px_rgba(19,127,236,0.15)]' 

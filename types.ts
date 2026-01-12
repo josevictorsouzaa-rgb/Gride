@@ -78,6 +78,11 @@ export interface Block {
   date: string;
   subcategory?: string; // Added for filtering
   items: any[];
+  lockedBy?: {
+    userId: string;
+    userName: string;
+    timestamp: string;
+  };
 }
 
 export interface Mission {
