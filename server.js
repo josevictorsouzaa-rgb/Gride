@@ -225,15 +225,17 @@ app.get('/categories', (req, res) => {
     });
 });
 
-// --- BLOCKS (CORRIGIDO PROBLEMA DE LISTAGEM VAZIA EM CATEGORIAS) ---
+// --- BLOCKS (CORRIGIDO FILTRO POR CATEGORIA E SUBGRUPO) ---
 app.get('/blocks', (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 100;
     const search = req.query.search || '';
     
-    // Tratamento dos IDs para string limpa para comparação robusta no banco
-    const gr_cod = req.query.gr_cod ? String(req.query.gr_cod).trim() : null;
-    const sg_cod = req.query.sg_cod ? String(req.query.sg_cod).trim() : null;
+    // CORREÇÃO: Forçar conversão para Inteiro (parseInt) se o valor existir.
+    // Isso evita passar strings ("1") para campos numéricos, o que pode falhar no driver.
+    const gr_cod = req.query.gr_cod && !isNaN(parseInt(req.query.gr_cod)) ? parseInt(req.query.gr_cod) : null;
+    const sg_cod = req.query.sg_cod && !isNaN(parseInt(req.query.sg_cod)) ? parseInt(req.query.sg_cod) : null;
+    
     const daily_meta = req.query.daily_meta === 'true';
     const location = req.query.location || '';
 
@@ -267,10 +269,15 @@ app.get('/blocks', (req, res) => {
 
                 if (search) { sql += ` AND (P.PRO_DESCRI CONTAINING ? OR P.PRO_NRFABRICANTE CONTAINING ?)`; params.push(search); params.push(search); }
                 
-                // CORREÇÃO CRÍTICA: TRIM para garantir match entre string e campos CHAR/VARCHAR do banco
-                if (gr_cod) { sql += ` AND TRIM(P.GR_COD) = ?`; params.push(gr_cod); }
-                if (sg_cod) { sql += ` AND TRIM(P.SG_COD) = ?`; params.push(sg_cod); }
+                // CORREÇÃO CRÍTICA:
+                // 1. Usamos o parâmetro Inteiro convertido acima (gr_cod/sg_cod).
+                // 2. Usamos TRIM() no campo do banco para garantir que espaços (padding) não quebrem a comparação.
+                // O Firebird consegue comparar TRIM(CAMPO) = INTEIRO com sucesso.
+                if (gr_cod !== null) { sql += ` AND TRIM(P.GR_COD) = ?`; params.push(gr_cod); }
+                if (sg_cod !== null) { sql += ` AND TRIM(P.SG_COD) = ?`; params.push(sg_cod); }
                 
+                if (location) { sql += ` AND P.LOCALIZACAO STARTING WITH ?`; params.push(location); }
+
                 sql += ` ORDER BY P.PRO_COD_SIMILAR, P.PRO_COD`;
 
                 db.query(sql, params, (err, products) => {

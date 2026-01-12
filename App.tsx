@@ -159,13 +159,15 @@ const App: React.FC = () => {
   
   const handleCategorySelect = (categoryLabel: string, dbId: number) => {
     setSelectedCategoryLabel(categoryLabel);
-    setSelectedGrCod(dbId);
+    // FORCE NUMBER CAST to prevent string parameters from DB breaking SQL
+    setSelectedGrCod(Number(dbId));
     setCurrentScreen('subcategories');
   };
 
   const handleSegmentSelect = (segmentLabel: string, sgId: number) => {
     setSegmentFilter(segmentLabel);
-    setSelectedSgCod(sgId);
+    // FORCE NUMBER CAST to prevent string parameters from DB breaking SQL
+    setSelectedSgCod(Number(sgId));
     setBrowsePage(1); 
     setCurrentScreen('filtered_list');
   };
