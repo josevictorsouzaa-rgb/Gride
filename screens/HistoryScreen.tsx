@@ -5,6 +5,12 @@ import { HistoryFilterModal } from '../components/Modals';
 import { ItemDetailModal } from '../components/ItemDetailModal';
 import { api } from '../services/api';
 import { AutoPartsLoader } from '../components/AutoPartsLoader';
+import { User } from '../types';
+
+interface HistoryScreenProps {
+    currentUser?: User | null;
+    onRefreshCount?: () => void;
+}
 
 const getTimeAgo = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -23,7 +29,7 @@ const getInitials = (name: string) => {
     return name ? name.substring(0, 2).toUpperCase() : '??';
 };
 
-export const HistoryScreen: React.FC = () => {
+export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onRefreshCount }) => {
   const [historyBlocks, setHistoryBlocks] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -150,6 +156,22 @@ export const HistoryScreen: React.FC = () => {
     );
   };
 
+  const handleReReserve = async (blockId: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!currentUser) return alert("Você precisa estar logado para reservar.");
+
+      if (confirm(`Deseja reservar novamente o bloco ${blockId} para contagem?`)) {
+          // O blockId aqui é a chave lógica (ex: SYL1402) que funciona como ID do bloco
+          const res = await api.reserveBlock(blockId, currentUser);
+          if (res.success) {
+              alert(`Bloco ${blockId} reservado com sucesso!`);
+              if(onRefreshCount) onRefreshCount();
+          } else {
+              alert(res.message || "Não foi possível reservar o bloco. Verifique se há pendências.");
+          }
+      }
+  };
+
   if (loading) {
       return <AutoPartsLoader message="Carregando Histórico..." />;
   }
@@ -221,42 +243,45 @@ export const HistoryScreen: React.FC = () => {
            const visibleItems = isExpanded ? block.items : block.items.slice(0, 3);
            const hiddenCount = block.items.length - 3;
            const hasDivergence = block.status === 'divergencia';
+           const formattedDate = new Date(block.latestDate).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
            return (
-             <div key={block.id} className="flex flex-col shadow-lg shadow-black/20 h-full group bg-[#182335] dark:bg-surface-dark rounded-xl border border-gray-700 dark:border-card-border overflow-hidden">
-                {/* CARD HEADER - Dark Style with Subtle Gradient */}
-                <div className="p-4 border-b border-gray-700 dark:border-white/5 flex justify-between items-start bg-gradient-to-b from-white/5 to-transparent">
+             <div key={block.id} className="flex flex-col shadow-lg shadow-black/20 h-full group bg-[#182335] dark:bg-surface-dark rounded-xl border border-white/5 overflow-hidden transition-all hover:border-white/10">
+                {/* CARD HEADER - SOLID & PROFESSIONAL */}
+                <div className="p-4 border-b border-white/5 flex justify-between items-start bg-[#182335] dark:bg-surface-dark">
                     <div>
-                        <h3 className="text-lg font-black text-white leading-tight drop-shadow-sm">
+                        <h3 className="text-xl font-black text-white leading-tight flex items-center gap-2">
+                            <Icon name="inventory_2" size={20} className="text-primary opacity-80" />
                             {block.parentRef}
                         </h3>
-                        <div className="flex items-center gap-1 text-xs text-gray-400 mt-1 font-medium">
-                            <Icon name="place" size={14} className="text-gray-500" />
-                            {block.location}
+                        <div className="flex items-center gap-2 text-xs text-gray-400 mt-1 font-medium">
+                            <span className="text-white/60">{formattedDate}</span>
+                            <span className="w-1 h-1 rounded-full bg-gray-600"></span>
+                            <span>{block.timeAgo}</span>
                         </div>
                     </div>
                     
-                    <div className="flex flex-col items-end gap-1">
-                        <div className="flex items-center gap-1.5 px-2 py-1 bg-blue-900/40 rounded border border-blue-800/50">
-                            <Icon name="calendar_today" size={12} className="text-blue-400" />
-                            <span className="text-[10px] font-bold text-blue-100 uppercase">
-                                {new Date(block.latestDate).toLocaleDateString('pt-BR')}
-                            </span>
-                        </div>
+                    <div className="flex items-center gap-2">
                         {hasDivergence && (
-                            <span className="text-[9px] font-bold text-orange-400 flex items-center gap-1 bg-orange-900/20 px-2 py-0.5 rounded border border-orange-900/30">
-                                <Icon name="warning" size={10} />
+                            <span className="text-[9px] font-bold text-orange-400 flex items-center gap-1 bg-orange-900/20 px-2 py-1 rounded border border-orange-900/30">
+                                <Icon name="warning" size={12} />
                                 Divergência
                             </span>
                         )}
+                        
+                        <button 
+                            onClick={(e) => handleReReserve(block.id, e)}
+                            className="flex items-center justify-center p-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-900/20 transition-all active:scale-95"
+                            title="Re-reservar Bloco"
+                        >
+                            <Icon name="bookmark_add" size={20} />
+                        </button>
                     </div>
                 </div>
 
                 {/* CARD BODY - ITEMS LIST */}
                 <div className="flex-col divide-y divide-gray-700 dark:divide-white/5">
                       {visibleItems.map((item: any) => {
-                        const timeAgo = getTimeAgo(item.countedAt);
-                        const isRecent = timeAgo.includes('Agora') || timeAgo.includes('min') || timeAgo.includes('h ');
                         const isIssue = item.status === 'not_located' || item.status === 'divergence_info';
 
                         return (
@@ -271,7 +296,7 @@ export const HistoryScreen: React.FC = () => {
                             {/* Line 2: Details Row (SKU, Brand, Qty) */}
                             <div className="flex items-center justify-between mb-4">
                                 <div className="flex items-center gap-2">
-                                    <span className="px-2 py-1 rounded text-[11px] font-bold bg-slate-700 text-white border border-slate-600 font-mono tracking-wide shadow-sm">
+                                    <span className="px-2 py-1 rounded text-[12px] font-bold bg-slate-700 text-white border border-slate-600 font-mono tracking-wide shadow-sm">
                                         {item.ref}
                                     </span>
                                     <span className="text-[10px] text-gray-400 font-bold uppercase border-l border-gray-600 pl-2">
@@ -286,29 +311,19 @@ export const HistoryScreen: React.FC = () => {
                                 </div>
                             </div>
 
-                            {/* Line 3: History Info (Avatar, Quem, Quando, Onde) */}
-                            <div className="pt-2 border-t border-gray-700/50 flex justify-between items-center text-[10px]">
-                                <div className="flex items-center gap-3">
-                                    {/* Avatar & User */}
-                                    <div className="flex items-center gap-1.5">
-                                        <div className="size-5 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-[8px] shadow-sm ring-1 ring-white/10">
-                                            {getInitials(item.countedBy)}
-                                        </div>
-                                        <span className="text-gray-300 font-medium">{item.countedBy.split(' ')[0]}</span>
+                            {/* Line 3: History Info (Avatar, Quem, Loc) */}
+                            <div className="pt-3 border-t border-gray-700/50 flex justify-between items-center text-[10px]">
+                                <div className="flex items-center gap-2">
+                                    <div className="size-5 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-[8px] shadow-sm ring-1 ring-white/10">
+                                        {getInitials(item.countedBy)}
                                     </div>
-                                    
-                                    <span className="text-gray-600">•</span>
-                                    
-                                    {/* Time */}
-                                    <span className={`font-medium ${isRecent ? 'text-primary' : 'text-gray-500'}`}>
-                                        {timeAgo}
-                                    </span>
+                                    <span className="text-gray-300 font-medium">{item.countedBy.split(' ')[0]}</span>
                                 </div>
 
-                                {/* Location Tag */}
-                                <div className="flex items-center gap-1 bg-white/5 px-2 py-1 rounded-md border border-white/5">
+                                {/* Location Tag - Dark Grey Badge */}
+                                <div className="flex items-center gap-1 bg-gray-800 text-gray-300 px-2 py-1 rounded-md border border-gray-700 font-mono tracking-tighter">
                                     <Icon name="place" size={12} className="text-gray-500" />
-                                    <span className="text-gray-300 font-medium">{item.location}</span>
+                                    <span>{item.location}</span>
                                 </div>
                             </div>
                         </div>

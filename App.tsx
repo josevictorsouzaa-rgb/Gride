@@ -266,7 +266,7 @@ const App: React.FC = () => {
             onPageChange={handlePageChange}
         />;
       case 'reserved': return <ReservedScreen onNavigate={setCurrentScreen} blocks={blocks} onStartBlock={handleStartBlock} currentUser={currentUser} onRefreshCount={refreshGlobalCounts} />;
-      case 'history': return <HistoryScreen />;
+      case 'history': return <HistoryScreen currentUser={currentUser} onRefreshCount={refreshGlobalCounts} />;
       case 'analytics': return <AnalyticsScreen onNavigate={setCurrentScreen} />;
       case 'mission_detail': return <MissionDetailScreen blockData={activeBlock} onBack={() => { setCurrentScreen('reserved'); }} currentUser={currentUser} />;
       case 'subcategories': return <SubcategoriesScreen categoryLabel={selectedCategoryLabel || ''} categories={categories} onBack={() => setCurrentScreen('dashboard')} onSelectSegment={handleSegmentSelect} />;
