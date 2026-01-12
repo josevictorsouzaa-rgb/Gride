@@ -52,9 +52,14 @@ export const ListScreen: React.FC<ListScreenProps> = ({
   const [searchText, setSearchText] = useState('');
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
 
-  // Scroll to top on page change
+  // Scroll to top on page change targeting the main container
   useEffect(() => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    const scrollContainer = document.getElementById('main-scroll-container');
+    if (scrollContainer) {
+      scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   }, [page]);
 
   const toggleBlock = (id: number, e: React.MouseEvent) => {
