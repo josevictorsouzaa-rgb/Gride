@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Icon } from '../components/Icon';
 import { Screen, Block } from '../types';
 import { ItemDetailModal } from '../components/ItemDetailModal';
@@ -51,6 +51,11 @@ export const ListScreen: React.FC<ListScreenProps> = ({
   
   const [searchText, setSearchText] = useState('');
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
+
+  // Scroll to top on page change
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [page]);
 
   const toggleBlock = (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
