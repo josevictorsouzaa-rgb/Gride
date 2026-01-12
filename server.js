@@ -293,7 +293,8 @@ app.get('/reserved-blocks/:userId', (req, res) => {
             const progressMap = new Map(); 
 
             reservations.forEach(r => {
-                const bId = safeString(r.BLOCK_ID);
+                // IMPORTANT: TRIM HERE to match PRO_COD/PRO_COD_SIMILAR correctly
+                const bId = safeString(r.BLOCK_ID).trim();
                 blockIds.push(bId);
                 lockMap.set(bId, { userId: safeString(r.USER_ID), userName: safeString(r.USER_NAME), timestamp: r.RESERVED_AT });
                 
@@ -303,7 +304,7 @@ app.get('/reserved-blocks/:userId', (req, res) => {
                         const savedItems = JSON.parse(jsonStr);
                         if (Array.isArray(savedItems)) {
                             savedItems.forEach(item => {
-                                // FIX: Rigorous trimming for progress persistence
+                                // IMPORTANT: TRIM HERE to match PRODUCT REFS correctly
                                 const cleanRef = String(item.ref).trim();
                                 progressMap.set(`${bId}-${cleanRef}`, item);
                             });
@@ -319,13 +320,13 @@ app.get('/reserved-blocks/:userId', (req, res) => {
                 const treatmentSet = new Set();
                 if(treatments) treatments.forEach(t => treatmentSet.add(safeString(t.SKU).trim()));
 
-                const sql = `SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, P.MAR_COD, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE FROM PRODUTOS P WHERE P.PRO_ATIVO = 'S' AND (P.PRO_COD_SIMILAR IN (${idsList}) OR (P.PRO_COD_SIMILAR IS NULL AND P.PRO_COD IN (${idsList})))`;
+                const sql = `SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, P.MAR_COD, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE FROM PRODUTOS P WHERE P.PRO_ATIVO = 'S' AND (TRIM(P.PRO_COD_SIMILAR) IN (${idsList}) OR (P.PRO_COD_SIMILAR IS NULL AND TRIM(P.PRO_COD) IN (${idsList})))`;
                 db.query(sql, [], (err, products) => {
                     db.detach();
                     if (err) return res.status(500).json({ error: err.message });
                     const groups = new Map();
                     products.forEach(p => {
-                        const similarId = p.PRO_COD_SIMILAR ? safeString(p.PRO_COD_SIMILAR) : safeString(p.PRO_COD);
+                        const similarId = p.PRO_COD_SIMILAR ? safeString(p.PRO_COD_SIMILAR).trim() : safeString(p.PRO_COD).trim();
                         // FIX: Rigorous trimming for database SKU match
                         const sku = safeString(p.PRO_NRFABRICANTE).trim();
                         
@@ -334,7 +335,7 @@ app.get('/reserved-blocks/:userId', (req, res) => {
                         
                         if (!groups.has(similarId)) groups.set(similarId, []);
                         groups.get(similarId).push({
-                            id: safeString(p.PRO_COD), 
+                            id: safeString(p.PRO_COD).trim(), 
                             db_pro_cod: p.PRO_COD, 
                             name: safeString(p.PRO_DESCRI), 
                             ref: sku, 

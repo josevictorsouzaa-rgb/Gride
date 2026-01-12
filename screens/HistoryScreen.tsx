@@ -165,14 +165,15 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
 
       if (confirm(`Deseja re-reservar o bloco ${blockId}?`)) {
           setReservingId(blockId);
-          // O fluxo agora é controlado pelo App.tsx via prop onReserve
-          // Isso garante atualização de badge e navegação na ordem correta
+          // O fluxo agora é: App.tsx processa a reserva e atualiza contadores -> Retorna sucesso -> HistoryScreen navega
           const success = await onReserve(blockId);
           
-          if (!success) {
+          if (success) {
+              setReservingId(null);
+              onNavigate('reserved');
+          } else {
               setReservingId(null);
           }
-          // Se success for true, o componente será desmontado pela navegação
       }
   };
 
@@ -247,20 +248,20 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
            const visibleItems = isExpanded ? block.items : block.items.slice(0, 3);
            const hiddenCount = block.items.length - 3;
            const hasDivergence = block.status === 'divergencia';
+           
+           // Formato: DD/MM/AAAA HH:mm (sem virgula)
            const formattedDate = new Date(block.latestDate).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(',', '');
            const isReserving = reservingId === block.id;
 
            return (
              <div key={block.id} className="flex flex-col shadow-lg shadow-black/20 h-full group bg-[#182335] dark:bg-surface-dark rounded-xl border border-white/5 overflow-hidden transition-all hover:border-white/10">
-                {/* CARD HEADER - REESTRUTURADO CRONOLOGICAMENTE */}
+                {/* CARD HEADER - CRONOLOGIA AJUSTADA */}
                 <div className="p-4 border-b border-white/5 bg-[#182335] dark:bg-surface-dark relative">
                     <div className="flex justify-between items-start">
                         {/* Esquerda: Identificação do Bloco */}
                         <div className="flex-1 pr-2">
-                            <div className="inline-block bg-primary/10 border border-primary/20 rounded px-2 py-1 mb-2">
-                                <h3 className="text-lg font-black text-white leading-tight flex items-center gap-2">
-                                    {block.parentRef}
-                                </h3>
+                            <div className="bg-primary/10 border border-primary/20 text-primary px-2 py-1 rounded font-black inline-block mb-2 text-sm">
+                                {block.parentRef}
                             </div>
                             
                             {hasDivergence && (
