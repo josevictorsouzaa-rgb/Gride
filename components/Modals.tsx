@@ -22,7 +22,7 @@ interface EntryModalProps extends ModalProps {
     quantity: number;
     avatar?: string;
   } | null;
-  onConfirm: (quantity: number, status?: 'counted' | 'not_located' | 'divergence_info', divergenceReason?: string) => void;
+  onConfirm: (quantity: number, status?: 'counted' | 'not_located' | 'issue', divergenceReason?: string) => void;
 }
 
 interface ConfirmationModalProps extends ModalProps {
@@ -65,7 +65,7 @@ interface HistoryFilterModalProps extends ModalProps {
   onClear: () => void;
 }
 
-// --- ENTRY MODAL (REFORMULADO) ---
+// --- ENTRY MODAL (REFORMULADO - CENTRALIZADO E COM FLUXOS) ---
 
 export const EntryModal: React.FC<EntryModalProps> = ({ 
   isOpen, 
@@ -79,8 +79,8 @@ export const EntryModal: React.FC<EntryModalProps> = ({
   lastCountInfo, 
   onConfirm 
 }) => {
-  // Estado Modo Contagem vs Divergência
-  const [mode, setMode] = useState<'counting' | 'divergence'>('counting');
+  // Estado Modo: 'counting' (padrão + ajuste leve) ou 'blocking' (problema grave)
+  const [mode, setMode] = useState<'counting' | 'blocking'>('counting');
   
   // Estados Contagem
   const [quantity, setQuantity] = useState(systemQuantity);
@@ -88,15 +88,33 @@ export const EntryModal: React.FC<EntryModalProps> = ({
   const [locEstante, setLocEstante] = useState('');
   const [locPrateleira, setLocPrateleira] = useState('');
   
-  // Estados Divergência
-  const [divergenceReason, setDivergenceReason] = useState('');
+  // Estado Ajuste Leve (Dentro de Contagem)
+  const [isAdjustment, setIsAdjustment] = useState(false);
+  const [adjustmentReason, setAdjustmentReason] = useState('');
+
+  // Estados Bloqueio (Não contagem)
+  const [blockingReason, setBlockingReason] = useState('');
+  const [blockingType, setBlockingType] = useState<'not_located' | 'registration_error'>('not_located');
+
+  // Bloquear Scroll do Body ao abrir
+  useEffect(() => {
+    if (isOpen) {
+        document.body.style.overflow = 'hidden';
+    } else {
+        document.body.style.overflow = 'unset';
+    }
+    return () => { document.body.style.overflow = 'unset'; };
+  }, [isOpen]);
 
   // Reset ao abrir
   useEffect(() => {
     if (isOpen) {
       setMode('counting');
       setQuantity(systemQuantity || 0); // Traz valor do sistema
-      setDivergenceReason('');
+      setIsAdjustment(false);
+      setAdjustmentReason('');
+      setBlockingReason('');
+      setBlockingType('not_located');
       
       // Se já tiver um scan salvo (da tela pai), preenche
       if (scannedLocation) {
@@ -117,7 +135,6 @@ export const EntryModal: React.FC<EntryModalProps> = ({
           setLocEstante(parts[2]);
           setLocPrateleira(parts[3]);
       } else {
-          // Fallback se o formato for diferente, joga tudo no primeiro ou alerta
           setLocGalpao('?');
           setLocEstante('?');
           setLocPrateleira('?');
@@ -126,30 +143,39 @@ export const EntryModal: React.FC<EntryModalProps> = ({
 
   if (!isOpen) return null;
 
+  // Fluxo 1: Confirmar Contagem (Com ou sem ajuste leve)
   const handleConfirmCount = () => {
-      // 1. Validação de Scan Obrigatório
+      // Validação de Scan Obrigatório para CONTAR
       if (!locGalpao || !locEstante || !locPrateleira) {
-          alert("É obrigatório escanear a localização antes de confirmar.");
+          alert("É obrigatório escanear a localização para validar a contagem.");
           return;
       }
 
-      // 2. Validação de Quantidade Igual
-      if (quantity === systemQuantity) {
-          const confirmSame = window.confirm("A quantidade contada é exatamente igual à do sistema. Confirma?");
+      // Validação Quantidade Igual (apenas se não for ajuste)
+      if (quantity === systemQuantity && !isAdjustment) {
+          const confirmSame = window.confirm("A quantidade contada é igual à do sistema. Confirma?");
           if (!confirmSame) return;
       }
 
-      onConfirm(quantity, 'counted');
+      // Se marcou ajuste, obriga texto
+      if (isAdjustment && adjustmentReason.trim().length < 5) {
+          alert("Por favor, descreva o motivo do ajuste/erro de cadastro.");
+          return;
+      }
+
+      // Envia como 'counted'. Se tiver adjustmentReason, o backend/tela pai trata como divergência leve.
+      onConfirm(quantity, 'counted', isAdjustment ? adjustmentReason : undefined);
       onClose();
   };
 
-  const handleReportDivergence = () => {
-      // Validação Texto Mínimo 15 chars
-      if (divergenceReason.trim().length < 15) {
-          alert("A justificativa deve ter no mínimo 15 caracteres.");
+  // Fluxo 2: Reportar Problema Crítico (Bloqueio)
+  const handleReportBlocking = () => {
+      if (blockingReason.trim().length < 10) {
+          alert("Descreva detalhadamente o problema (mínimo 10 caracteres).");
           return;
       }
-      onConfirm(quantity, 'divergence_info', divergenceReason);
+      // Envia como 'not_located' ou 'issue' e quantidade 0 (ou ignorada)
+      onConfirm(0, blockingType === 'not_located' ? 'not_located' : 'issue', blockingReason);
       onClose();
   };
 
@@ -157,11 +183,14 @@ export const EntryModal: React.FC<EntryModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-md bg-white dark:bg-surface-dark rounded-2xl shadow-xl overflow-hidden animate-scale-up flex flex-col max-h-[90vh]">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity" onClick={onClose} />
+      
+      {/* Modal Card - Centralized */}
+      <div className="relative z-10 w-full max-w-md bg-white dark:bg-surface-dark rounded-2xl shadow-2xl overflow-hidden animate-scale-up flex flex-col max-h-[90vh]">
         
         {/* Header Produto */}
-        <div className="bg-[#182335] p-4 text-white shrink-0">
+        <div className="bg-[#182335] p-4 text-white shrink-0 shadow-md z-20">
           <div className="flex justify-between items-start">
               <div>
                 <h3 className="text-lg font-bold leading-tight line-clamp-2">{itemName || 'Item Desconhecido'}</h3>
@@ -171,11 +200,11 @@ export const EntryModal: React.FC<EntryModalProps> = ({
                     <span className="font-bold uppercase">{itemBrand}</span>
                 </div>
               </div>
-              <button onClick={onClose} className="text-white/50 hover:text-white"><Icon name="close" /></button>
+              <button onClick={onClose} className="text-white/50 hover:text-white p-1"><Icon name="close" /></button>
           </div>
         </div>
 
-        <div className="overflow-y-auto p-5 space-y-5">
+        <div className="overflow-y-auto p-5 space-y-5 bg-white dark:bg-surface-dark">
            
            {/* Info Cards: Sistema & Última Contagem */}
            <div className="flex gap-3">
@@ -202,19 +231,23 @@ export const EntryModal: React.FC<EntryModalProps> = ({
                    <div className="space-y-2">
                        <label className="text-xs font-bold text-gray-500 uppercase flex justify-between items-center">
                            Localização Física
-                           {!isLocationScanned && <span className="text-red-500 text-[10px]">Obrigatório Escanear</span>}
+                           {!isLocationScanned ? (
+                               <span className="text-red-500 text-[10px] bg-red-50 dark:bg-red-900/20 px-1.5 py-0.5 rounded">Scan Obrigatório</span>
+                           ) : (
+                               <span className="text-green-500 text-[10px] flex items-center gap-1"><Icon name="check_circle" size={12} /> Confirmada</span>
+                           )}
                        </label>
                        
                        <div className="flex gap-2">
                            <div className="flex-1 flex gap-2">
                                <div className="flex-1">
-                                   <input placeholder="Galpão" readOnly value={locGalpao} className="w-full text-center text-xs font-bold p-3 bg-gray-100 dark:bg-black/40 rounded-lg border-none text-gray-500" />
+                                   <input placeholder="G" readOnly value={locGalpao} className="w-full text-center text-sm font-bold p-3 bg-gray-100 dark:bg-black/40 rounded-lg border border-gray-200 dark:border-white/5 text-gray-700 dark:text-white" />
                                </div>
                                <div className="flex-1">
-                                   <input placeholder="Estante" readOnly value={locEstante} className="w-full text-center text-xs font-bold p-3 bg-gray-100 dark:bg-black/40 rounded-lg border-none text-gray-500" />
+                                   <input placeholder="E" readOnly value={locEstante} className="w-full text-center text-sm font-bold p-3 bg-gray-100 dark:bg-black/40 rounded-lg border border-gray-200 dark:border-white/5 text-gray-700 dark:text-white" />
                                </div>
                                <div className="flex-1">
-                                   <input placeholder="Prat." readOnly value={locPrateleira} className="w-full text-center text-xs font-bold p-3 bg-gray-100 dark:bg-black/40 rounded-lg border-none text-gray-500" />
+                                   <input placeholder="P" readOnly value={locPrateleira} className="w-full text-center text-sm font-bold p-3 bg-gray-100 dark:bg-black/40 rounded-lg border border-gray-200 dark:border-white/5 text-gray-700 dark:text-white" />
                                </div>
                            </div>
                            
@@ -223,7 +256,7 @@ export const EntryModal: React.FC<EntryModalProps> = ({
                              className={`px-4 rounded-xl flex items-center justify-center transition-all shadow-sm ${
                                  isLocationScanned 
                                  ? 'bg-green-100 text-green-700 border border-green-200' 
-                                 : 'bg-primary text-white hover:bg-primary-dark animate-pulse'
+                                 : 'bg-primary text-white hover:bg-primary-dark animate-pulse shadow-primary/30'
                              }`}
                            >
                                <Icon name="qr_code_scanner" size={24} />
@@ -237,7 +270,7 @@ export const EntryModal: React.FC<EntryModalProps> = ({
                       <div className="flex items-center gap-6">
                          <button 
                             onClick={() => setQuantity(Math.max(0, quantity - 1))} 
-                            className="size-14 rounded-2xl bg-gray-100 dark:bg-white/10 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-white/20 active:scale-95 transition-all text-gray-600 dark:text-white shadow-sm"
+                            className="size-14 rounded-2xl bg-gray-100 dark:bg-white/10 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-white/20 active:scale-95 transition-all text-gray-600 dark:text-white shadow-sm border border-gray-200 dark:border-white/5"
                          >
                             <Icon name="remove" size={28} />
                          </button>
@@ -249,43 +282,91 @@ export const EntryModal: React.FC<EntryModalProps> = ({
                                 onChange={(e) => setQuantity(Number(e.target.value))}
                                 className="w-32 text-center text-5xl font-black bg-transparent border-none focus:ring-0 p-0 text-gray-900 dark:text-white"
                              />
-                             <div className="absolute -bottom-4 left-0 right-0 h-1 bg-primary/20 rounded-full overflow-hidden">
+                             <div className="absolute -bottom-4 left-0 right-0 h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
                                 <div className="h-full bg-primary w-1/2 mx-auto rounded-full" />
                              </div>
                          </div>
 
                          <button 
                             onClick={() => setQuantity(quantity + 1)} 
-                            className="size-14 rounded-2xl bg-gray-100 dark:bg-white/10 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-white/20 active:scale-95 transition-all text-gray-600 dark:text-white shadow-sm"
+                            className="size-14 rounded-2xl bg-gray-100 dark:bg-white/10 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-white/20 active:scale-95 transition-all text-gray-600 dark:text-white shadow-sm border border-gray-200 dark:border-white/5"
                          >
                             <Icon name="add" size={28} />
                          </button>
                       </div>
                    </div>
+
+                   {/* Toggle Divergência Leve (Ajuste) */}
+                   <div className="pt-2">
+                       <button 
+                         onClick={() => setIsAdjustment(!isAdjustment)}
+                         className={`flex items-center gap-2 text-xs font-bold transition-colors ${isAdjustment ? 'text-orange-500' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'}`}
+                       >
+                           <Icon name={isAdjustment ? "check_box" : "check_box_outline_blank"} size={18} />
+                           Informar erro de cadastro ou descrição (Item contado)
+                       </button>
+                       
+                       {isAdjustment && (
+                           <textarea 
+                               autoFocus
+                               value={adjustmentReason}
+                               onChange={(e) => setAdjustmentReason(e.target.value)}
+                               className="w-full mt-2 p-3 rounded-xl bg-orange-50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-800 text-sm resize-none focus:ring-2 focus:ring-orange-500 outline-none animate-slide-up"
+                               placeholder="Ex: Descrição incorreta, código na caixa diferente, embalagem danificada..."
+                               rows={2}
+                           />
+                       )}
+                   </div>
                </>
            ) : (
-               /* Modo Divergência */
+               /* Modo Problema Crítico (Bloqueio) */
                <div className="animate-fade-in space-y-4">
-                   <div className="p-4 bg-orange-50 dark:bg-orange-900/10 rounded-xl border border-orange-100 dark:border-orange-900/30 flex items-start gap-3">
-                       <Icon name="report_problem" className="text-orange-500 mt-1" />
-                       <p className="text-xs text-orange-800 dark:text-orange-200 leading-relaxed">
-                           O item será enviado para <strong>Tratamento</strong>. Descreva detalhadamente o problema encontrado.
+                   <div className="p-4 bg-red-50 dark:bg-red-900/10 rounded-xl border border-red-100 dark:border-red-900/30 flex items-start gap-3">
+                       <Icon name="block" className="text-red-500 mt-1" />
+                       <p className="text-xs text-red-800 dark:text-red-200 leading-relaxed">
+                           A contagem deste item será <strong>cancelada/zerada</strong> e o item será enviado para tratamento de divergência grave.
                        </p>
                    </div>
                    
-                   <div>
-                       <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">
-                           Motivo da Divergência <span className="text-red-500">*</span>
-                       </label>
-                       <textarea 
-                           value={divergenceReason}
-                           onChange={(e) => setDivergenceReason(e.target.value)}
-                           className="w-full h-32 p-4 rounded-xl bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 resize-none focus:ring-2 focus:ring-orange-500 outline-none text-sm"
-                           placeholder="Ex: Código físico diferente, embalagem violada, localização incorreta..."
-                       />
-                       <p className={`text-[10px] text-right mt-1 font-bold ${divergenceReason.length < 15 ? 'text-red-500' : 'text-green-500'}`}>
-                           {divergenceReason.length} / 15 caracteres mínimos
-                       </p>
+                   <div className="space-y-3">
+                       <label className="text-xs font-bold text-gray-500 uppercase block">Tipo de Problema</label>
+                       <div className="flex gap-2">
+                           <button 
+                             onClick={() => setBlockingType('not_located')}
+                             className={`flex-1 py-3 px-2 rounded-lg border text-xs font-bold transition-all ${
+                                 blockingType === 'not_located' 
+                                 ? 'bg-gray-800 text-white border-gray-800 dark:bg-white dark:text-black' 
+                                 : 'bg-white dark:bg-transparent border-gray-200 dark:border-gray-700 text-gray-500'
+                             }`}
+                           >
+                               Não Localizado
+                           </button>
+                           <button 
+                             onClick={() => setBlockingType('registration_error')}
+                             className={`flex-1 py-3 px-2 rounded-lg border text-xs font-bold transition-all ${
+                                 blockingType === 'registration_error' 
+                                 ? 'bg-gray-800 text-white border-gray-800 dark:bg-white dark:text-black' 
+                                 : 'bg-white dark:bg-transparent border-gray-200 dark:border-gray-700 text-gray-500'
+                             }`}
+                           >
+                               Erro Crítico
+                           </button>
+                       </div>
+
+                       <div>
+                           <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">
+                               Descrição do Ocorrido <span className="text-red-500">*</span>
+                           </label>
+                           <textarea 
+                               value={blockingReason}
+                               onChange={(e) => setBlockingReason(e.target.value)}
+                               className="w-full h-28 p-4 rounded-xl bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 resize-none focus:ring-2 focus:ring-red-500 outline-none text-sm"
+                               placeholder={blockingType === 'not_located' ? "Onde procurou? Havia etiqueta?" : "Qual o erro grave?"}
+                           />
+                           <p className={`text-[10px] text-right mt-1 font-bold ${blockingReason.length < 10 ? 'text-red-500' : 'text-green-500'}`}>
+                               {blockingReason.length} / 10 caracteres
+                           </p>
+                       </div>
                    </div>
                </div>
            )}
@@ -295,40 +376,42 @@ export const EntryModal: React.FC<EntryModalProps> = ({
         {/* Footer Actions */}
         <div className="p-5 border-t border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-black/20 pb-safe">
             {mode === 'counting' ? (
-                <div className="flex gap-3">
+                <div className="flex items-center gap-3">
                     <button 
-                        onClick={() => setMode('divergence')}
-                        className="flex-1 py-4 rounded-xl border border-orange-200 dark:border-orange-900/50 text-orange-600 dark:text-orange-400 font-bold text-sm hover:bg-orange-50 dark:hover:bg-orange-900/10 transition-colors"
+                        onClick={() => setMode('blocking')}
+                        className="flex flex-col items-center justify-center w-20 py-2 rounded-xl text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors"
                     >
-                        Divergência
+                        <Icon name="report_problem" size={20} />
+                        <span className="text-[9px] font-bold mt-1 text-center leading-tight">Problema<br/>Crítico</span>
                     </button>
+                    
                     <button 
                         onClick={handleConfirmCount}
                         disabled={!isLocationScanned}
-                        className={`flex-[2] py-4 rounded-xl font-bold text-lg text-white shadow-lg transition-all flex items-center justify-center gap-2 ${
+                        className={`flex-1 h-14 rounded-xl font-bold text-lg text-white shadow-lg transition-all flex items-center justify-center gap-2 ${
                             isLocationScanned 
                             ? 'bg-primary hover:bg-primary-dark active:scale-[0.98]' 
                             : 'bg-gray-300 dark:bg-gray-700 cursor-not-allowed opacity-70'
                         }`}
                     >
-                        <Icon name="check_circle" />
-                        Confirmar
+                        <Icon name="check_circle" size={24} />
+                        Confirmar Contagem
                     </button>
                 </div>
             ) : (
                 <div className="flex gap-3">
                     <button 
                         onClick={() => setMode('counting')}
-                        className="flex-1 py-4 rounded-xl border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 font-bold text-sm hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
+                        className="flex-1 py-3 rounded-xl border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 font-bold text-sm hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
                     >
-                        Voltar
+                        Voltar para Contagem
                     </button>
                     <button 
-                        onClick={handleReportDivergence}
-                        className="flex-[2] py-4 rounded-xl bg-orange-500 text-white font-bold text-lg shadow-lg shadow-orange-500/20 hover:bg-orange-600 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                        onClick={handleReportBlocking}
+                        className="flex-[1.5] py-3 rounded-xl bg-red-600 text-white font-bold text-base shadow-lg shadow-red-600/20 hover:bg-red-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
                     >
                         <Icon name="send" />
-                        Reportar
+                        Reportar Problema
                     </button>
                 </div>
             )}

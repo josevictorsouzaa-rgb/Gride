@@ -86,17 +86,12 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
       }
   };
 
-  const handleConfirmCount = async (qty: number, status: 'counted' | 'not_located' | 'divergence_info', reason?: string) => {
+  const handleConfirmCount = async (qty: number, status: 'counted' | 'not_located' | 'issue', reason?: string) => {
     if (!selectedItem || activeBlockId === null) return;
 
     // SAVE TO API (BALLAST)
     if (currentUser) {
         // Encontrar o bloco para pegar a localização correta
-        // const currentBlock = localBlocks.find(b => b.id === activeBlockId); 
-        // Nota: A localização salva aqui pode ser a do sistema ou a ESCANEADA.
-        // O EntryModal não retorna a loc escaneada no callback, mas o fluxo pede para salvar a contagem.
-        // A loc escaneada serviu para validar a presença.
-        
         await api.saveCount({
             sku: selectedItem.ref,
             nome_produto: selectedItem.name,
@@ -119,7 +114,7 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                 if (item.ref === selectedItem.ref) { 
                     return {
                         ...item,
-                        status: status,
+                        status: status, // counted, not_located, issue
                         countedQty: qty,
                         divergenceReason: reason,
                         lastCount: {
@@ -272,25 +267,34 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
 
                         <div className="flex flex-col gap-3">
                             {block.items.map((item: any, idx) => {
-                                const isCounted = item.status !== 'pending';
+                                const isCounted = item.status === 'counted';
+                                const isIssue = item.status === 'not_located' || item.status === 'issue';
+                                const isProcessed = isCounted || isIssue;
+                                const hasDivergenceReason = !!item.divergenceReason;
                                 
                                 return (
                                 <div 
                                     key={idx}
                                     onClick={() => handleOpenDetails(item)}
                                     className={`relative rounded-xl p-4 border shadow-sm transition-all overflow-hidden ${
-                                        isCounted 
-                                          ? 'bg-green-50 dark:bg-[#064e3b]/30 border-green-200 dark:border-green-900/50' 
+                                        isProcessed 
+                                          ? isIssue 
+                                            ? 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-900/30' 
+                                            : hasDivergenceReason 
+                                              ? 'bg-orange-50 dark:bg-orange-900/10 border-orange-200 dark:border-orange-800'
+                                              : 'bg-green-50 dark:bg-[#064e3b]/30 border-green-200 dark:border-green-900/50' 
                                           : 'bg-white dark:bg-[#1e293b] border-gray-200 dark:border-[#334155]'
                                     }`}
                                 >
                                     <div className="flex items-start gap-4">
                                         <div className={`size-12 rounded-lg flex items-center justify-center shrink-0 border ${
-                                            isCounted
-                                              ? 'bg-green-100 dark:bg-green-900/40 text-green-600 border-green-200 dark:border-green-800'
+                                            isProcessed
+                                              ? isIssue
+                                                ? 'bg-red-100 dark:bg-red-900/40 text-red-600 border-red-200 dark:border-red-800'
+                                                : 'bg-green-100 dark:bg-green-900/40 text-green-600 border-green-200 dark:border-green-800'
                                               : 'bg-gray-100 dark:bg-[#334155] text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-600'
                                         }`}>
-                                            <Icon name={isCounted ? "check" : "inventory_2"} size={24} />
+                                            <Icon name={isProcessed ? (isIssue ? "warning" : "check") : "inventory_2"} size={24} />
                                         </div>
                                         
                                         <div className="flex-1 min-w-0">
@@ -328,23 +332,32 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                                             <span className="text-sm font-bold text-gray-800 dark:text-white">{block.location}</span>
                                         </div>
 
-                                        {isCounted ? (
+                                        {isProcessed ? (
                                             <div className="flex flex-col items-end">
-                                                <span className="text-[10px] font-bold text-green-600 uppercase mb-0.5">Qtd Contada</span>
-                                                <div className="flex items-center gap-2 px-3 py-1.5 bg-green-100 dark:bg-green-900/40 rounded-lg border border-green-200 dark:border-green-800">
-                                                    <span className="font-bold text-green-800 dark:text-green-300 text-sm">
-                                                        {item.countedQty} un
+                                                {isIssue ? (
+                                                    <span className="text-xs font-bold text-red-600 bg-red-100 dark:bg-red-900/40 px-2 py-1 rounded">
+                                                        Bloqueio/Diverg.
                                                     </span>
-                                                    <button 
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleOpenCount(block.id, item);
-                                                        }}
-                                                        className="size-6 rounded bg-green-200 dark:bg-green-800 flex items-center justify-center text-green-800 dark:text-green-100 hover:bg-green-300"
-                                                    >
-                                                        <Icon name="edit" size={14} />
-                                                    </button>
-                                                </div>
+                                                ) : (
+                                                    <>
+                                                        <span className="text-[10px] font-bold text-green-600 uppercase mb-0.5">Qtd Contada</span>
+                                                        <div className="flex items-center gap-2 px-3 py-1.5 bg-green-100 dark:bg-green-900/40 rounded-lg border border-green-200 dark:border-green-800">
+                                                            <span className="font-bold text-green-800 dark:text-green-300 text-sm">
+                                                                {item.countedQty} un
+                                                            </span>
+                                                            <button 
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleOpenCount(block.id, item);
+                                                                }}
+                                                                className="size-6 rounded bg-green-200 dark:bg-green-800 flex items-center justify-center text-green-800 dark:text-green-100 hover:bg-green-300"
+                                                            >
+                                                                <Icon name="edit" size={14} />
+                                                            </button>
+                                                        </div>
+                                                        {hasDivergenceReason && <span className="text-[9px] text-orange-500 font-bold mt-1">Com Ajuste</span>}
+                                                    </>
+                                                )}
                                             </div>
                                         ) : (
                                             <button 

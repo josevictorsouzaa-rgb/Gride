@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Icon } from '../components/Icon';
 import { EntryModal, DamageModal, ConfirmationModal } from '../components/Modals';
@@ -88,7 +89,10 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
     setShowEntry(true);
   };
 
-  const handleConfirmCount = async (quantity: number, status: 'counted' | 'not_located' | 'divergence_info' = 'counted', divergenceReason?: string) => {
+  const handleConfirmCount = async (quantity: number, status: 'counted' | 'not_located' | 'issue' = 'counted', divergenceReason?: string) => {
+    // Map 'issue' (from EntryModal) to 'divergence_info' (internal state)
+    const finalStatus = status === 'issue' ? 'divergence_info' : status;
+
     if (selectedItem) {
       
       // PERSISTÊNCIA NO BACKEND (NODE/FIREBIRD)
@@ -101,7 +105,7 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
           qtd_sistema: selectedItem.expectedQty,
           qtd_contada: quantity,
           localizacao: selectedItem.loc,
-          status: status,
+          status: finalStatus,
           divergencia_motivo: divergenceReason
         });
       }
@@ -111,7 +115,7 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
           ? { 
               ...item, 
               countedQty: quantity, 
-              status: status, 
+              status: finalStatus, 
               divergenceReason: divergenceReason,
               lastCount: {
                 user: currentUser?.name || 'Você',
