@@ -209,7 +209,8 @@ app.get('/blocks', (req, res) => {
                 )
             `;
             
-            const bufferLimit = limit * 5; 
+            // AUMENTO SIGNIFICATIVO DO BUFFER PARA GARANTIR BLOCOS COMPLETOS
+            const bufferLimit = limit * 20; 
             const params = [bufferLimit, skip];
 
             if (search) { sql += ` AND (P.PRO_DESCRI CONTAINING ? OR P.PRO_NRFABRICANTE CONTAINING ?)`; params.push(search); params.push(search); }
@@ -220,7 +221,10 @@ app.get('/blocks', (req, res) => {
             db.query(sql, params, (err, products) => {
                 db.detach();
                 if (err) return res.status(500).json({ error: err.message });
-                // (Logic reused from previous)
+                
+                // Verificar se a consulta atingiu o limite (o que pode significar corte de grupo)
+                const hitLimit = products.length >= bufferLimit;
+
                 const groups = new Map();
                 products.forEach(p => {
                     const similarId = p.PRO_COD_SIMILAR ? safeString(p.PRO_COD_SIMILAR) : safeString(p.PRO_COD);
@@ -236,6 +240,7 @@ app.get('/blocks', (req, res) => {
                         lastCount: null
                     });
                 });
+                
                 const blocks = [];
                 groups.forEach((items, key) => {
                     const blockId = key;
@@ -248,6 +253,13 @@ app.get('/blocks', (req, res) => {
                         lockedBy: isLocked ? { userId: isLocked.userId, userName: isLocked.userName, timestamp: isLocked.timestamp } : null
                     });
                 });
+
+                // Se atingiu o limite e temos blocos, descartamos o último bloco pois ele pode estar incompleto
+                // devido ao corte da query SQL no meio dos itens do grupo.
+                if (hitLimit && blocks.length > 1) {
+                    blocks.pop();
+                }
+
                 res.json(blocks.slice(0, limit));
             });
         });
