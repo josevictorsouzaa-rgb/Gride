@@ -136,7 +136,7 @@ const App: React.FC = () => {
                     await minDelay;
                 }
             } else if (currentScreen === 'reserved' && currentUser) {
-                // RESERVADOS - FETCH FRESCO GARANTIDO
+                // RESERVADOS
                 const [myReserved] = await Promise.all([
                     api.getReservedBlocks(currentUser.id),
                     minDelay
@@ -159,15 +159,13 @@ const App: React.FC = () => {
   
   const handleCategorySelect = (categoryLabel: string, dbId: number) => {
     setSelectedCategoryLabel(categoryLabel);
-    // FORCE NUMBER CAST to prevent string parameters from DB breaking SQL
-    setSelectedGrCod(Number(dbId));
+    setSelectedGrCod(dbId);
     setCurrentScreen('subcategories');
   };
 
   const handleSegmentSelect = (segmentLabel: string, sgId: number) => {
     setSegmentFilter(segmentLabel);
-    // FORCE NUMBER CAST to prevent string parameters from DB breaking SQL
-    setSelectedSgCod(Number(sgId));
+    setSelectedSgCod(sgId);
     setBrowsePage(1); 
     setCurrentScreen('filtered_list');
   };
@@ -176,7 +174,6 @@ const App: React.FC = () => {
     if (!currentUser) return;
     const res = await api.reserveBlock(id, currentUser);
     if (res.success) {
-        // Atualiza visualmente na lista (Opcional, mas bom para feedback imediato)
         setBlocks(prev => prev.map(b => 
           b.id === id ? { 
               ...b, 
@@ -184,28 +181,10 @@ const App: React.FC = () => {
               lockedBy: { userId: currentUser.id, userName: currentUser.name, timestamp: new Date().toISOString() } 
           } : b
         ));
-        
-        // CRUCIAL: Espera a atualização global antes de qualquer outra coisa
-        await refreshGlobalCounts(); 
+        refreshGlobalCounts(); // Update badge immediately
     } else {
         alert(res.message || 'Erro ao reservar.');
     }
-  };
-
-  // Special handler for History Screen to ensure atomic update
-  const handleHistoryReserve = async (blockId: string) => {
-      if (!currentUser) return false;
-      
-      const res = await api.reserveBlock(blockId, currentUser);
-      
-      if (res.success) {
-          // Wait for the count to update. The navigation is handled by HistoryScreen.
-          await refreshGlobalCounts();
-          return true;
-      } else {
-          alert(res.message || 'Erro ao reservar bloco.');
-          return false;
-      }
   };
 
   const handleStartBlock = (block: any) => {
@@ -287,7 +266,7 @@ const App: React.FC = () => {
             onPageChange={handlePageChange}
         />;
       case 'reserved': return <ReservedScreen onNavigate={setCurrentScreen} blocks={blocks} onStartBlock={handleStartBlock} currentUser={currentUser} onRefreshCount={refreshGlobalCounts} />;
-      case 'history': return <HistoryScreen currentUser={currentUser} onNavigate={setCurrentScreen} onReserve={handleHistoryReserve} />;
+      case 'history': return <HistoryScreen currentUser={currentUser} onRefreshCount={refreshGlobalCounts} />;
       case 'analytics': return <AnalyticsScreen onNavigate={setCurrentScreen} />;
       case 'mission_detail': return <MissionDetailScreen blockData={activeBlock} onBack={() => { setCurrentScreen('reserved'); }} currentUser={currentUser} />;
       case 'subcategories': return <SubcategoriesScreen categoryLabel={selectedCategoryLabel || ''} categories={categories} onBack={() => setCurrentScreen('dashboard')} onSelectSegment={handleSegmentSelect} />;
