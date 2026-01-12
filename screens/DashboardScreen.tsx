@@ -12,6 +12,7 @@ interface DashboardScreenProps {
   currentUser: User | null;
   onLogout?: () => void;
   categories: ApiCategory[]; 
+  treatmentCount?: number; // Nova prop para contagem real
 }
 
 const getInitials = (name: string) => {
@@ -23,7 +24,8 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   onCategorySelect, 
   currentUser, 
   onLogout, 
-  categories 
+  categories,
+  treatmentCount = 0
 }) => {
   // Use AutoPartsLoader when categories are not yet loaded
   if (!categories || !Array.isArray(categories) || categories.length === 0) { 
@@ -46,7 +48,6 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     ? (categories || []) 
     : (categories || []).slice(0, 6);
 
-  const pendingIssuesCount = 3;
   const dailyTarget = 150;
   const countedToday = 98;
   const lateCount = 12; 
@@ -153,7 +154,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
                   Resolver
                 </button>
              </div>
-             <h3 className="text-2xl font-bold text-gray-900 dark:text-white mt-2">{pendingIssuesCount}</h3>
+             <h3 className="text-2xl font-bold text-gray-900 dark:text-white mt-2">{treatmentCount}</h3>
              <p className="text-xs text-gray-500 font-medium">Divergências pendentes</p>
           </div>
         )}

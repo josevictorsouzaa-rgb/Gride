@@ -8,9 +8,10 @@ import { AutoPartsLoader } from '../components/AutoPartsLoader';
 
 interface TreatmentScreenProps {
   onNavigate: (screen: Screen) => void;
+  onRefresh?: () => void; // Callback para atualizar contadores globais
 }
 
-export const TreatmentScreen: React.FC<TreatmentScreenProps> = ({ onNavigate }) => {
+export const TreatmentScreen: React.FC<TreatmentScreenProps> = ({ onNavigate, onRefresh }) => {
   const [items, setItems] = useState<TreatmentItem[]>([]);
   const [loading, setLoading] = useState(false);
   
@@ -59,6 +60,10 @@ export const TreatmentScreen: React.FC<TreatmentScreenProps> = ({ onNavigate }) 
       
       // Optimistic update
       setItems(prev => prev.filter(i => i.id !== id));
+      
+      // Refresh global badging
+      if (onRefresh) onRefresh();
+      
       alert("Item resolvido com sucesso.");
   };
 

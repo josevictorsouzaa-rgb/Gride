@@ -106,6 +106,9 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
             status: finalStatus,
             divergencia_motivo: reason
         });
+        
+        // Se houve divergência/problema, atualiza o contador global imediatamente
+        if (onRefreshCount) onRefreshCount();
     }
 
     setLocalBlocks(prev => prev.map(block => {

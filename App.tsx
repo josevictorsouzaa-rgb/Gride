@@ -45,12 +45,13 @@ const App: React.FC = () => {
   
   // Global Badge Counters
   const [reservedCount, setReservedCount] = useState(0);
-  const [treatmentCount, setTreatmentCount] = useState(3); // Mockado inicialmente como 3
+  const [treatmentCount, setTreatmentCount] = useState(0);
 
   const handleLogout = useCallback(() => {
     setCurrentUser(null);
     setCurrentScreen('login');
     setReservedCount(0);
+    setTreatmentCount(0);
   }, []);
 
   const handleLogin = (user: User) => {
@@ -58,17 +59,18 @@ const App: React.FC = () => {
     setCurrentScreen('dashboard');
   };
 
-  // Helper to refresh reserved count globally
-  const refreshReservedCount = useCallback(async () => {
+  // Helper to refresh global counts (Reserved + Treatment)
+  const refreshGlobalCounts = useCallback(async () => {
       if (currentUser) {
           try {
-              const reserved = await api.getReservedBlocks(currentUser.id);
+              const [reserved, treatment] = await Promise.all([
+                  api.getReservedBlocks(currentUser.id),
+                  api.getTreatmentItems()
+              ]);
               setReservedCount(reserved.length);
-              // Aqui futuramente buscaria o tratamento real da API
-              // const treatment = await api.getTreatmentItems();
-              // setTreatmentCount(treatment.length);
+              setTreatmentCount(treatment.length);
           } catch (e) {
-              console.error("Erro ao atualizar badge de reservados", e);
+              console.error("Erro ao atualizar contadores", e);
           }
       }
   }, [currentUser]);
@@ -86,16 +88,16 @@ const App: React.FC = () => {
     return () => { clearTimeout(timeoutId); events.forEach(event => window.removeEventListener(event, resetTimer)); };
   }, [currentScreen, handleLogout]);
 
-  // Carrega Categorias ao entrar no sistema e atualiza badge
+  // Carrega Categorias e Contadores ao entrar no sistema
   useEffect(() => {
       if (currentUser && currentScreen !== 'login') {
-          refreshReservedCount();
+          refreshGlobalCounts();
       }
       
       if (currentScreen === 'dashboard') {
           api.getCategories().then(setCategories);
       }
-  }, [currentScreen, currentUser, refreshReservedCount]);
+  }, [currentScreen, currentUser, refreshGlobalCounts]);
 
   // Lógica principal de carregamento de blocos baseada na tela e filtros
   useEffect(() => {
@@ -131,7 +133,6 @@ const App: React.FC = () => {
                     ]);
                     setBlocks(filteredBlocks);
                 } else {
-                    // Caso não precise buscar (ex: paginação local ou estado mantido), espera só o delay
                     await minDelay;
                 }
             } else if (currentScreen === 'reserved' && currentUser) {
@@ -141,9 +142,9 @@ const App: React.FC = () => {
                     minDelay
                 ]);
                 setBlocks(myReserved);
-                setReservedCount(myReserved.length);
+                setReservedCount(myReserved.length); // Update local cache of count
             } else {
-                await minDelay; // Garante suavidade mesmo sem fetch
+                await minDelay; 
             }
         } catch (error) {
             console.error("Erro ao carregar dados:", error);
@@ -180,7 +181,7 @@ const App: React.FC = () => {
               lockedBy: { userId: currentUser.id, userName: currentUser.name, timestamp: new Date().toISOString() } 
           } : b
         ));
-        refreshReservedCount(); // Update badge immediately
+        refreshGlobalCounts(); // Update badge immediately
     } else {
         alert(res.message || 'Erro ao reservar.');
     }
@@ -250,7 +251,7 @@ const App: React.FC = () => {
   const renderScreen = () => {
     switch (currentScreen) {
       case 'login': return <LoginScreen onLogin={handleLogin} />;
-      case 'dashboard': return <DashboardScreen onNavigate={setCurrentScreen} onCategorySelect={handleCategorySelect} currentUser={currentUser} onLogout={handleLogout} categories={categories} />;
+      case 'dashboard': return <DashboardScreen onNavigate={setCurrentScreen} onCategorySelect={handleCategorySelect} currentUser={currentUser} onLogout={handleLogout} categories={categories} treatmentCount={treatmentCount} />;
       case 'list': return <ListScreen key="meta-list" onNavigate={setCurrentScreen} blocks={blocks} segmentFilter={null} onReserveBlock={handleReserveBlock} onClearFilter={() => {}} mode="daily_meta" />;
       case 'filtered_list': 
         return <ListScreen 
@@ -264,15 +265,15 @@ const App: React.FC = () => {
             page={browsePage}
             onPageChange={handlePageChange}
         />;
-      case 'reserved': return <ReservedScreen onNavigate={setCurrentScreen} blocks={blocks} onStartBlock={handleStartBlock} currentUser={currentUser} onRefreshCount={refreshReservedCount} />;
+      case 'reserved': return <ReservedScreen onNavigate={setCurrentScreen} blocks={blocks} onStartBlock={handleStartBlock} currentUser={currentUser} onRefreshCount={refreshGlobalCounts} />;
       case 'history': return <HistoryScreen />;
       case 'analytics': return <AnalyticsScreen onNavigate={setCurrentScreen} />;
       case 'mission_detail': return <MissionDetailScreen blockData={activeBlock} onBack={() => { setCurrentScreen('reserved'); }} currentUser={currentUser} />;
       case 'subcategories': return <SubcategoriesScreen categoryLabel={selectedCategoryLabel || ''} categories={categories} onBack={() => setCurrentScreen('dashboard')} onSelectSegment={handleSegmentSelect} />;
-      case 'treatment': return <TreatmentScreen onNavigate={setCurrentScreen} />;
+      case 'treatment': return <TreatmentScreen onNavigate={setCurrentScreen} onRefresh={refreshGlobalCounts} />;
       case 'settings': return <SettingsScreen onBack={() => setCurrentScreen('dashboard')} currentUser={currentUser} />;
       case 'address_manager': return <AddressManagerScreen onBack={() => setCurrentScreen('dashboard')} />;
-      default: return <DashboardScreen onNavigate={setCurrentScreen} onCategorySelect={handleCategorySelect} currentUser={currentUser} onLogout={handleLogout} categories={categories} />;
+      default: return <DashboardScreen onNavigate={setCurrentScreen} onCategorySelect={handleCategorySelect} currentUser={currentUser} onLogout={handleLogout} categories={categories} treatmentCount={treatmentCount} />;
     }
   };
 
@@ -295,7 +296,6 @@ const App: React.FC = () => {
       />
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
         <div id="main-scroll-container" className="flex-1 overflow-y-auto no-scrollbar relative w-full">
-            {/* Chave 'key={currentScreen}' força o React a recriar o elemento e disparar a animação CSS a cada troca de tela */}
             <div key={currentScreen} className="w-full min-h-full animate-fade-in">
                 {renderScreen()}
             </div>
