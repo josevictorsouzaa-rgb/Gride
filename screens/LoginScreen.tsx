@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Icon } from '../components/Icon';
 import { User } from '../types';
@@ -62,8 +63,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
       <main className="flex-1 flex flex-col justify-center px-6 pb-8 max-w-md mx-auto w-full">
         {/* Headline */}
         <div className="flex flex-col items-center justify-center pb-8 animate-slide-up" style={{ animationDelay: '0.1s' }}>
-          <div className="w-full max-w-[200px] bg-[#182335] rounded-xl flex items-center justify-center mb-6 shadow-xl p-4 hover:scale-105 transition-transform duration-500">
-             <img src="/logo.png" alt="Lubel Auto Peças" className="w-full h-auto object-contain" />
+          {/* Logo Container - Aumentado para 280px para acomodar logo extensa */}
+          <div className="w-full max-w-[280px] bg-[#182335] rounded-xl flex items-center justify-center mb-6 shadow-xl p-4 hover:scale-105 transition-transform duration-500">
+             <img src="/LOGO_GRIDE_COMPLETA.svg" alt="Sistema GRIDE" className="w-full h-auto object-contain" />
           </div>
           <h1 className="text-2xl font-bold leading-tight text-center text-slate-900 dark:text-white">Sistema GRIDE</h1>
           <p className="text-slate-500 dark:text-slate-400 text-sm font-medium pt-2 text-center">
