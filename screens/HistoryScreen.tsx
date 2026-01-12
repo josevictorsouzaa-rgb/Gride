@@ -5,12 +5,6 @@ import { HistoryFilterModal } from '../components/Modals';
 import { ItemDetailModal } from '../components/ItemDetailModal';
 import { api } from '../services/api';
 import { AutoPartsLoader } from '../components/AutoPartsLoader';
-import { User } from '../types';
-
-interface HistoryScreenProps {
-    currentUser?: User | null;
-    onRefreshCount?: () => void;
-}
 
 const getTimeAgo = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -25,11 +19,7 @@ const getTimeAgo = (dateStr: string) => {
     return `${Math.floor(diffInSeconds / 31536000)} ano(s) atrás`;
 };
 
-const getInitials = (name: string) => {
-    return name ? name.substring(0, 2).toUpperCase() : '??';
-};
-
-export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onRefreshCount }) => {
+export const HistoryScreen: React.FC = () => {
   const [historyBlocks, setHistoryBlocks] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -38,23 +28,43 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onRef
     const fetchHistory = async () => {
         setLoading(true);
         // Trazemos um limite maior para garantir que pegamos os blocos únicos mais recentes
+        // mesmo que haja muitas entradas de itens individuais.
         const data = await api.getHistory(1, 500);
         
         const blockGroups = new Map();
 
-        // LÓGICA DE DEDUPLICAÇÃO VISUAL (Manutenção Cirúrgica Preservada)
+        // LÓGICA DE DEDUPLICAÇÃO VISUAL (Manutenção Cirúrgica)
+        // O servidor retorna os dados ordenados por DATA_HORA DESC (do mais recente para o mais antigo).
+        // Aproveitamos isso para implementar a estratégia "First Win":
+        // 1. Identificamos a "Chave Lógica" do bloco (ex: SYL1402) removendo o timestamp único.
+        // 2. Se essa chave lógica ainda não existe no mapa, significa que é a ocorrência MAIS RECENTE deste bloco. Criamos o card.
+        // 3. Se a chave já existe, verificamos se o `BLOCK_REF` (ID do lote) é o mesmo do card criado.
+        //    - Se for o mesmo lote, adicionamos o item (faz parte da contagem recente).
+        //    - Se for um lote diferente, IGNORAMOS. Isso oculta contagens antigas da lista principal,
+        //      mas elas continuam existindo no banco para a auditoria detalhada via modal.
+
         data.forEach((entry: any) => {
             const rawRef = entry.BLOCK_REF || '';
+            
+            // Extração da Chave Lógica (Nome do Bloco)
+            // Transforma "SYL1402||1715000000" em "SYL1402"
             let logicalKey = rawRef.includes('||') ? rawRef.split('||')[0] : '';
+            
+            // Fallback para dados legados
             if (!logicalKey) {
                  logicalKey = entry.PRO_COD_SIMILAR ? String(entry.PRO_COD_SIMILAR) : entry.SKU;
             }
 
+            // --- INÍCIO DA LÓGICA DE FILTRAGEM ---
+
             if (!blockGroups.has(logicalKey)) {
+                // CENÁRIO 1: Primeira vez que vemos este bloco na lista (portanto, é o mais recente).
+                // Criamos o grupo e definimos o 'currentBatchId' como o ID deste lote específico.
+                
                 blockGroups.set(logicalKey, {
-                    id: logicalKey,
-                    parentRef: logicalKey,
-                    currentBatchId: rawRef, 
+                    id: logicalKey, // ID visual agora é a chave lógica
+                    parentRef: logicalKey, // Nome exibido
+                    currentBatchId: rawRef, // ID técnico do lote vencedor
                     name: entry.PROD_DESC_ATUAL || entry.NOME_PRODUTO, 
                     location: entry.LOCALIZACAO || 'GERAL',
                     latestDate: entry.DATA_HORA, 
@@ -64,9 +74,13 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onRef
                 });
             }
 
+            // Recupera o grupo (acabado de criar ou já existente)
             const group = blockGroups.get(logicalKey);
 
+            // CENÁRIO 2: Verificamos se este item pertence ao lote "vencedor" (o mais recente)
             if (rawRef === group.currentBatchId) {
+                
+                // Adiciona item ao grupo se ainda não estiver lá (deduplicação de SKU dentro do mesmo lote)
                 if (!group.itemsMap.has(entry.SKU)) {
                     const isLocked = entry.TRATAMENTO_STATUS === 'PENDING';
                     const hasDivergence = entry.STATUS === 'divergence_info' || entry.STATUS === 'not_located';
@@ -87,6 +101,9 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onRef
                     });
                 }
             } 
+            // CENÁRIO 3: Se (rawRef !== group.currentBatchId), significa que é um registro
+            // de uma contagem anterior deste mesmo bloco. Nós ignoramos aqui para limpar a tela.
+            // O histórico completo ainda será acessível ao clicar no detalhe do item (via api.getProductHistory).
         });
 
         const blocks = Array.from(blockGroups.values()).map((g: any) => ({
@@ -156,22 +173,6 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onRef
     );
   };
 
-  const handleReReserve = async (blockId: string, e: React.MouseEvent) => {
-      e.stopPropagation();
-      if (!currentUser) return alert("Você precisa estar logado para reservar.");
-
-      if (confirm(`Deseja reservar novamente o bloco ${blockId} para contagem?`)) {
-          // O blockId aqui é a chave lógica (ex: SYL1402) que funciona como ID do bloco
-          const res = await api.reserveBlock(blockId, currentUser);
-          if (res.success) {
-              alert(`Bloco ${blockId} reservado com sucesso!`);
-              if(onRefreshCount) onRefreshCount();
-          } else {
-              alert(res.message || "Não foi possível reservar o bloco. Verifique se há pendências.");
-          }
-      }
-  };
-
   if (loading) {
       return <AutoPartsLoader message="Carregando Histórico..." />;
   }
@@ -230,7 +231,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onRef
          </p>
       </div>
 
-      {/* Blocks List */}
+      {/* Blocks List - VISUAL IDENTICO AO RESERVAR */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 px-4 pb-28 md:pb-0">
         {filteredBlocks.length === 0 ? (
           <div className="col-span-full flex flex-col items-center justify-center py-12 text-gray-400 opacity-60">
@@ -243,60 +244,52 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onRef
            const visibleItems = isExpanded ? block.items : block.items.slice(0, 3);
            const hiddenCount = block.items.length - 3;
            const hasDivergence = block.status === 'divergencia';
-           const formattedDate = new Date(block.latestDate).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
            return (
-             <div key={block.id} className="flex flex-col shadow-lg shadow-black/20 h-full group bg-[#182335] dark:bg-surface-dark rounded-xl border border-white/5 overflow-hidden transition-all hover:border-white/10">
-                {/* CARD HEADER - SOLID & PROFESSIONAL */}
-                <div className="p-4 border-b border-white/5 flex justify-between items-start bg-[#182335] dark:bg-surface-dark">
+             <div key={block.id} className="flex flex-col shadow-md h-full group bg-[#182335] dark:bg-surface-dark rounded-xl border border-gray-700 dark:border-card-border overflow-hidden">
+                {/* CARD HEADER - Dark Style similar to screenshot */}
+                <div className="p-4 border-b border-gray-700 dark:border-white/5 flex justify-between items-start">
                     <div>
-                        <h3 className="text-xl font-black text-white leading-tight flex items-center gap-2">
-                            <Icon name="inventory_2" size={20} className="text-primary opacity-80" />
+                        <h3 className="text-lg font-black text-white leading-tight">
                             {block.parentRef}
                         </h3>
-                        <div className="flex items-center gap-2 text-xs text-gray-400 mt-1 font-medium">
-                            <span className="text-white/60">{formattedDate}</span>
-                            <span className="w-1 h-1 rounded-full bg-gray-600"></span>
-                            <span>{block.timeAgo}</span>
+                        <div className="flex items-center gap-1 text-xs text-gray-400 mt-1">
+                            <Icon name="place" size={14} />
+                            {block.location}
                         </div>
                     </div>
                     
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-col items-end gap-1">
+                        <div className="flex items-center gap-1.5 px-2 py-1 bg-blue-900/50 rounded border border-blue-800">
+                            <Icon name="calendar_today" size={12} className="text-blue-400" />
+                            <span className="text-[10px] font-bold text-blue-100 uppercase">
+                                {new Date(block.latestDate).toLocaleDateString('pt-BR')}
+                            </span>
+                        </div>
                         {hasDivergence && (
-                            <span className="text-[9px] font-bold text-orange-400 flex items-center gap-1 bg-orange-900/20 px-2 py-1 rounded border border-orange-900/30">
-                                <Icon name="warning" size={12} />
+                            <span className="text-[9px] font-bold text-orange-400 flex items-center gap-1">
+                                <Icon name="warning" size={10} />
                                 Divergência
                             </span>
                         )}
-                        
-                        <button 
-                            onClick={(e) => handleReReserve(block.id, e)}
-                            className="flex items-center justify-center p-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-900/20 transition-all active:scale-95"
-                            title="Re-reservar Bloco"
-                        >
-                            <Icon name="bookmark_add" size={20} />
-                        </button>
                     </div>
                 </div>
 
                 {/* CARD BODY - ITEMS LIST */}
                 <div className="flex-col divide-y divide-gray-700 dark:divide-white/5">
-                      {visibleItems.map((item: any) => {
-                        const isIssue = item.status === 'not_located' || item.status === 'divergence_info';
-
-                        return (
+                      {visibleItems.map((item: any) => (
                         <div 
                           key={item.id} 
                           onClick={() => setSelectedItem(item)}
                           className="p-4 hover:bg-white/5 transition-colors cursor-pointer"
                         >
                             {/* Line 1: Name */}
-                            <h4 className="text-sm font-bold text-white mb-3 line-clamp-1">{item.name}</h4>
+                            <h4 className="text-sm font-bold text-white mb-2 line-clamp-1">{item.name}</h4>
                             
-                            {/* Line 2: Details Row (SKU, Brand, Qty) */}
-                            <div className="flex items-center justify-between mb-4">
+                            {/* Line 2: Details Row */}
+                            <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
-                                    <span className="px-2 py-1 rounded text-[12px] font-bold bg-slate-700 text-white border border-slate-600 font-mono tracking-wide shadow-sm">
+                                    <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-[#2d3748] text-gray-300 border border-gray-600">
                                         {item.ref}
                                     </span>
                                     <span className="text-[10px] text-gray-400 font-bold uppercase border-l border-gray-600 pl-2">
@@ -305,30 +298,28 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onRef
                                 </div>
                                 
                                 <div className="flex flex-col items-end">
-                                    <span className={`text-xl font-black ${isIssue ? 'text-orange-500' : 'text-green-500'} tracking-tight`}>
-                                        {item.qty} <span className="text-xs font-normal text-gray-500">un</span>
+                                    <span className={`text-sm font-bold ${item.status === 'not_located' || item.status === 'divergence_info' ? 'text-orange-400' : 'text-blue-400'}`}>
+                                        {item.qty} un
                                     </span>
                                 </div>
                             </div>
 
-                            {/* Line 3: History Info (Avatar, Quem, Loc) */}
-                            <div className="pt-3 border-t border-gray-700/50 flex justify-between items-center text-[10px]">
-                                <div className="flex items-center gap-2">
-                                    <div className="size-5 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-[8px] shadow-sm ring-1 ring-white/10">
-                                        {getInitials(item.countedBy)}
-                                    </div>
-                                    <span className="text-gray-300 font-medium">{item.countedBy.split(' ')[0]}</span>
+                            {/* Line 3: History Info (Quem/Quando/Onde) */}
+                            <div className="mt-2 pt-2 border-t border-gray-700/50 flex justify-between items-center text-[10px] text-gray-500">
+                                <div className="flex items-center gap-1">
+                                    <Icon name="person" size={12} />
+                                    <span>{item.countedBy.split(' ')[0]}</span>
+                                    <span className="mx-1">•</span>
+                                    <span>{getTimeAgo(item.countedAt)}</span>
                                 </div>
-
-                                {/* Location Tag - Dark Grey Badge */}
-                                <div className="flex items-center gap-1 bg-gray-800 text-gray-300 px-2 py-1 rounded-md border border-gray-700 font-mono tracking-tighter">
-                                    <Icon name="place" size={12} className="text-gray-500" />
+                                <div className="flex items-center gap-1">
+                                    <Icon name="place" size={12} />
                                     <span>{item.location}</span>
+                                    <Icon name="info" size={14} className="ml-1 text-gray-600" />
                                 </div>
                             </div>
                         </div>
-                        );
-                      })}
+                      ))}
                 </div>
 
                 {/* CARD FOOTER - EXPAND CONTROLS */}
@@ -336,7 +327,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onRef
                     {(!isExpanded && hiddenCount > 0) && (
                         <button 
                             onClick={() => toggleBlock(block.id)}
-                            className="w-full py-3 text-xs font-bold text-blue-400 hover:text-blue-300 hover:bg-white/5 transition-colors flex items-center justify-center gap-1 bg-[#131b29]"
+                            className="w-full py-3 text-xs font-bold text-blue-400 hover:text-blue-300 hover:bg-white/5 transition-colors flex items-center justify-center gap-1"
                         >
                             Ver mais {hiddenCount} itens
                             <Icon name="expand_more" size={16} />
@@ -345,7 +336,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onRef
                     {(isExpanded && block.items.length > 3) && (
                         <button 
                             onClick={() => toggleBlock(block.id)}
-                            className="w-full py-3 text-xs font-bold text-blue-400 hover:text-blue-300 hover:bg-white/5 transition-colors flex items-center justify-center gap-1 bg-[#131b29]"
+                            className="w-full py-3 text-xs font-bold text-blue-400 hover:text-blue-300 hover:bg-white/5 transition-colors flex items-center justify-center gap-1"
                         >
                             Mostrar menos
                             <Icon name="expand_less" size={16} />
@@ -353,10 +344,10 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onRef
                     )}
                     
                     {/* Read Only Footer */}
-                    <div className="p-2 bg-[#0f172a] border-t border-gray-800 flex items-center justify-center">
-                        <span className="text-[9px] font-bold text-gray-600 flex items-center gap-1.5 uppercase tracking-wider">
-                            <Icon name="verified" size={12} className="text-gray-600" />
-                            Registro Auditável
+                    <div className="p-3 bg-[#0f172a] border-t border-gray-700 flex items-center justify-center">
+                        <span className="text-[10px] font-bold text-gray-500 flex items-center gap-2">
+                            <Icon name="lock" size={12} />
+                            REGISTRO DE HISTÓRICO
                         </span>
                     </div>
                 </div>
