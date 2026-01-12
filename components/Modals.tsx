@@ -12,14 +12,16 @@ interface ModalProps {
 interface EntryModalProps extends ModalProps {
   itemName?: string;
   itemSku?: string;
-  initialQuantity?: number;
+  itemBrand?: string;
+  systemQuantity?: number; // Quantidade do Sistema
+  scannedLocation?: string; // Código vindo do Scanner da tela pai
+  onRequestScan?: () => void; // Função para abrir o scanner da tela pai
   lastCountInfo?: {
     user: string;
     date: string;
     quantity: number;
     avatar?: string;
   } | null;
-  // Updated onConfirm to accept status and optional info
   onConfirm: (quantity: number, status?: 'counted' | 'not_located' | 'divergence_info', divergenceReason?: string) => void;
 }
 
@@ -63,129 +65,275 @@ interface HistoryFilterModalProps extends ModalProps {
   onClear: () => void;
 }
 
-// --- NEW MODALS (ADDED TO FIX MISSING EXPORTS) ---
+// --- ENTRY MODAL (REFORMULADO) ---
 
 export const EntryModal: React.FC<EntryModalProps> = ({ 
   isOpen, 
   onClose, 
   itemName, 
-  itemSku, 
-  initialQuantity = 0, 
+  itemSku,
+  itemBrand,
+  systemQuantity = 0,
+  scannedLocation = '',
+  onRequestScan,
   lastCountInfo, 
   onConfirm 
 }) => {
-  const [quantity, setQuantity] = useState(initialQuantity);
+  // Estado Modo Contagem vs Divergência
+  const [mode, setMode] = useState<'counting' | 'divergence'>('counting');
+  
+  // Estados Contagem
+  const [quantity, setQuantity] = useState(systemQuantity);
+  const [locGalpao, setLocGalpao] = useState('');
+  const [locEstante, setLocEstante] = useState('');
+  const [locPrateleira, setLocPrateleira] = useState('');
+  
+  // Estados Divergência
   const [divergenceReason, setDivergenceReason] = useState('');
-  const [showDivergenceInput, setShowDivergenceInput] = useState(false);
 
+  // Reset ao abrir
   useEffect(() => {
     if (isOpen) {
-      setQuantity(initialQuantity || 0);
+      setMode('counting');
+      setQuantity(systemQuantity || 0); // Traz valor do sistema
       setDivergenceReason('');
-      setShowDivergenceInput(false);
+      
+      // Se já tiver um scan salvo (da tela pai), preenche
+      if (scannedLocation) {
+          parseLocation(scannedLocation);
+      } else {
+          setLocGalpao('');
+          setLocEstante('');
+          setLocPrateleira('');
+      }
     }
-  }, [isOpen, initialQuantity]);
+  }, [isOpen, systemQuantity, scannedLocation]);
+
+  const parseLocation = (code: string) => {
+      // Esperado: LOC-G01-E02-P03
+      const parts = code.split('-');
+      if (parts.length >= 4) {
+          setLocGalpao(parts[1]);
+          setLocEstante(parts[2]);
+          setLocPrateleira(parts[3]);
+      } else {
+          // Fallback se o formato for diferente, joga tudo no primeiro ou alerta
+          setLocGalpao('?');
+          setLocEstante('?');
+          setLocPrateleira('?');
+      }
+  };
 
   if (!isOpen) return null;
 
-  const handleConfirm = () => {
-    onConfirm(quantity, 'counted');
-    onClose();
+  const handleConfirmCount = () => {
+      // 1. Validação de Scan Obrigatório
+      if (!locGalpao || !locEstante || !locPrateleira) {
+          alert("É obrigatório escanear a localização antes de confirmar.");
+          return;
+      }
+
+      // 2. Validação de Quantidade Igual
+      if (quantity === systemQuantity) {
+          const confirmSame = window.confirm("A quantidade contada é exatamente igual à do sistema. Confirma?");
+          if (!confirmSame) return;
+      }
+
+      onConfirm(quantity, 'counted');
+      onClose();
   };
 
-  const handleNotLocated = () => {
-    onConfirm(0, 'not_located');
-    onClose();
+  const handleReportDivergence = () => {
+      // Validação Texto Mínimo 15 chars
+      if (divergenceReason.trim().length < 15) {
+          alert("A justificativa deve ter no mínimo 15 caracteres.");
+          return;
+      }
+      onConfirm(quantity, 'divergence_info', divergenceReason);
+      onClose();
   };
 
-  const handleDivergence = () => {
-    if (!showDivergenceInput) {
-        setShowDivergenceInput(true);
-        return;
-    }
-    onConfirm(quantity, 'divergence_info', divergenceReason);
-    onClose();
-  };
+  const isLocationScanned = !!locGalpao && !!locEstante;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-sm bg-white dark:bg-surface-dark rounded-2xl shadow-xl overflow-hidden animate-scale-up">
-        {/* Header */}
-        <div className="bg-primary p-4 text-white">
-          <h3 className="text-lg font-bold">{itemName || 'Item'}</h3>
-          <p className="text-sm opacity-90">{itemSku || 'SKU'}</p>
-        </div>
+      <div className="relative z-10 w-full max-w-md bg-white dark:bg-surface-dark rounded-2xl shadow-xl overflow-hidden animate-scale-up flex flex-col max-h-[90vh]">
         
-        <div className="p-6 space-y-4">
-           {lastCountInfo && (
-             <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm text-blue-800 dark:text-blue-200">
-                <div className="size-8 rounded-full bg-blue-200 dark:bg-blue-800 flex items-center justify-center font-bold">
-                    {lastCountInfo.user.charAt(0)}
+        {/* Header Produto */}
+        <div className="bg-[#182335] p-4 text-white shrink-0">
+          <div className="flex justify-between items-start">
+              <div>
+                <h3 className="text-lg font-bold leading-tight line-clamp-2">{itemName || 'Item Desconhecido'}</h3>
+                <div className="flex items-center gap-2 mt-1 opacity-90 text-sm">
+                    <span className="font-mono bg-white/10 px-1.5 rounded">{itemSku}</span>
+                    <span>•</span>
+                    <span className="font-bold uppercase">{itemBrand}</span>
                 </div>
-                <div>
-                    <p className="font-bold">Última contagem: {lastCountInfo.quantity}</p>
-                    <p className="text-xs">{lastCountInfo.date} por {lastCountInfo.user}</p>
-                </div>
-             </div>
-           )}
-
-           <div className="flex flex-col items-center">
-              <label className="text-sm font-bold text-gray-500 uppercase mb-2">Quantidade Física</label>
-              <div className="flex items-center gap-4">
-                 <button onClick={() => setQuantity(Math.max(0, quantity - 1))} className="size-12 rounded-xl bg-gray-100 dark:bg-white/10 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-white/20 transition-colors">
-                    <Icon name="remove" size={24} />
-                 </button>
-                 <input 
-                    type="number" 
-                    value={quantity} 
-                    onChange={(e) => setQuantity(Number(e.target.value))}
-                    className="w-24 text-center text-3xl font-bold bg-transparent border-b-2 border-gray-200 focus:border-primary outline-none py-2 text-gray-900 dark:text-white"
-                 />
-                 <button onClick={() => setQuantity(quantity + 1)} className="size-12 rounded-xl bg-gray-100 dark:bg-white/10 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-white/20 transition-colors">
-                    <Icon name="add" size={24} />
-                 </button>
               </div>
-           </div>
+              <button onClick={onClose} className="text-white/50 hover:text-white"><Icon name="close" /></button>
+          </div>
+        </div>
+
+        <div className="overflow-y-auto p-5 space-y-5">
            
-           {showDivergenceInput && (
-             <div className="animate-fade-in">
-                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Motivo da Divergência</label>
-                <textarea 
-                  value={divergenceReason}
-                  onChange={(e) => setDivergenceReason(e.target.value)}
-                  className="w-full p-3 rounded-lg bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 text-sm resize-none h-20"
-                  placeholder="Descreva o problema..."
-                />
-             </div>
+           {/* Info Cards: Sistema & Última Contagem */}
+           <div className="flex gap-3">
+               <div className="flex-1 bg-blue-50 dark:bg-blue-900/20 p-3 rounded-xl border border-blue-100 dark:border-blue-900/30 flex flex-col items-center justify-center text-center">
+                   <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wide">Qtd. Sistema</span>
+                   <span className="text-2xl font-black text-blue-700 dark:text-blue-300">{systemQuantity}</span>
+               </div>
+               <div className="flex-[1.5] bg-gray-50 dark:bg-white/5 p-3 rounded-xl border border-gray-100 dark:border-white/10 flex flex-col justify-center">
+                   <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">Última Contagem</span>
+                   {lastCountInfo ? (
+                       <div className="text-xs text-gray-600 dark:text-gray-300">
+                           <strong>{lastCountInfo.quantity} un</strong> por {lastCountInfo.user.split(' ')[0]}
+                           <br/><span className="opacity-70">{lastCountInfo.date}</span>
+                       </div>
+                   ) : (
+                       <span className="text-xs font-medium text-orange-500">Nunca contado</span>
+                   )}
+               </div>
+           </div>
+
+           {mode === 'counting' ? (
+               <>
+                   {/* Seção Localização (Scan Obrigatório) */}
+                   <div className="space-y-2">
+                       <label className="text-xs font-bold text-gray-500 uppercase flex justify-between items-center">
+                           Localização Física
+                           {!isLocationScanned && <span className="text-red-500 text-[10px]">Obrigatório Escanear</span>}
+                       </label>
+                       
+                       <div className="flex gap-2">
+                           <div className="flex-1 flex gap-2">
+                               <div className="flex-1">
+                                   <input placeholder="Galpão" readOnly value={locGalpao} className="w-full text-center text-xs font-bold p-3 bg-gray-100 dark:bg-black/40 rounded-lg border-none text-gray-500" />
+                               </div>
+                               <div className="flex-1">
+                                   <input placeholder="Estante" readOnly value={locEstante} className="w-full text-center text-xs font-bold p-3 bg-gray-100 dark:bg-black/40 rounded-lg border-none text-gray-500" />
+                               </div>
+                               <div className="flex-1">
+                                   <input placeholder="Prat." readOnly value={locPrateleira} className="w-full text-center text-xs font-bold p-3 bg-gray-100 dark:bg-black/40 rounded-lg border-none text-gray-500" />
+                               </div>
+                           </div>
+                           
+                           <button 
+                             onClick={onRequestScan}
+                             className={`px-4 rounded-xl flex items-center justify-center transition-all shadow-sm ${
+                                 isLocationScanned 
+                                 ? 'bg-green-100 text-green-700 border border-green-200' 
+                                 : 'bg-primary text-white hover:bg-primary-dark animate-pulse'
+                             }`}
+                           >
+                               <Icon name="qr_code_scanner" size={24} />
+                           </button>
+                       </div>
+                   </div>
+
+                   {/* Seção Quantidade */}
+                   <div className="flex flex-col items-center pt-2">
+                      <label className="text-xs font-bold text-gray-500 uppercase mb-3">Quantidade Encontrada</label>
+                      <div className="flex items-center gap-6">
+                         <button 
+                            onClick={() => setQuantity(Math.max(0, quantity - 1))} 
+                            className="size-14 rounded-2xl bg-gray-100 dark:bg-white/10 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-white/20 active:scale-95 transition-all text-gray-600 dark:text-white shadow-sm"
+                         >
+                            <Icon name="remove" size={28} />
+                         </button>
+                         
+                         <div className="relative">
+                             <input 
+                                type="number" 
+                                value={quantity} 
+                                onChange={(e) => setQuantity(Number(e.target.value))}
+                                className="w-32 text-center text-5xl font-black bg-transparent border-none focus:ring-0 p-0 text-gray-900 dark:text-white"
+                             />
+                             <div className="absolute -bottom-4 left-0 right-0 h-1 bg-primary/20 rounded-full overflow-hidden">
+                                <div className="h-full bg-primary w-1/2 mx-auto rounded-full" />
+                             </div>
+                         </div>
+
+                         <button 
+                            onClick={() => setQuantity(quantity + 1)} 
+                            className="size-14 rounded-2xl bg-gray-100 dark:bg-white/10 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-white/20 active:scale-95 transition-all text-gray-600 dark:text-white shadow-sm"
+                         >
+                            <Icon name="add" size={28} />
+                         </button>
+                      </div>
+                   </div>
+               </>
+           ) : (
+               /* Modo Divergência */
+               <div className="animate-fade-in space-y-4">
+                   <div className="p-4 bg-orange-50 dark:bg-orange-900/10 rounded-xl border border-orange-100 dark:border-orange-900/30 flex items-start gap-3">
+                       <Icon name="report_problem" className="text-orange-500 mt-1" />
+                       <p className="text-xs text-orange-800 dark:text-orange-200 leading-relaxed">
+                           O item será enviado para <strong>Tratamento</strong>. Descreva detalhadamente o problema encontrado.
+                       </p>
+                   </div>
+                   
+                   <div>
+                       <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">
+                           Motivo da Divergência <span className="text-red-500">*</span>
+                       </label>
+                       <textarea 
+                           value={divergenceReason}
+                           onChange={(e) => setDivergenceReason(e.target.value)}
+                           className="w-full h-32 p-4 rounded-xl bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 resize-none focus:ring-2 focus:ring-orange-500 outline-none text-sm"
+                           placeholder="Ex: Código físico diferente, embalagem violada, localização incorreta..."
+                       />
+                       <p className={`text-[10px] text-right mt-1 font-bold ${divergenceReason.length < 15 ? 'text-red-500' : 'text-green-500'}`}>
+                           {divergenceReason.length} / 15 caracteres mínimos
+                       </p>
+                   </div>
+               </div>
            )}
 
-           <div className="grid grid-cols-2 gap-3 pt-2">
-              <button 
-                onClick={handleNotLocated}
-                className="col-span-1 py-3 px-4 rounded-xl border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 font-bold text-xs uppercase hover:bg-gray-50 dark:hover:bg-white/5"
-              >
-                Não Localizado
-              </button>
-              <button 
-                onClick={handleDivergence}
-                className={`col-span-1 py-3 px-4 rounded-xl border font-bold text-xs uppercase transition-colors ${
-                    showDivergenceInput 
-                    ? 'bg-orange-500 text-white border-orange-500 hover:bg-orange-600' 
-                    : 'border-orange-200 dark:border-orange-900/30 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/10'
-                }`}
-              >
-                {showDivergenceInput ? 'Salvar Div.' : 'Divergência'}
-              </button>
-              <button 
-                onClick={handleConfirm}
-                className="col-span-2 py-4 rounded-xl bg-primary text-white font-bold text-lg shadow-lg hover:bg-primary-dark active:scale-[0.98] transition-all flex items-center justify-center gap-2"
-              >
-                <Icon name="check_circle" />
-                Confirmar
-              </button>
-           </div>
         </div>
+
+        {/* Footer Actions */}
+        <div className="p-5 border-t border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-black/20 pb-safe">
+            {mode === 'counting' ? (
+                <div className="flex gap-3">
+                    <button 
+                        onClick={() => setMode('divergence')}
+                        className="flex-1 py-4 rounded-xl border border-orange-200 dark:border-orange-900/50 text-orange-600 dark:text-orange-400 font-bold text-sm hover:bg-orange-50 dark:hover:bg-orange-900/10 transition-colors"
+                    >
+                        Divergência
+                    </button>
+                    <button 
+                        onClick={handleConfirmCount}
+                        disabled={!isLocationScanned}
+                        className={`flex-[2] py-4 rounded-xl font-bold text-lg text-white shadow-lg transition-all flex items-center justify-center gap-2 ${
+                            isLocationScanned 
+                            ? 'bg-primary hover:bg-primary-dark active:scale-[0.98]' 
+                            : 'bg-gray-300 dark:bg-gray-700 cursor-not-allowed opacity-70'
+                        }`}
+                    >
+                        <Icon name="check_circle" />
+                        Confirmar
+                    </button>
+                </div>
+            ) : (
+                <div className="flex gap-3">
+                    <button 
+                        onClick={() => setMode('counting')}
+                        className="flex-1 py-4 rounded-xl border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 font-bold text-sm hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
+                    >
+                        Voltar
+                    </button>
+                    <button 
+                        onClick={handleReportDivergence}
+                        className="flex-[2] py-4 rounded-xl bg-orange-500 text-white font-bold text-lg shadow-lg shadow-orange-500/20 hover:bg-orange-600 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                    >
+                        <Icon name="send" />
+                        Reportar
+                    </button>
+                </div>
+            )}
+        </div>
+
       </div>
     </div>
   );
@@ -288,7 +436,7 @@ export const DamageModal: React.FC<DamageModalProps> = ({ isOpen, onClose, onAtt
   );
 };
 
-// ... (HistoryFilterModal, ScannerModal, PrintLabelModal remain unchanged)
+// ... (Rest of modals like HistoryFilterModal, ScannerModal, PrintLabelModal remain unchanged)
 export const HistoryFilterModal: React.FC<HistoryFilterModalProps> = ({ 
   isOpen, 
   onClose, 
@@ -468,7 +616,6 @@ export const HistoryFilterModal: React.FC<HistoryFilterModalProps> = ({
   );
 };
 
-// ... (ScannerModal and PrintLabelModal logic retained in full)
 export const ScannerModal: React.FC<ScannerModalProps> = ({ 
   isOpen, 
   onClose, 
@@ -626,13 +773,14 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
 };
 
 export const PrintLabelModal: React.FC<PrintLabelModalProps> = ({ isOpen, onClose, data }) => {
+    // ... (Mantém a lógica existente do PrintLabelModal)
+    // Retornando apenas a estrutura base para não quebrar o arquivo no replace
     const [labelType, setLabelType] = useState<'ESTANTE' | 'PRATELEIRA'>(data?.type || 'ESTANTE');
     const [printSize, setPrintSize] = useState<'60x30' | '60x20'>('60x30');
 
-    useEffect(() => {
-        if(data) setLabelType(data.type);
-    }, [data]);
+    useEffect(() => { if(data) setLabelType(data.type); }, [data]);
 
+    // Re-inserindo o CSS de print para garantir funcionamento
     useEffect(() => {
         if (isOpen) {
             const styleId = 'dynamic-print-modal-size';
@@ -642,7 +790,6 @@ export const PrintLabelModal: React.FC<PrintLabelModalProps> = ({ isOpen, onClos
                 style.id = styleId;
                 document.head.appendChild(style);
             }
-            
             const heightMm = printSize === '60x30' ? '30mm' : '20mm';
             const qrSize = printSize === '60x30' ? '22mm' : '16mm';
             const titleSize = printSize === '60x30' ? '7pt' : '6pt';
@@ -650,61 +797,11 @@ export const PrintLabelModal: React.FC<PrintLabelModalProps> = ({ isOpen, onClos
             const codeSize = printSize === '60x30' ? '9pt' : '8pt';
             const barPadding = printSize === '60x30' ? '1mm 2mm' : '0.5mm 1mm';
 
-            style.innerHTML = `
-                @media print {
-                    @page { size: 60mm ${heightMm}; margin: 0; }
-                    body { margin: 0; padding: 0; }
-                    
-                    #print-area-modal { 
-                        display: flex !important; 
-                        width: 60mm;
-                        height: ${heightMm};
-                        box-sizing: border-box;
-                        overflow: hidden;
-                        padding: 1mm;
-                        align-items: center;
-                    }
-
-                    .qr-box {
-                        width: ${qrSize} !important;
-                        height: ${qrSize} !important;
-                        flex-shrink: 0;
-                        margin-right: 1mm;
-                    }
-
-                    .info-column {
-                        flex: 1;
-                        height: 100%;
-                        display: flex;
-                        flex-direction: column;
-                        justify-content: center;
-                        gap: 0.5mm;
-                    }
-
-                    .black-bar {
-                        padding: ${barPadding};
-                    }
-
-                    .label-type {
-                        font-size: ${titleSize} !important;
-                    }
-
-                    .label-number {
-                        font-size: ${numSize} !important;
-                        margin-left: 2mm;
-                    }
-
-                    .code-text {
-                        font-size: ${codeSize} !important;
-                        margin-top: 0.5mm;
-                    }
-                }
-            `;
+            style.innerHTML = `@media print { @page { size: 60mm ${heightMm}; margin: 0; } body { margin: 0; padding: 0; } #print-area-modal { display: flex !important; width: 60mm; height: ${heightMm}; box-sizing: border-box; overflow: hidden; padding: 1mm; align-items: center; } .qr-box { width: ${qrSize} !important; height: ${qrSize} !important; flex-shrink: 0; margin-right: 1mm; } .info-column { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: center; gap: 0.5mm; } .black-bar { padding: ${barPadding}; } .label-type { font-size: ${titleSize} !important; } .label-number { font-size: ${numSize} !important; margin-left: 2mm; } .code-text { font-size: ${codeSize} !important; margin-top: 0.5mm; } }`;
         }
     }, [isOpen, printSize]);
 
     if (!isOpen || !data) return null;
-
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${data.fullCode}`;
     const displayLabel = labelType === 'ESTANTE' ? 'ESTANTE' : 'PRATELEIRA';
     const previewHeight = printSize === '60x30' ? '120px' : '80px';
@@ -716,70 +813,34 @@ export const PrintLabelModal: React.FC<PrintLabelModalProps> = ({ isOpen, onClos
                 <div className="p-4 bg-gray-100 flex justify-between items-center no-print border-b">
                     <h3 className="font-bold text-lg text-gray-800">Visualizar Impressão</h3>
                     <div className="flex gap-2">
-                        <select 
-                            value={printSize}
-                            onChange={(e) => setPrintSize(e.target.value as any)}
-                            className="bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-primary focus:border-primary block p-2"
-                        >
+                        <select value={printSize} onChange={(e) => setPrintSize(e.target.value as any)} className="bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-primary focus:border-primary block p-2">
                             <option value="60x30">60mm x 30mm (Padrão)</option>
                             <option value="60x20">60mm x 20mm (Compacto)</option>
                         </select>
-                        <button onClick={onClose} className="text-gray-500 hover:text-gray-800 p-1">
-                            <Icon name="close" size={24} />
-                        </button>
+                        <button onClick={onClose} className="text-gray-500 hover:text-gray-800 p-1"><Icon name="close" size={24} /></button>
                     </div>
                 </div>
-
                 <div className="p-4 flex gap-4 justify-center bg-gray-50 no-print border-b">
-                    <button 
-                        onClick={() => setLabelType('ESTANTE')}
-                        className={`px-4 py-2 rounded font-bold transition-colors ${labelType === 'ESTANTE' ? 'bg-black text-white' : 'bg-gray-200 text-gray-700'}`}
-                    >
-                        ESTANTE
-                    </button>
-                    <button 
-                        onClick={() => setLabelType('PRATELEIRA')}
-                        className={`px-4 py-2 rounded font-bold transition-colors ${labelType === 'PRATELEIRA' ? 'bg-black text-white' : 'bg-gray-200 text-gray-700'}`}
-                    >
-                        PRATELEIRA
-                    </button>
+                    <button onClick={() => setLabelType('ESTANTE')} className={`px-4 py-2 rounded font-bold transition-colors ${labelType === 'ESTANTE' ? 'bg-black text-white' : 'bg-gray-200 text-gray-700'}`}>ESTANTE</button>
+                    <button onClick={() => setLabelType('PRATELEIRA')} className={`px-4 py-2 rounded font-bold transition-colors ${labelType === 'PRATELEIRA' ? 'bg-black text-white' : 'bg-gray-200 text-gray-700'}`}>PRATELEIRA</button>
                 </div>
-
                 <div className="p-8 bg-gray-200 flex justify-center overflow-auto items-center min-h-[200px]">
-                    <div 
-                        id="print-area-modal" 
-                        className="bg-white border border-dashed border-gray-400 flex items-center box-border p-1 relative shadow-sm"
-                        style={{ width: '240px', height: previewHeight }}
-                    >
-                        <div className="flex items-center justify-center shrink-0 mr-2 qr-box" style={{width: previewQrSize, height: previewQrSize}}>
-                            <img src={qrUrl} alt="QR Code" className="w-full h-full object-contain" style={{imageRendering: 'pixelated'}} />
-                        </div>
+                    <div id="print-area-modal" className="bg-white border border-dashed border-gray-400 flex items-center box-border p-1 relative shadow-sm" style={{ width: '240px', height: previewHeight }}>
+                        <div className="flex items-center justify-center shrink-0 mr-2 qr-box" style={{width: previewQrSize, height: previewQrSize}}><img src={qrUrl} alt="QR Code" className="w-full h-full object-contain" style={{imageRendering: 'pixelated'}} /></div>
                         <div className="flex-1 flex flex-col justify-center h-full info-column">
                             <div className="w-full bg-black text-white flex items-center justify-between rounded px-2 py-1 black-bar">
-                                <span className="font-bold uppercase tracking-tight label-type" style={{fontSize: '10px'}}>
-                                    {displayLabel}
-                                </span>
-                                <span className="font-black tracking-tighter leading-none label-number" style={{fontSize: '24px'}}>
-                                    {data.number}
-                                </span>
+                                <span className="font-bold uppercase tracking-tight label-type" style={{fontSize: '10px'}}>{displayLabel}</span>
+                                <span className="font-black tracking-tighter leading-none label-number" style={{fontSize: '24px'}}>{data.number}</span>
                             </div>
                             <div className="text-center w-full mt-1 code-text">
-                                <p className="font-black text-black tracking-wider leading-none whitespace-nowrap overflow-visible" style={{fontSize: '12px'}}>
-                                    {data.fullCode}
-                                </p>
+                                <p className="font-black text-black tracking-wider leading-none whitespace-nowrap overflow-visible" style={{fontSize: '12px'}}>{data.fullCode}</p>
                             </div>
                         </div>
                     </div>
                 </div>
-
                 <div className="p-4 border-t bg-gray-50 flex justify-end gap-3 no-print">
-                    <button onClick={onClose} className="px-6 py-3 rounded-lg font-bold text-gray-600 hover:bg-gray-200">
-                        Cancelar
-                    </button>
-                    <button onClick={() => window.print()} className="px-6 py-3 rounded-lg font-bold bg-primary text-white hover:bg-primary-dark shadow-lg flex items-center gap-2">
-                        <Icon name="print" />
-                        IMPRIMIR
-                    </button>
+                    <button onClick={onClose} className="px-6 py-3 rounded-lg font-bold text-gray-600 hover:bg-gray-200">Cancelar</button>
+                    <button onClick={() => window.print()} className="px-6 py-3 rounded-lg font-bold bg-primary text-white hover:bg-primary-dark shadow-lg flex items-center gap-2"><Icon name="print" />IMPRIMIR</button>
                 </div>
             </div>
         </div>

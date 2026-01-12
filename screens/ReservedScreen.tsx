@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Icon } from '../components/Icon';
 import { Screen, Block, User } from '../types';
 import { ItemDetailModal } from '../components/ItemDetailModal';
-import { EntryModal, ConfirmationModal, GiveUpBlockModal } from '../components/Modals';
+import { EntryModal, ConfirmationModal, GiveUpBlockModal, ScannerModal } from '../components/Modals';
 import { api } from '../services/api';
 
 interface ReservedScreenProps {
@@ -19,6 +19,8 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
   
   const [selectedItem, setSelectedItem] = useState<any | null>(null);
   const [activeBlockId, setActiveBlockId] = useState<number | null>(null);
+  
+  // Modals States
   const [showEntryModal, setShowEntryModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -31,9 +33,12 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
   // State for Animation
   const [exitingBlockId, setExitingBlockId] = useState<number | null>(null);
 
+  // States for Scanning within Count Flow
+  const [showScanner, setShowScanner] = useState(false);
+  const [scannedCode, setScannedCode] = useState('');
+
   useEffect(() => {
     // Ensures status fields are populated correctly from props to prevent stale empty bars
-    // until interaction happens.
     const initialized = blocks
       .filter(b => b.status === 'progress')
       .map(b => ({
@@ -50,6 +55,7 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
   const handleOpenCount = (blockId: number, item: any) => {
     setActiveBlockId(blockId);
     setSelectedItem(item);
+    setScannedCode(''); // Reset previous scan
     setShowEntryModal(true);
   };
 
@@ -58,13 +64,39 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
     setShowDetailModal(true);
   };
 
+  const handleRequestScan = () => {
+      // Fecha temporariamente o EntryModal para abrir o Scanner
+      // O EntryModal será reaberto no handleScanComplete
+      setShowEntryModal(false);
+      setShowScanner(true);
+  };
+
+  const handleScanComplete = (code: string) => {
+      setShowScanner(false);
+      setScannedCode(code);
+      // Reabre o EntryModal com o código preenchido
+      setShowEntryModal(true);
+  };
+
+  // Se fechar o scanner sem ler nada, reabre o modal de contagem
+  const handleScannerClose = () => {
+      setShowScanner(false);
+      if (selectedItem) {
+          setShowEntryModal(true);
+      }
+  };
+
   const handleConfirmCount = async (qty: number, status: 'counted' | 'not_located' | 'divergence_info', reason?: string) => {
     if (!selectedItem || activeBlockId === null) return;
 
     // SAVE TO API (BALLAST)
     if (currentUser) {
         // Encontrar o bloco para pegar a localização correta
-        const currentBlock = localBlocks.find(b => b.id === activeBlockId);
+        // const currentBlock = localBlocks.find(b => b.id === activeBlockId); 
+        // Nota: A localização salva aqui pode ser a do sistema ou a ESCANEADA.
+        // O EntryModal não retorna a loc escaneada no callback, mas o fluxo pede para salvar a contagem.
+        // A loc escaneada serviu para validar a presença.
+        
         await api.saveCount({
             sku: selectedItem.ref,
             nome_produto: selectedItem.name,
@@ -72,7 +104,7 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
             usuario_nome: currentUser.name,
             qtd_sistema: selectedItem.balance || 0,
             qtd_contada: qty,
-            localizacao: currentBlock?.location || selectedItem.location || 'N/A',
+            localizacao: scannedCode || selectedItem.location || 'N/A', // Usa o código escaneado como prova de local
             status: status,
             divergencia_motivo: reason
         });
@@ -104,6 +136,7 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
 
     setShowEntryModal(false);
     setSelectedItem(null);
+    setScannedCode('');
   };
 
   const checkBlockCompletion = (block: Block) => {
@@ -117,9 +150,6 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
 
   const handleFinalizeConfirm = () => {
       if (blockToFinalize) {
-          // TODO: Implement actual Finalize API call if needed (currently mocked in frontend as just removing)
-          // Actually api.finalizeBlock exists in api service, we should probably use it or just release/finish.
-          // For now, consistent with existing logic:
           alert(`Bloco ${blockToFinalize.parentRef} finalizado com sucesso!`);
           
           setLocalBlocks(prev => prev.filter(b => b.id !== blockToFinalize.id));
@@ -370,12 +400,30 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
 
       <EntryModal 
         isOpen={showEntryModal}
-        onClose={() => setShowEntryModal(false)}
+        onClose={() => {
+            setShowEntryModal(false);
+            setScannedCode('');
+        }}
         onConfirm={handleConfirmCount}
+        onRequestScan={handleRequestScan}
+        
         itemName={selectedItem?.name}
         itemSku={selectedItem?.ref}
-        initialQuantity={selectedItem?.countedQty || selectedItem?.balance || 1}
+        itemBrand={selectedItem?.brand}
+        
+        systemQuantity={selectedItem?.balance || 0} // Quantidade do sistema
+        scannedLocation={scannedCode} // Local escaneado (se houver)
+        
         lastCountInfo={selectedItem?.lastCount}
+      />
+
+      {/* SCANNER MODAL (Local) */}
+      <ScannerModal 
+        isOpen={showScanner} 
+        onClose={handleScannerClose}
+        onScanComplete={handleScanComplete}
+        title="Validar Localização"
+        instruction="Escaneie o QR Code do endereço para liberar a contagem"
       />
 
       <ItemDetailModal 
