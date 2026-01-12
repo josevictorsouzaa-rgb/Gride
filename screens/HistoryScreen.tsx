@@ -27,72 +27,83 @@ export const HistoryScreen: React.FC = () => {
   useEffect(() => {
     const fetchHistory = async () => {
         setLoading(true);
-        // Increase limit to capture full block contexts
-        const data = await api.getHistory(1, 300);
+        // Trazemos um limite maior para garantir que pegamos os blocos únicos mais recentes
+        // mesmo que haja muitas entradas de itens individuais.
+        const data = await api.getHistory(1, 500);
         
         const blockGroups = new Map();
 
-        // Agrupamento Cirúrgico:
-        // Usa BLOCK_REF como identificador único absoluto do lote (ex: "SYL1402||171000000").
-        // Se não tiver (legado), usa fallback.
-        
+        // LÓGICA DE DEDUPLICAÇÃO VISUAL (Manutenção Cirúrgica)
+        // O servidor retorna os dados ordenados por DATA_HORA DESC (do mais recente para o mais antigo).
+        // Aproveitamos isso para implementar a estratégia "First Win":
+        // 1. Identificamos a "Chave Lógica" do bloco (ex: SYL1402) removendo o timestamp único.
+        // 2. Se essa chave lógica ainda não existe no mapa, significa que é a ocorrência MAIS RECENTE deste bloco. Criamos o card.
+        // 3. Se a chave já existe, verificamos se o `BLOCK_REF` (ID do lote) é o mesmo do card criado.
+        //    - Se for o mesmo lote, adicionamos o item (faz parte da contagem recente).
+        //    - Se for um lote diferente, IGNORAMOS. Isso oculta contagens antigas da lista principal,
+        //      mas elas continuam existindo no banco para a auditoria detalhada via modal.
+
         data.forEach((entry: any) => {
-            const blockRefRaw = entry.BLOCK_REF || '';
-            const dateKey = new Date(entry.DATA_HORA).toISOString().split('T')[0];
-            const hourKey = new Date(entry.DATA_HORA).getHours(); 
+            const rawRef = entry.BLOCK_REF || '';
             
-            // Prioridade total para o BLOCK_REF que contém o ID do lote
-            let blockKey = blockRefRaw;
+            // Extração da Chave Lógica (Nome do Bloco)
+            // Transforma "SYL1402||1715000000" em "SYL1402"
+            let logicalKey = rawRef.includes('||') ? rawRef.split('||')[0] : '';
             
-            // Fallback para dados antigos sem ID de lote
-            if (!blockKey) {
-                 const fallbackRef = entry.PRO_COD_SIMILAR ? String(entry.PRO_COD_SIMILAR) : entry.SKU;
-                 blockKey = `${fallbackRef}_${entry.USUARIO_ID}_${dateKey}_${hourKey}`;
+            // Fallback para dados legados
+            if (!logicalKey) {
+                 logicalKey = entry.PRO_COD_SIMILAR ? String(entry.PRO_COD_SIMILAR) : entry.SKU;
             }
 
-            if (!blockGroups.has(blockKey)) {
-                // Extração do Nome Visual: "NOME||ID" -> "NOME"
-                let displayName = blockRefRaw.includes('||') ? blockRefRaw.split('||')[0] : blockRefRaw;
-                
-                // Fallback nome
-                if (!displayName || /^\d+$/.test(displayName)) {
-                     displayName = entry.PRO_COD_SIMILAR ? `BLOCO ${entry.PRO_COD_SIMILAR}` : entry.SKU;
-                }
+            // --- INÍCIO DA LÓGICA DE FILTRAGEM ---
 
-                blockGroups.set(blockKey, {
-                    id: blockKey,
-                    parentRef: displayName,
+            if (!blockGroups.has(logicalKey)) {
+                // CENÁRIO 1: Primeira vez que vemos este bloco na lista (portanto, é o mais recente).
+                // Criamos o grupo e definimos o 'currentBatchId' como o ID deste lote específico.
+                
+                blockGroups.set(logicalKey, {
+                    id: logicalKey, // ID visual agora é a chave lógica
+                    parentRef: logicalKey, // Nome exibido
+                    currentBatchId: rawRef, // ID técnico do lote vencedor
                     name: entry.PROD_DESC_ATUAL || entry.NOME_PRODUTO, 
                     location: entry.LOCALIZACAO || 'GERAL',
                     latestDate: entry.DATA_HORA, 
                     user: entry.USUARIO_NOME,
                     status: 'concluido',
-                    itemsMap: new Map() // Garante unicidade do SKU DENTRO deste evento
+                    itemsMap: new Map()
                 });
             }
 
-            const group = blockGroups.get(blockKey);
-            
-            // Adiciona item ao grupo
-            if (!group.itemsMap.has(entry.SKU)) {
-                const isLocked = entry.TRATAMENTO_STATUS === 'PENDING';
-                const hasDivergence = entry.STATUS === 'divergence_info' || entry.STATUS === 'not_located';
+            // Recupera o grupo (acabado de criar ou já existente)
+            const group = blockGroups.get(logicalKey);
+
+            // CENÁRIO 2: Verificamos se este item pertence ao lote "vencedor" (o mais recente)
+            if (rawRef === group.currentBatchId) {
                 
-                if (hasDivergence) group.status = 'divergencia';
+                // Adiciona item ao grupo se ainda não estiver lá (deduplicação de SKU dentro do mesmo lote)
+                if (!group.itemsMap.has(entry.SKU)) {
+                    const isLocked = entry.TRATAMENTO_STATUS === 'PENDING';
+                    const hasDivergence = entry.STATUS === 'divergence_info' || entry.STATUS === 'not_located';
+                    
+                    if (hasDivergence) group.status = 'divergencia';
 
-                group.itemsMap.set(entry.SKU, {
-                    id: entry.ID,
-                    name: entry.NOME_PRODUTO,
-                    ref: entry.SKU,
-                    brand: entry.MAR_COD ? `MARCA ${entry.MAR_COD}` : 'GENÉRICO',
-                    qty: entry.QTD_CONTADA,
-                    countedBy: entry.USUARIO_NOME,
-                    countedAt: entry.DATA_HORA,
-                    location: entry.LOCALIZACAO || 'GERAL',
-                    isLocked: isLocked,
-                    status: entry.STATUS
-                });
-            }
+                    group.itemsMap.set(entry.SKU, {
+                        id: entry.ID,
+                        name: entry.NOME_PRODUTO,
+                        ref: entry.SKU,
+                        brand: entry.MAR_COD ? `MARCA ${entry.MAR_COD}` : 'GENÉRICO',
+                        qty: entry.QTD_CONTADA,
+                        countedBy: entry.USUARIO_NOME,
+                        countedAt: entry.DATA_HORA,
+                        location: entry.LOCALIZACAO || 'GERAL',
+                        isLocked: isLocked,
+                        status: entry.STATUS
+                    });
+                }
+            } 
+            // CENÁRIO 3: Se (rawRef !== group.currentBatchId), significa que é um registro
+            // de uma contagem anterior deste mesmo bloco. Nós ignoramos aqui para limpar a tela.
+            // O histórico completo ainda será acessível ao clicar no detalhe do item (via api.getProductHistory).
         });
 
         const blocks = Array.from(blockGroups.values()).map((g: any) => ({
