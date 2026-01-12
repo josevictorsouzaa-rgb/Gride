@@ -9,8 +9,8 @@ import { User, Screen } from '../types';
 
 interface HistoryScreenProps {
     currentUser?: User | null;
-    onRefreshCount?: () => void;
     onNavigate: (screen: Screen) => void;
+    onReserve: (blockId: string) => Promise<boolean>;
 }
 
 const getTimeAgo = (dateStr: string) => {
@@ -30,7 +30,7 @@ const getInitials = (name: string) => {
     return name ? name.substring(0, 2).toUpperCase() : '??';
 };
 
-export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onRefreshCount, onNavigate }) => {
+export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNavigate, onReserve }) => {
   const [historyBlocks, setHistoryBlocks] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [reservingId, setReservingId] = useState<string | null>(null);
@@ -165,20 +165,14 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onRef
 
       if (confirm(`Deseja re-reservar o bloco ${blockId}?`)) {
           setReservingId(blockId);
-          // O blockId aqui é a chave lógica (ex: SYL1402)
-          const res = await api.reserveBlock(blockId, currentUser);
+          // O fluxo agora é controlado pelo App.tsx via prop onReserve
+          // Isso garante atualização de badge e navegação na ordem correta
+          const success = await onReserve(blockId);
           
-          if (res.success) {
-              // Sucesso: Atualiza contadores e navega
-              if(onRefreshCount) onRefreshCount();
-              setTimeout(() => {
-                  setReservingId(null);
-                  onNavigate('reserved');
-              }, 500); // Pequeno delay visual para UX
-          } else {
+          if (!success) {
               setReservingId(null);
-              alert(res.message || "Não foi possível reservar o bloco. Verifique se há pendências.");
           }
+          // Se success for true, o componente será desmontado pela navegação
       }
   };
 
@@ -253,7 +247,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onRef
            const visibleItems = isExpanded ? block.items : block.items.slice(0, 3);
            const hiddenCount = block.items.length - 3;
            const hasDivergence = block.status === 'divergencia';
-           const formattedDate = new Date(block.latestDate).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+           const formattedDate = new Date(block.latestDate).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(',', '');
            const isReserving = reservingId === block.id;
 
            return (
@@ -263,18 +257,17 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onRef
                     <div className="flex justify-between items-start">
                         {/* Esquerda: Identificação do Bloco */}
                         <div className="flex-1 pr-2">
-                            <h3 className="text-xl font-black text-white leading-tight flex items-center gap-2 mb-1">
-                                {block.parentRef}
-                            </h3>
-                            <div className="flex items-center gap-1 text-xs text-gray-400 font-medium mt-1">
-                                <Icon name="place" size={14} className="text-gray-500" />
-                                {block.location}
+                            <div className="inline-block bg-primary/10 border border-primary/20 rounded px-2 py-1 mb-2">
+                                <h3 className="text-lg font-black text-white leading-tight flex items-center gap-2">
+                                    {block.parentRef}
+                                </h3>
                             </div>
+                            
                             {hasDivergence && (
-                                <span className="mt-2 text-[9px] font-bold text-orange-400 flex items-center gap-1 bg-orange-900/20 px-2 py-0.5 rounded border border-orange-900/30 w-fit">
+                                <div className="text-[9px] font-bold text-orange-400 flex items-center gap-1 bg-orange-900/20 px-2 py-0.5 rounded border border-orange-900/30 w-fit">
                                     <Icon name="warning" size={10} />
                                     Divergência
-                                </span>
+                                </div>
                             )}
                         </div>
 
@@ -284,9 +277,10 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onRef
                                 <span className="text-sm font-bold text-white leading-none tracking-tight mb-1">
                                     {formattedDate}
                                 </span>
-                                <span className="text-[10px] font-medium text-gray-400">
+                                <div className="flex items-center gap-1 text-[10px] text-gray-400">
+                                    <Icon name="schedule" size={10} />
                                     {block.timeAgo}
-                                </span>
+                                </div>
                             </div>
 
                             <button 

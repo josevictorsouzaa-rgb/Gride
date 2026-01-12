@@ -187,6 +187,24 @@ const App: React.FC = () => {
     }
   };
 
+  // Special handler for History Screen to ensure atomic update and navigation
+  const handleHistoryReserve = async (blockId: string) => {
+      if (!currentUser) return false;
+      
+      const res = await api.reserveBlock(blockId, currentUser);
+      
+      if (res.success) {
+          // Wait for the count to update before navigating to ensure data consistency
+          // This ensures that when ReservedScreen mounts, it fetches the correct new list
+          await refreshGlobalCounts();
+          setCurrentScreen('reserved');
+          return true;
+      } else {
+          alert(res.message || 'Erro ao reservar bloco.');
+          return false;
+      }
+  };
+
   const handleStartBlock = (block: any) => {
     setActiveBlock(block);
     setCurrentScreen('mission_detail');
@@ -266,7 +284,7 @@ const App: React.FC = () => {
             onPageChange={handlePageChange}
         />;
       case 'reserved': return <ReservedScreen onNavigate={setCurrentScreen} blocks={blocks} onStartBlock={handleStartBlock} currentUser={currentUser} onRefreshCount={refreshGlobalCounts} />;
-      case 'history': return <HistoryScreen currentUser={currentUser} onRefreshCount={refreshGlobalCounts} onNavigate={setCurrentScreen} />;
+      case 'history': return <HistoryScreen currentUser={currentUser} onNavigate={setCurrentScreen} onReserve={handleHistoryReserve} />;
       case 'analytics': return <AnalyticsScreen onNavigate={setCurrentScreen} />;
       case 'mission_detail': return <MissionDetailScreen blockData={activeBlock} onBack={() => { setCurrentScreen('reserved'); }} currentUser={currentUser} />;
       case 'subcategories': return <SubcategoriesScreen categoryLabel={selectedCategoryLabel || ''} categories={categories} onBack={() => setCurrentScreen('dashboard')} onSelectSegment={handleSegmentSelect} />;
