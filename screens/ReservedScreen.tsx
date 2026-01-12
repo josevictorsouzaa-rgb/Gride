@@ -151,17 +151,22 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
       setShowConfirmModal(true);
   };
 
-  const handleFinalizeConfirm = () => {
-      if (blockToFinalize) {
-          // Lógica de finalização: apenas remove visualmente e libera
-          // O backend já recebeu os saveCount individuais.
-          // Se houver item com problema, ele já foi para tratamento no saveCount.
+  const handleFinalizeConfirm = async () => {
+      if (blockToFinalize && currentUser) {
+          // CALL API TO REMOVE RESERVATION
+          await api.finalizeBlock({
+              block_id: blockToFinalize.id,
+              user_id: currentUser.id,
+              user_name: currentUser.name,
+              items: blockToFinalize.items
+          });
           
           alert(`Bloco ${blockToFinalize.parentRef} finalizado com sucesso!`);
           
+          // Remove from local list
           setLocalBlocks(prev => prev.filter(b => b.id !== blockToFinalize.id));
-          if (onRefreshCount) onRefreshCount();
           
+          if (onRefreshCount) onRefreshCount();
           setShowConfirmModal(false);
       }
   };

@@ -279,6 +279,8 @@ app.get('/reserved-blocks/:userId', (req, res) => {
     const { userId } = req.params;
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro DB' });
+        
+        // 1. Busca quais blocos estão reservados para este usuário
         db.query('SELECT BLOCK_ID, USER_ID, USER_NAME, RESERVED_AT FROM GRIDE_RESERVAS WHERE USER_ID = ?', [userId], (err, reservations) => {
             if (err) { db.detach(); return res.status(500).json({ error: 'Erro Reservas' }); }
             if (reservations.length === 0) { db.detach(); return res.json([]); }
@@ -292,37 +294,82 @@ app.get('/reserved-blocks/:userId', (req, res) => {
             });
             const idsList = blockIds.map(id => `'${id}'`).join(',');
             
-            db.query("SELECT SKU FROM GRIDE_TRATAMENTO WHERE STATUS = 'PENDING'", [], (err, treatments) => {
-                const treatmentSet = new Set();
-                if(treatments) treatments.forEach(t => treatmentSet.add(safeString(t.SKU)));
+            // 2. Busca o histórico de contagens de HOJE para este usuário, para persistir o progresso
+            // Ajuste simples para pegar do log recente
+            const sqlLogs = `
+                SELECT SKU, QTD_CONTADA, STATUS, DIVERGENCIA_MOTIVO, LOCALIZACAO, DATA_HORA 
+                FROM GRIDE_INVENTARIO_LOG 
+                WHERE USUARIO_ID = ? 
+                AND DATA_HORA >= 'today'
+            `;
+            
+            db.query(sqlLogs, [userId], (err, logs) => {
+                const logsMap = new Map();
+                if (!err && logs) {
+                    logs.forEach(log => {
+                        // Guarda o último status do dia para cada SKU
+                        logsMap.set(safeString(log.SKU), {
+                            status: safeString(log.STATUS),
+                            countedQty: log.QTD_CONTADA,
+                            divergenceReason: safeString(log.DIVERGENCIA_MOTIVO),
+                            location: safeString(log.LOCALIZACAO),
+                            date: log.DATA_HORA
+                        });
+                    });
+                }
 
-                const sql = `SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, P.MAR_COD, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE FROM PRODUTOS P WHERE P.PRO_ATIVO = 'S' AND (P.PRO_COD_SIMILAR IN (${idsList}) OR (P.PRO_COD_SIMILAR IS NULL AND P.PRO_COD IN (${idsList})))`;
-                db.query(sql, [], (err, products) => {
-                    db.detach();
-                    if (err) return res.status(500).json({ error: err.message });
-                    const groups = new Map();
-                    products.forEach(p => {
-                        const similarId = p.PRO_COD_SIMILAR ? safeString(p.PRO_COD_SIMILAR) : safeString(p.PRO_COD);
-                        const sku = safeString(p.PRO_NRFABRICANTE);
-                        if (!groups.has(similarId)) groups.set(similarId, []);
-                        groups.get(similarId).push({
-                            id: safeString(p.PRO_COD), db_pro_cod: p.PRO_COD, name: safeString(p.PRO_DESCRI), ref: sku, brand: `MARCA ${p.MAR_COD}`, balance: parseFloat(p.PRO_EST_ATUAL || 0), location: 'GERAL', lastCount: null,
-                            inTreatment: treatmentSet.has(sku)
+                db.query("SELECT SKU FROM GRIDE_TRATAMENTO WHERE STATUS = 'PENDING'", [], (err, treatments) => {
+                    const treatmentSet = new Set();
+                    if(treatments) treatments.forEach(t => treatmentSet.add(safeString(t.SKU)));
+
+                    const sql = `SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, P.MAR_COD, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE FROM PRODUTOS P WHERE P.PRO_ATIVO = 'S' AND (P.PRO_COD_SIMILAR IN (${idsList}) OR (P.PRO_COD_SIMILAR IS NULL AND P.PRO_COD IN (${idsList})))`;
+                    db.query(sql, [], (err, products) => {
+                        db.detach();
+                        if (err) return res.status(500).json({ error: err.message });
+                        const groups = new Map();
+                        products.forEach(p => {
+                            const similarId = p.PRO_COD_SIMILAR ? safeString(p.PRO_COD_SIMILAR) : safeString(p.PRO_COD);
+                            const sku = safeString(p.PRO_NRFABRICANTE);
+                            
+                            // Check Progress Log
+                            const logEntry = logsMap.get(sku);
+                            
+                            if (!groups.has(similarId)) groups.set(similarId, []);
+                            groups.get(similarId).push({
+                                id: safeString(p.PRO_COD), 
+                                db_pro_cod: p.PRO_COD, 
+                                name: safeString(p.PRO_DESCRI), 
+                                ref: sku, 
+                                brand: `MARCA ${p.MAR_COD}`, 
+                                balance: parseFloat(p.PRO_EST_ATUAL || 0), 
+                                location: 'GERAL', 
+                                lastCount: logEntry ? { 
+                                    user: 'Você', 
+                                    date: 'Hoje', 
+                                    qty: logEntry.countedQty,
+                                    location: logEntry.location 
+                                } : null,
+                                inTreatment: treatmentSet.has(sku),
+                                // Hydrate with log status if available
+                                status: logEntry ? logEntry.status : 'pending',
+                                countedQty: logEntry ? logEntry.countedQty : 0,
+                                divergenceReason: logEntry ? logEntry.divergenceReason : ''
+                            });
                         });
-                    });
-                    const blocks = [];
-                    groups.forEach((items, key) => {
-                        const blockId = key;
-                        const parentItem = items.find(i => i.id === blockId) || items[0];
-                        const displayRef = parentItem.ref || parentItem.name;
-                        const isLocked = lockMap.get(blockId);
-                        blocks.push({
-                            id: blockId, parentRef: displayRef, location: items[0].location,
-                            status: isLocked ? 'progress' : 'pending', date: 'Hoje', subcategory: 'Geral', items: items,
-                            lockedBy: isLocked ? { userId: isLocked.userId, userName: isLocked.userName, timestamp: isLocked.timestamp } : null
+                        const blocks = [];
+                        groups.forEach((items, key) => {
+                            const blockId = key;
+                            const parentItem = items.find(i => i.id === blockId) || items[0];
+                            const displayRef = parentItem.ref || parentItem.name;
+                            const isLocked = lockMap.get(blockId);
+                            blocks.push({
+                                id: blockId, parentRef: displayRef, location: items[0].location,
+                                status: isLocked ? 'progress' : 'pending', date: 'Hoje', subcategory: 'Geral', items: items,
+                                lockedBy: isLocked ? { userId: isLocked.userId, userName: isLocked.userName, timestamp: isLocked.timestamp } : null
+                            });
                         });
+                        res.json(blocks);
                     });
-                    res.json(blocks);
                 });
             });
         });
@@ -362,10 +409,15 @@ app.post('/release-block', (req, res) => {
 });
 
 app.post('/finalize-block', (req, res) => {
-    const { block_id, user_id, user_name, items } = req.body;
+    const { block_id } = req.body;
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro DB' });
-        db.query('DELETE FROM GRIDE_RESERVAS WHERE BLOCK_ID = ?', [block_id], (err) => { db.detach(); res.json({ success: true }); });
+        // Apenas remove a reserva, pois os logs já foram salvos individualmente
+        db.query('DELETE FROM GRIDE_RESERVAS WHERE BLOCK_ID = ?', [block_id], (err) => { 
+            db.detach(); 
+            if (err) return res.status(500).json({ success: false });
+            res.json({ success: true }); 
+        });
     });
 });
 
