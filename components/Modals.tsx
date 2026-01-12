@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Icon } from './Icon';
 import { Html5Qrcode } from "html5-qrcode";
 
@@ -164,7 +165,7 @@ export const EntryModal: React.FC<EntryModalProps> = ({
 
   const isLocationScanned = !!locGalpao && !!locEstante;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity" onClick={onClose} />
       
@@ -384,14 +385,15 @@ export const EntryModal: React.FC<EntryModalProps> = ({
         </div>
 
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
 export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, onClose, onConfirm }) => {
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
       <div className="relative z-10 w-full max-w-sm bg-white dark:bg-surface-dark rounded-2xl shadow-xl p-6 text-center animate-scale-up">
@@ -411,14 +413,15 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, on
             </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
 export const GiveUpBlockModal: React.FC<AbandonModalProps> = ({ isOpen, onClose, onConfirm, blockName }) => {
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
       <div className="relative z-10 w-full max-w-sm bg-white dark:bg-surface-dark rounded-2xl shadow-xl p-6 text-center animate-scale-up border-2 border-red-100 dark:border-red-900/30">
@@ -441,14 +444,15 @@ export const GiveUpBlockModal: React.FC<AbandonModalProps> = ({ isOpen, onClose,
             </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
 export const DamageModal: React.FC<DamageModalProps> = ({ isOpen, onClose, onAttach }) => {
   if (!isOpen) return null;
   
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
       <div className="relative z-10 w-full max-w-sm bg-white dark:bg-surface-dark rounded-2xl shadow-xl p-6 animate-scale-up">
@@ -481,7 +485,8 @@ export const DamageModal: React.FC<DamageModalProps> = ({ isOpen, onClose, onAtt
             </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
@@ -539,7 +544,7 @@ export const HistoryFilterModal: React.FC<HistoryFilterModalProps> = ({
     }
   };
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center no-print">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
       
@@ -661,7 +666,8 @@ export const HistoryFilterModal: React.FC<HistoryFilterModalProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
@@ -799,7 +805,7 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[80] flex flex-col bg-black no-print">
       <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start z-20 pt-safe bg-gradient-to-b from-black/80 to-transparent">
         <button onClick={handleClose} className="p-2 rounded-full bg-black/40 text-white backdrop-blur-md border border-white/10">
@@ -877,7 +883,8 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
          #reader__dashboard_section_csr button { display: none; }
          #reader video { object-fit: cover; width: 100% !important; height: 100% !important; }
       `}</style>
-    </div>
+    </div>,
+    document.body
   );
 };
 
@@ -913,7 +920,7 @@ export const PrintLabelModal: React.FC<PrintLabelModalProps> = ({ isOpen, onClos
     const previewHeight = printSize === '60x30' ? '120px' : '80px';
     const previewQrSize = printSize === '60x30' ? '80px' : '60px';
 
-    return (
+    return createPortal(
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4">
             <div className="bg-white rounded-lg shadow-xl overflow-hidden w-full max-w-2xl flex flex-col">
                 <div className="p-4 bg-gray-100 flex justify-between items-center no-print border-b">
@@ -949,6 +956,7 @@ export const PrintLabelModal: React.FC<PrintLabelModalProps> = ({ isOpen, onClos
                     <button onClick={() => window.print()} className="px-6 py-3 rounded-lg font-bold bg-primary text-white hover:bg-primary-dark shadow-lg flex items-center gap-2"><Icon name="print" />IMPRIMIR</button>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
