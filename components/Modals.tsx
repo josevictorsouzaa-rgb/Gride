@@ -497,154 +497,90 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
   title = "Ler QR Code", 
   instruction = "Aponte a câmera para o código" 
 }) => {
-  const scannerRef = useRef<Html5Qrcode | null>(null);
   const [error, setError] = useState<string>('');
-  const [isPermDenied, setIsPermDenied] = useState(false);
-  const [retryTrigger, setRetryTrigger] = useState(0); 
-  const [canToggleTorch, setCanToggleTorch] = useState(false);
-  const [torchOn, setTorchOn] = useState(false);
+  const [mountKey, setMountKey] = useState(0); // Used to force full unmount/remount on retry
 
   useEffect(() => {
-    let html5QrCode: Html5Qrcode;
+    if (!isOpen) return;
+
+    let scanner: Html5Qrcode | null = null;
+    let isMounted = true;
 
     const startScanner = async () => {
-      if (isOpen) {
-        // Reset states
-        setIsPermDenied(false);
-        setError('');
-        setCanToggleTorch(false);
-        setTorchOn(false);
-        
-        await new Promise(r => setTimeout(r, 100));
+        // Wait for DOM to be ready inside Portal
+        await new Promise(r => setTimeout(r, 400));
+        if (!isMounted) return;
 
-        // Cleanup any residual scanner instance aggressively
-        if (scannerRef.current) {
-            try { await scannerRef.current.stop(); } catch(e) {}
-            try { await scannerRef.current.clear(); } catch(e) {}
-            scannerRef.current = null;
+        const elementId = "reader";
+        const element = document.getElementById(elementId);
+        
+        if (!element) {
+            console.error("Scanner element not found");
+            return;
+        }
+
+        // HTTPS Check
+        if (!window.isSecureContext && window.location.hostname !== 'localhost') {
+            setError("Acesso à câmera requer HTTPS ou Localhost.");
+            return;
         }
 
         try {
-          html5QrCode = new Html5Qrcode("reader");
-          scannerRef.current = html5QrCode;
-          
-          const config = {
-              fps: 15,
-              qrbox: { width: 250, height: 250 },
-              aspectRatio: window.innerHeight / window.innerWidth
-          };
-
-          const constraints = { 
-              facingMode: "environment",
-              focusMode: "continuous", 
-              width: { min: 640, ideal: 1280, max: 1920 }, 
-              height: { min: 480, ideal: 720, max: 1080 }
-          };
-
-          await html5QrCode.start(
-            constraints, 
-            config,
-            (decodedText) => {
-              html5QrCode.stop().then(() => {
-                scannerRef.current = null;
-                onScanComplete(decodedText);
-              }).catch(err => console.error(err));
-            },
-            (errorMessage) => { }
-          );
-
-          try {
-             const capabilities = html5QrCode.getRunningTrackCameraCapabilities();
-             const cap: any = capabilities; 
-             if (cap && (cap.torch || cap.fillLightMode)) {
-                 setCanToggleTorch(true);
-             }
-          } catch(e) {
-             console.log("Erro ao verificar flash capability", e);
-          }
-
+            scanner = new Html5Qrcode(elementId);
+            
+            const config = { 
+                fps: 10, 
+                qrbox: { width: 250, height: 250 },
+                aspectRatio: window.innerHeight / window.innerWidth 
+            };
+            
+            await scanner.start(
+                { facingMode: "environment" }, 
+                config, 
+                (decodedText) => {
+                    if (isMounted) {
+                        onScanComplete(decodedText);
+                        // No need to stop manually here, closing modal will trigger cleanup
+                    }
+                },
+                () => { /* ignore failures */ }
+            );
         } catch (err: any) {
-          console.error("Erro ao iniciar câmera", err);
-          if (err?.name === 'NotAllowedError' || err?.message?.includes('permission')) {
-             setIsPermDenied(true);
-             setError('Permissão de câmera negada.');
-          } else {
-             if (!window.isSecureContext && window.location.hostname !== 'localhost') {
-                setError('Erro: Câmera requer HTTPS. Conexão atual é insegura.');
-             } else {
-                setError('Não foi possível iniciar a câmera.');
-             }
-          }
-        }
-      }
-    };
-
-    if (isOpen) {
-      startScanner();
-    }
-
-    // Cleanup on unmount or close
-    return () => {
-      if (scannerRef.current) {
-         scannerRef.current.stop().catch(() => {});
-         try {
-             scannerRef.current.clear();
-         } catch(e) {}
-         scannerRef.current = null;
-      }
-    };
-  }, [isOpen, retryTrigger]);
-
-  const handleClose = () => {
-    // If in error state, force close instantly
-    if (error || isPermDenied) {
-        if (scannerRef.current) {
-            try { scannerRef.current.clear(); } catch(e) {}
-            scannerRef.current = null;
-        }
-        onClose();
-        return;
-    }
-
-    if (scannerRef.current) {
-        scannerRef.current.stop().then(() => {
-            scannerRef.current = null;
-            onClose();
-        }).catch(() => {
-            // Force clean up if stop fails
-            if (scannerRef.current) {
-                try { scannerRef.current.clear(); } catch(e) {}
-                scannerRef.current = null;
+            console.error("Camera Start Error:", err);
+            if (isMounted) {
+                // Common errors translation
+                if (err?.name === 'NotAllowedError' || err?.message?.includes('permission')) {
+                    setError("Permissão de câmera negada. Verifique as configurações do navegador.");
+                } else if (err?.name === 'NotFoundError') {
+                    setError("Nenhuma câmera encontrada.");
+                } else if (err?.name === 'NotReadableError') {
+                    setError("A câmera está sendo usada por outro aplicativo.");
+                } else {
+                    setError("Não foi possível iniciar a câmera. " + (err.message || ''));
+                }
             }
-            onClose();
-        });
-    } else {
-        onClose();
-    }
-  };
+        }
+    };
 
-  const handleRetryPermission = () => {
-      // Clear current instance to force full re-initialization
-      if (scannerRef.current) {
-          try { scannerRef.current.clear(); } catch(e) {}
-          scannerRef.current = null;
-      }
+    startScanner();
+
+    // Cleanup function: Called when component unmounts OR when isOpen changes to false
+    return () => {
+        isMounted = false;
+        if (scanner) {
+            scanner.stop().then(() => {
+                try { scanner?.clear(); } catch(e) {}
+            }).catch(err => {
+                console.warn("Failed to stop scanner", err);
+                try { scanner?.clear(); } catch(e) {}
+            });
+        }
+    };
+  }, [isOpen, mountKey]);
+
+  const handleRetry = () => {
       setError('');
-      setIsPermDenied(false);
-      setRetryTrigger(prev => prev + 1);
-  };
-
-  const handleToggleTorch = async () => {
-      if (!scannerRef.current) return;
-      try {
-          await scannerRef.current.applyVideoConstraints({
-              advanced: [{ torch: !torchOn }]
-          } as any);
-          setTorchOn(!torchOn);
-      } catch (err) {
-          console.error("Erro ao alternar flash", err);
-          alert("Não foi possível alternar o flash neste dispositivo.");
-      }
+      setMountKey(prev => prev + 1); // Force effect re-run
   };
 
   if (!isOpen) return null;
@@ -652,50 +588,36 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
   return createPortal(
     <div className="fixed inset-0 z-[80] flex flex-col bg-black no-print">
       <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start z-20 pt-safe bg-gradient-to-b from-black/80 to-transparent">
-        <button onClick={handleClose} className="p-2 rounded-full bg-black/40 text-white backdrop-blur-md border border-white/10">
+        <button onClick={onClose} className="p-2 rounded-full bg-black/40 text-white backdrop-blur-md border border-white/10 active:scale-95 transition-transform">
           <Icon name="close" size={24} />
         </button>
         <div className="px-3 py-1.5 rounded-full bg-black/40 text-white text-xs font-bold backdrop-blur-md border border-white/10 uppercase tracking-wide">
           {title}
         </div>
-        
-        {/* Botão Flash (condicional) */}
-        {canToggleTorch ? (
-            <button 
-                onClick={handleToggleTorch}
-                className={`p-2 rounded-full backdrop-blur-md border transition-colors ${torchOn ? 'bg-yellow-400 text-black border-yellow-500' : 'bg-black/40 text-white border-white/10'}`}
-            >
-                <Icon name={torchOn ? "flash_on" : "flash_off"} size={24} fill={torchOn} />
-            </button>
-        ) : (
-            <div className="w-10"></div> 
-        )}
+        <div className="w-10"></div> 
       </div>
 
-      <div className="flex-1 flex flex-col items-center justify-center relative bg-black">
-         <div id="reader" className="w-full h-full object-cover"></div>
-         {(error || isPermDenied) && (
+      <div className="flex-1 flex flex-col items-center justify-center relative bg-black overflow-hidden">
+         <div id="reader" className="w-full h-full"></div>
+         
+         {error && (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 p-8 text-center z-30 animate-fade-in">
                 <div className="size-20 rounded-full bg-red-900/30 text-red-500 flex items-center justify-center mb-6 border border-red-500/30">
-                    <Icon name={isPermDenied ? "no_photography" : "error"} size={40} />
+                    <Icon name="no_photography" size={40} />
                 </div>
-                <h3 className="text-white font-bold text-xl mb-3">
-                    {isPermDenied ? "Acesso Negado" : "Erro na Câmera"}
-                </h3>
+                <h3 className="text-white font-bold text-xl mb-3">Erro na Câmera</h3>
                 <p className="text-gray-400 text-sm mb-8 max-w-xs leading-relaxed">
-                    {isPermDenied 
-                        ? "O navegador bloqueou a câmera. Habilite nas configurações do site e tente novamente." 
-                        : error}
+                    {error}
                 </p>
                 <div className="flex flex-col gap-3 w-full max-w-xs">
                     <button 
-                        onClick={handleRetryPermission} 
+                        onClick={handleRetry} 
                         className="w-full bg-primary hover:bg-primary-dark text-white px-6 py-3.5 rounded-xl font-bold text-sm transition-colors shadow-lg shadow-primary/20"
                     >
-                        Tentar Habilitar Novamente
+                        Tentar Novamente
                     </button>
                     <button 
-                        onClick={handleClose} 
+                        onClick={onClose} 
                         className="w-full bg-white/10 hover:bg-white/20 text-white px-6 py-3.5 rounded-xl font-bold text-sm transition-colors"
                     >
                         Fechar
@@ -703,7 +625,8 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
                 </div>
             </div>
          )}
-         {!error && !isPermDenied && (
+
+         {!error && (
              <>
                 <div className="absolute inset-0 pointer-events-none border-[40px] border-black/50 z-10 flex items-center justify-center">
                    <div className="relative w-64 h-64 border-2 border-white/20 rounded-lg shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
@@ -723,9 +646,9 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
          )}
       </div>
       <style>{`
-         #reader__scan_region img { display: none; }
-         #reader__dashboard_section_csr button { display: none; }
          #reader video { object-fit: cover; width: 100% !important; height: 100% !important; }
+         #reader__scan_region { width: 100% !important; min-height: 100% !important; }
+         #reader__dashboard_section_csr button { display: none; }
       `}</style>
     </div>,
     document.body
