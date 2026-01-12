@@ -79,8 +79,8 @@ export const EntryModal: React.FC<EntryModalProps> = ({
   lastCountInfo, 
   onConfirm 
 }) => {
-  // Estado Modo: 'counting' (padrão + ajuste leve) ou 'blocking' (problema grave)
-  const [mode, setMode] = useState<'counting' | 'blocking'>('counting');
+  // Estado Modo: 'counting' (padrão + ajuste leve) ou 'problem' (impedimento)
+  const [mode, setMode] = useState<'counting' | 'problem'>('counting');
   
   // Estados Contagem
   const [quantity, setQuantity] = useState(systemQuantity);
@@ -92,9 +92,9 @@ export const EntryModal: React.FC<EntryModalProps> = ({
   const [isAdjustment, setIsAdjustment] = useState(false);
   const [adjustmentReason, setAdjustmentReason] = useState('');
 
-  // Estados Bloqueio (Não contagem)
-  const [blockingReason, setBlockingReason] = useState('');
-  const [blockingType, setBlockingType] = useState<'not_located' | 'registration_error'>('not_located');
+  // Estados Problema (Não contagem)
+  const [problemReason, setProblemReason] = useState('');
+  const [problemType, setProblemType] = useState<'not_located' | 'other'>('not_located');
 
   // Bloquear Scroll do Body ao abrir
   useEffect(() => {
@@ -113,8 +113,8 @@ export const EntryModal: React.FC<EntryModalProps> = ({
       setQuantity(systemQuantity || 0); // Traz valor do sistema
       setIsAdjustment(false);
       setAdjustmentReason('');
-      setBlockingReason('');
-      setBlockingType('not_located');
+      setProblemReason('');
+      setProblemType('not_located');
       
       // Se já tiver um scan salvo (da tela pai), preenche
       if (scannedLocation) {
@@ -168,23 +168,23 @@ export const EntryModal: React.FC<EntryModalProps> = ({
       onClose();
   };
 
-  // Fluxo 2: Reportar Problema Crítico (Bloqueio)
-  const handleReportBlocking = () => {
-      if (blockingReason.trim().length < 10) {
+  // Fluxo 2: Reportar Problema (Bloqueio)
+  const handleReportProblem = () => {
+      if (problemReason.trim().length < 10) {
           alert("Descreva detalhadamente o problema (mínimo 10 caracteres).");
           return;
       }
       // Envia como 'not_located' ou 'issue' e quantidade 0 (ou ignorada)
-      onConfirm(0, blockingType === 'not_located' ? 'not_located' : 'issue', blockingReason);
+      onConfirm(0, problemType === 'not_located' ? 'not_located' : 'issue', problemReason);
       onClose();
   };
 
   const isLocationScanned = !!locGalpao && !!locEstante;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity" onClick={onClose} />
       
       {/* Modal Card - Centralized */}
       <div className="relative z-10 w-full max-w-md bg-white dark:bg-surface-dark rounded-2xl shadow-2xl overflow-hidden animate-scale-up flex flex-col max-h-[90vh]">
@@ -319,22 +319,22 @@ export const EntryModal: React.FC<EntryModalProps> = ({
                    </div>
                </>
            ) : (
-               /* Modo Problema Crítico (Bloqueio) */
+               /* Modo Reportar Problema */
                <div className="animate-fade-in space-y-4">
                    <div className="p-4 bg-red-50 dark:bg-red-900/10 rounded-xl border border-red-100 dark:border-red-900/30 flex items-start gap-3">
                        <Icon name="block" className="text-red-500 mt-1" />
                        <p className="text-xs text-red-800 dark:text-red-200 leading-relaxed">
-                           A contagem deste item será <strong>cancelada/zerada</strong> e o item será enviado para tratamento de divergência grave.
+                           A contagem será cancelada (zerada) e o item será enviado para <strong>Tratamento de Divergência</strong>.
                        </p>
                    </div>
                    
                    <div className="space-y-3">
-                       <label className="text-xs font-bold text-gray-500 uppercase block">Tipo de Problema</label>
+                       <label className="text-xs font-bold text-gray-500 uppercase block">Qual o Problema?</label>
                        <div className="flex gap-2">
                            <button 
-                             onClick={() => setBlockingType('not_located')}
+                             onClick={() => setProblemType('not_located')}
                              className={`flex-1 py-3 px-2 rounded-lg border text-xs font-bold transition-all ${
-                                 blockingType === 'not_located' 
+                                 problemType === 'not_located' 
                                  ? 'bg-gray-800 text-white border-gray-800 dark:bg-white dark:text-black' 
                                  : 'bg-white dark:bg-transparent border-gray-200 dark:border-gray-700 text-gray-500'
                              }`}
@@ -342,14 +342,14 @@ export const EntryModal: React.FC<EntryModalProps> = ({
                                Não Localizado
                            </button>
                            <button 
-                             onClick={() => setBlockingType('registration_error')}
+                             onClick={() => setProblemType('other')}
                              className={`flex-1 py-3 px-2 rounded-lg border text-xs font-bold transition-all ${
-                                 blockingType === 'registration_error' 
+                                 problemType === 'other' 
                                  ? 'bg-gray-800 text-white border-gray-800 dark:bg-white dark:text-black' 
                                  : 'bg-white dark:bg-transparent border-gray-200 dark:border-gray-700 text-gray-500'
                              }`}
                            >
-                               Erro Crítico
+                               Outro / Impeditivo
                            </button>
                        </div>
 
@@ -358,13 +358,13 @@ export const EntryModal: React.FC<EntryModalProps> = ({
                                Descrição do Ocorrido <span className="text-red-500">*</span>
                            </label>
                            <textarea 
-                               value={blockingReason}
-                               onChange={(e) => setBlockingReason(e.target.value)}
+                               value={problemReason}
+                               onChange={(e) => setProblemReason(e.target.value)}
                                className="w-full h-28 p-4 rounded-xl bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 resize-none focus:ring-2 focus:ring-red-500 outline-none text-sm"
-                               placeholder={blockingType === 'not_located' ? "Onde procurou? Havia etiqueta?" : "Qual o erro grave?"}
+                               placeholder={problemType === 'not_located' ? "Onde você procurou? A caixa estava vazia?" : "Explique por que não foi possível contar..."}
                            />
-                           <p className={`text-[10px] text-right mt-1 font-bold ${blockingReason.length < 10 ? 'text-red-500' : 'text-green-500'}`}>
-                               {blockingReason.length} / 10 caracteres
+                           <p className={`text-[10px] text-right mt-1 font-bold ${problemReason.length < 10 ? 'text-red-500' : 'text-green-500'}`}>
+                               {problemReason.length} / 10 caracteres
                            </p>
                        </div>
                    </div>
@@ -376,26 +376,25 @@ export const EntryModal: React.FC<EntryModalProps> = ({
         {/* Footer Actions */}
         <div className="p-5 border-t border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-black/20 pb-safe">
             {mode === 'counting' ? (
-                <div className="flex items-center gap-3">
+                <div className="flex gap-3">
                     <button 
-                        onClick={() => setMode('blocking')}
-                        className="flex flex-col items-center justify-center w-20 py-2 rounded-xl text-red-500 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors"
+                        onClick={() => setMode('problem')}
+                        className="flex-1 py-4 rounded-xl border border-red-200 dark:border-red-900/30 text-red-500 dark:text-red-400 font-bold text-sm hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors"
                     >
-                        <Icon name="report_problem" size={20} />
-                        <span className="text-[9px] font-bold mt-1 text-center leading-tight">Problema<br/>Crítico</span>
+                        Reportar Problema
                     </button>
                     
                     <button 
                         onClick={handleConfirmCount}
                         disabled={!isLocationScanned}
-                        className={`flex-1 h-14 rounded-xl font-bold text-lg text-white shadow-lg transition-all flex items-center justify-center gap-2 ${
+                        className={`flex-[2] py-4 rounded-xl font-bold text-lg text-white shadow-lg transition-all flex items-center justify-center gap-2 ${
                             isLocationScanned 
                             ? 'bg-primary hover:bg-primary-dark active:scale-[0.98]' 
                             : 'bg-gray-300 dark:bg-gray-700 cursor-not-allowed opacity-70'
                         }`}
                     >
                         <Icon name="check_circle" size={24} />
-                        Confirmar Contagem
+                        Confirmar
                     </button>
                 </div>
             ) : (
@@ -404,14 +403,14 @@ export const EntryModal: React.FC<EntryModalProps> = ({
                         onClick={() => setMode('counting')}
                         className="flex-1 py-3 rounded-xl border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 font-bold text-sm hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
                     >
-                        Voltar para Contagem
+                        Voltar
                     </button>
                     <button 
-                        onClick={handleReportBlocking}
+                        onClick={handleReportProblem}
                         className="flex-[1.5] py-3 rounded-xl bg-red-600 text-white font-bold text-base shadow-lg shadow-red-600/20 hover:bg-red-700 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
                     >
                         <Icon name="send" />
-                        Reportar Problema
+                        Enviar Report
                     </button>
                 </div>
             )}
@@ -710,6 +709,8 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
   const [error, setError] = useState<string>('');
   const [isPermDenied, setIsPermDenied] = useState(false);
   const [retryTrigger, setRetryTrigger] = useState(0); 
+  const [canToggleTorch, setCanToggleTorch] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
 
   useEffect(() => {
     let html5QrCode: Html5Qrcode;
@@ -718,6 +719,8 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
       if (isOpen) {
         setIsPermDenied(false);
         setError('');
+        setCanToggleTorch(false);
+        setTorchOn(false);
         
         await new Promise(r => setTimeout(r, 100));
 
@@ -725,12 +728,26 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
           html5QrCode = new Html5Qrcode("reader");
           scannerRef.current = html5QrCode;
           
+          // Configuração dinâmica para evitar "Zoom" excessivo (corte digital)
+          // Usar 'environment' e solicitar resolução ideal (HD)
+          const config = {
+              fps: 15,
+              qrbox: { width: 250, height: 250 },
+              // Importante: aspectRatio indefinido ou calculado pode ajudar, 
+              // mas solicitar uma resolução especifica (constraints) é mais eficaz para wide.
+              aspectRatio: window.innerHeight / window.innerWidth
+          };
+
+          const constraints = { 
+              facingMode: "environment",
+              focusMode: "continuous", // Tenta foco contínuo
+              width: { min: 640, ideal: 1280, max: 1920 }, // Solicita HD/Full HD para evitar crop em resoluções baixas
+              height: { min: 480, ideal: 720, max: 1080 }
+          };
+
           await html5QrCode.start(
-            { facingMode: "environment" }, 
-            {
-              fps: 10,
-              qrbox: { width: 250, height: 250 }
-            },
+            constraints, 
+            config,
             (decodedText) => {
               html5QrCode.stop().then(() => {
                 scannerRef.current = null;
@@ -739,6 +756,19 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
             },
             (errorMessage) => { }
           );
+
+          // Verificar suporte a Flash (Torch) após iniciar
+          try {
+             // getRunningTrackCameraCapabilities retorna MediaTrackSettings
+             const capabilities = html5QrCode.getRunningTrackCameraCapabilities();
+             const cap: any = capabilities; // Type casting para acessar 'torch' se existir
+             if (cap && (cap.torch || cap.fillLightMode)) {
+                 setCanToggleTorch(true);
+             }
+          } catch(e) {
+             console.log("Erro ao verificar flash capability", e);
+          }
+
         } catch (err: any) {
           console.error("Erro ao iniciar câmera", err);
           if (err?.name === 'NotAllowedError' || err?.message?.includes('permission')) {
@@ -782,10 +812,23 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
       setRetryTrigger(prev => prev + 1);
   };
 
+  const handleToggleTorch = async () => {
+      if (!scannerRef.current) return;
+      try {
+          await scannerRef.current.applyVideoConstraints({
+              advanced: [{ torch: !torchOn }]
+          } as any);
+          setTorchOn(!torchOn);
+      } catch (err) {
+          console.error("Erro ao alternar flash", err);
+          alert("Não foi possível alternar o flash neste dispositivo.");
+      }
+  };
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-black no-print">
+    <div className="fixed inset-0 z-[80] flex flex-col bg-black no-print">
       <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start z-20 pt-safe bg-gradient-to-b from-black/80 to-transparent">
         <button onClick={handleClose} className="p-2 rounded-full bg-black/40 text-white backdrop-blur-md border border-white/10">
           <Icon name="close" size={24} />
@@ -793,7 +836,18 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
         <div className="px-3 py-1.5 rounded-full bg-black/40 text-white text-xs font-bold backdrop-blur-md border border-white/10 uppercase tracking-wide">
           {title}
         </div>
-        <div className="w-10"></div> 
+        
+        {/* Botão Flash (condicional) */}
+        {canToggleTorch ? (
+            <button 
+                onClick={handleToggleTorch}
+                className={`p-2 rounded-full backdrop-blur-md border transition-colors ${torchOn ? 'bg-yellow-400 text-black border-yellow-500' : 'bg-black/40 text-white border-white/10'}`}
+            >
+                <Icon name={torchOn ? "flash_on" : "flash_off"} size={24} fill={torchOn} />
+            </button>
+        ) : (
+            <div className="w-10"></div> 
+        )}
       </div>
 
       <div className="flex-1 flex flex-col items-center justify-center relative bg-black">
@@ -830,7 +884,7 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
          {!error && !isPermDenied && (
              <>
                 <div className="absolute inset-0 pointer-events-none border-[40px] border-black/50 z-10 flex items-center justify-center">
-                   <div className="relative w-64 h-64 border-2 border-white/20 rounded-lg">
+                   <div className="relative w-64 h-64 border-2 border-white/20 rounded-lg shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
                       <div className="absolute top-0 left-0 w-6 h-6 border-l-4 border-t-4 border-primary rounded-tl-lg" />
                       <div className="absolute top-0 right-0 w-6 h-6 border-r-4 border-t-4 border-primary rounded-tr-lg" />
                       <div className="absolute bottom-0 left-0 w-6 h-6 border-l-4 border-b-4 border-primary rounded-bl-lg" />
@@ -856,14 +910,11 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
 };
 
 export const PrintLabelModal: React.FC<PrintLabelModalProps> = ({ isOpen, onClose, data }) => {
-    // ... (Mantém a lógica existente do PrintLabelModal)
-    // Retornando apenas a estrutura base para não quebrar o arquivo no replace
     const [labelType, setLabelType] = useState<'ESTANTE' | 'PRATELEIRA'>(data?.type || 'ESTANTE');
     const [printSize, setPrintSize] = useState<'60x30' | '60x20'>('60x30');
 
     useEffect(() => { if(data) setLabelType(data.type); }, [data]);
 
-    // Re-inserindo o CSS de print para garantir funcionamento
     useEffect(() => {
         if (isOpen) {
             const styleId = 'dynamic-print-modal-size';
