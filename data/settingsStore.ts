@@ -3,9 +3,6 @@ import { User } from '../types';
 
 export interface CountingSettings {
   dailyTarget: number;
-  cooldownDays: number;
-  highGiroThreshold: number;
-  accumulationMode: boolean;
 }
 
 export interface SettingsHistoryEntry {
@@ -17,27 +14,20 @@ export interface SettingsHistoryEntry {
   changes: string[];
 }
 
-const STORAGE_KEY_SETTINGS = 'li_app_settings_v2';
+const STORAGE_KEY_SETTINGS = 'li_app_settings_v1';
 const STORAGE_KEY_HISTORY = 'li_app_settings_history_v1';
 
 const DEFAULT_SETTINGS: CountingSettings = {
-  dailyTarget: 150,
-  cooldownDays: 30,
-  highGiroThreshold: 5,
-  accumulationMode: true
+  dailyTarget: 150
 };
 
 export const getSettings = (): CountingSettings => {
   try {
     const stored = localStorage.getItem(STORAGE_KEY_SETTINGS);
+    // Migração simples: se existir dados antigos com curvas, pega apenas o dailyTarget
     if (stored) {
         const parsed = JSON.parse(stored);
-        return { 
-          dailyTarget: parsed.dailyTarget ?? DEFAULT_SETTINGS.dailyTarget,
-          cooldownDays: parsed.cooldownDays ?? DEFAULT_SETTINGS.cooldownDays,
-          highGiroThreshold: parsed.highGiroThreshold ?? DEFAULT_SETTINGS.highGiroThreshold,
-          accumulationMode: parsed.accumulationMode ?? DEFAULT_SETTINGS.accumulationMode
-        };
+        return { dailyTarget: parsed.dailyTarget || DEFAULT_SETTINGS.dailyTarget };
     }
     return DEFAULT_SETTINGS;
   } catch (e) {
@@ -59,18 +49,9 @@ export const saveSettings = (newSettings: CountingSettings, user: User | null) =
   const history = getSettingsHistory();
   const changes: string[] = [];
 
-  // Detect Changes
+  // Detect Changes (Simplificado apenas para Meta)
   if (currentSettings.dailyTarget !== newSettings.dailyTarget) {
-    changes.push(`Meta Diária: ${currentSettings.dailyTarget} -> ${newSettings.dailyTarget}`);
-  }
-  if (currentSettings.cooldownDays !== newSettings.cooldownDays) {
-    changes.push(`Cooldown (Dias): ${currentSettings.cooldownDays} -> ${newSettings.cooldownDays}`);
-  }
-  if (currentSettings.highGiroThreshold !== newSettings.highGiroThreshold) {
-    changes.push(`Giro Alto (Saídas): ${currentSettings.highGiroThreshold} -> ${newSettings.highGiroThreshold}`);
-  }
-  if (currentSettings.accumulationMode !== newSettings.accumulationMode) {
-    changes.push(`Modo Acumulativo: ${currentSettings.accumulationMode ? 'Ligado' : 'Desligado'} -> ${newSettings.accumulationMode ? 'Ligado' : 'Desligado'}`);
+    changes.push(`Meta Diária alterada de ${currentSettings.dailyTarget} para ${newSettings.dailyTarget} itens`);
   }
 
   // Save Settings
