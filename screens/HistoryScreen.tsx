@@ -227,7 +227,6 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
            const isExpanded = expandedBlocks.includes(block.id);
            const visibleItems = isExpanded ? block.items : block.items.slice(0, 3);
            const hiddenCount = block.items.length - 3;
-           const hasDivergence = block.status === 'divergencia';
            
            // Formato: DD/MM/AAAA HH:mm (sem virgula)
            const formattedDate = new Date(block.latestDate).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(',', '');
@@ -242,13 +241,6 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
                             <div className="bg-primary/10 border border-primary/20 text-primary px-2 py-1 rounded font-black inline-block mb-2 text-sm">
                                 {block.parentRef}
                             </div>
-                            
-                            {hasDivergence && (
-                                <div className="text-[9px] font-bold text-orange-400 flex items-center gap-1 bg-orange-900/20 px-2 py-0.5 rounded border border-orange-900/30 w-fit">
-                                    <Icon name="warning" size={10} />
-                                    Divergência
-                                </div>
-                            )}
                         </div>
 
                         {/* Direita: Data e Ação */}
@@ -292,9 +284,16 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
                                 </div>
                                 
                                 <div className="flex flex-col items-end">
-                                    <span className={`text-xl font-black ${isIssue ? 'text-orange-500' : 'text-green-500'} tracking-tight`}>
-                                        {item.qty} <span className="text-xs font-normal text-gray-500">un</span>
-                                    </span>
+                                    {item.isLocked ? (
+                                        <span className="text-[9px] font-bold text-orange-400 flex items-center gap-1 bg-orange-900/20 px-2 py-0.5 rounded border border-orange-900/30">
+                                            <Icon name="priority_high" size={10} />
+                                            AGUARDANDO REGULARIZAÇÃO
+                                        </span>
+                                    ) : (
+                                        <span className={`text-xl font-black ${isIssue ? 'text-orange-500' : 'text-green-500'} tracking-tight`}>
+                                            {item.qty} <span className="text-xs font-normal text-gray-500">un</span>
+                                        </span>
+                                    )}
                                 </div>
                             </div>
 
