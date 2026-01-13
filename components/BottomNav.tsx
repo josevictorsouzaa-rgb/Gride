@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Icon } from './Icon';
 import { Screen } from '../types';
@@ -11,14 +12,13 @@ interface BottomNavProps {
 }
 
 export const BottomNav: React.FC<BottomNavProps> = ({ currentScreen, onNavigate, onScanClick, isAdmin, reservedCount = 0 }) => {
+  // Ordem solicitada: Hub, Reservados, Leitor (Centro), Histórico, Endereçamento
   const navItems = [
     { id: 'dashboard', label: 'Hub', icon: 'grid_view' },
-    { id: 'list', label: 'Meta', icon: 'checklist' },
+    { id: 'reserved', label: 'Reservados', icon: 'assignment' },
     { id: 'scan', label: '', icon: 'qr_code_scanner', isFab: true },
     { id: 'history', label: 'Histórico', icon: 'history' },
-    // Both Admin and Normal users now see 'Reserved' here. 
-    // Admin accesses Treatment via the Dashboard card.
-    { id: 'reserved', label: 'Reservados', icon: 'assignment' },
+    ...(isAdmin ? [{ id: 'address_manager', label: 'Endereços', icon: 'qr_code_2' }] : [])
   ];
 
   return (
