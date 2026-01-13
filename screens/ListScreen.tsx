@@ -74,45 +74,10 @@ export const ListScreen: React.FC<ListScreenProps> = ({
     onReserveBlock(id);
   };
 
-  const getStatusBadge = (status: string, date: string) => {
-    switch(status) {
-      case 'late':
-        return (
-          <div className="flex items-center gap-1.5 px-2 py-1 bg-red-100 dark:bg-red-900/30 rounded-md border border-red-200 dark:border-red-800">
-             <Icon name="event_busy" size={14} className="text-red-600 dark:text-red-400" />
-             <span className="text-[10px] font-bold text-red-700 dark:text-red-400 uppercase tracking-wide">Atrasado ({date})</span>
-          </div>
-        );
-      case 'completed':
-         return (
-            <div className="flex items-center gap-1.5 px-2 py-1 bg-green-100 dark:bg-green-900/30 rounded-md border border-green-200 dark:border-green-800">
-               <Icon name="check_circle" size={14} className="text-green-600 dark:text-green-400" />
-               <span className="text-[10px] font-bold text-green-700 dark:text-green-400 uppercase tracking-wide">Concluído</span>
-            </div>
-         );
-      default:
-        // Pending / Future
-        const isToday = date.toLowerCase().includes('hoje');
-        return (
-          <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md border ${
-            isToday 
-              ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-100 dark:border-blue-800' 
-              : 'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700'
-          }`}>
-             <Icon name="calendar_today" size={14} className={isToday ? "text-blue-600 dark:text-blue-400" : "text-gray-500 dark:text-gray-400"} />
-             <span className={`text-[10px] font-bold uppercase tracking-wide ${isToday ? "text-blue-700 dark:text-blue-400" : "text-gray-600 dark:text-gray-400"}`}>
-               {date}
-             </span>
-          </div>
-        );
-    }
-  };
-
   const filteredBlocks = useMemo(() => {
     return blocks.filter(block => {
       // 0. Base Status Check
       // Apenas esconde 'progress' (que significa que EU ou OUTRO já reservou neste momento)
-      // Se eu acabei de contar e liberei, o status volta para 'pending' no banco (ou mantém data)
       if (block.status === 'progress') return false; 
       
       // LOGIC SPLIT BASED ON MODE
@@ -129,10 +94,6 @@ export const ListScreen: React.FC<ListScreenProps> = ({
         }
       } else {
         // BROWSE MODE (Explorar Estoque)
-        // AQUI ESTÁ A CORREÇÃO SOLICITADA:
-        // Não filtramos 'completed'. Itens contados devem aparecer.
-        // Se houver impedimento (Treatment), eles aparecem mas bloqueados (tratado no render).
-        
         if (searchText) {
            const lowerSearch = searchText.toLowerCase();
            const matchesItems = block.items.some(item => 
@@ -268,7 +229,6 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                   const isExpanded = expandedBlocks.includes(block.id);
                   const visibleItems = isExpanded ? block.items : block.items.slice(0, 3);
                   const hiddenCount = block.items.length - 3;
-                  const hasStaleItems = block.items.some(i => !i.lastCount || getDaysSince(i.lastCount.date) > 30);
                   
                   // VERIFICAR IMPEDIMENTOS
                   const hasTreatmentItems = block.items.some((i: any) => i.inTreatment);
@@ -276,32 +236,14 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                   return (
                     <div key={block.id} className="bg-white dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-card-border shadow-sm p-4 flex flex-col gap-3 animate-fade-in">
                       
-                      {/* Header with Status */}
-                      <div className="flex justify-between items-start">
-                          <div>
-                             <div className="flex items-center gap-2 mb-1">
-                                <h3 className="font-bold text-gray-900 dark:text-white text-base leading-tight">
-                                    {block.parentRef}
-                                </h3>
-                             </div>
-                             <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
-                                <Icon name="place" size={12} />
-                                {block.location}
-                             </p>
-                          </div>
-                          
-                          {/* Status Badge */}
-                          <div className="flex flex-col items-end gap-1">
-                             {/* Sempre mostrar data da última contagem, independente do status */}
-                             {getStatusBadge(block.status, block.date)}
-                             
-                             {hasStaleItems && (
-                                <div className="flex items-center gap-1 text-[9px] text-orange-600 bg-orange-50 dark:bg-orange-900/20 px-1.5 py-0.5 rounded font-bold">
-                                   <Icon name="priority_high" size={10} />
-                                   <span>Itens Críticos</span>
-                                </div>
-                             )}
-                          </div>
+                      {/* HEADER SIMPLIFICADO */}
+                      <div className="flex justify-between items-center">
+                          <h3 className="font-bold text-gray-900 dark:text-white text-base leading-tight">
+                              {block.parentRef}
+                          </h3>
+                          <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                              {block.date}
+                          </span>
                       </div>
 
                       {/* DETAILED Item List */}
@@ -323,17 +265,25 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                                     <Icon name="info" size={14} className="text-gray-300 group-hover:text-primary transition-colors" />
                                   </div>
                                   
-                                  {/* Row 2: Metadata (Ref | Brand | Balance) */}
-                                  <div className="flex items-center gap-2 mt-0.5">
-                                      <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-white dark:bg-white/10 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-white/5 shadow-sm">
+                                  {/* Row 2: Metadata (Ref | Brand | Location | Balance) */}
+                                  <div className="flex items-center gap-2 mt-1 w-full overflow-hidden">
+                                      {/* REF */}
+                                      <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-white/5">
                                         {item.ref}
                                       </span>
                                       
-                                      <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400 flex items-center gap-1 border-l border-gray-300 dark:border-gray-600 pl-2">
+                                      {/* BRAND */}
+                                      <span className="truncate text-[10px] font-semibold text-gray-500 dark:text-gray-400 border-l border-gray-300 dark:border-gray-600 pl-2 uppercase">
                                         {item.brand}
                                       </span>
 
-                                      <span className="ml-auto text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+                                      {/* LOCATION */}
+                                      <span className="shrink-0 text-[10px] font-mono text-gray-400 dark:text-gray-500 border-l border-gray-300 dark:border-gray-600 pl-2">
+                                        {item.location || '-'}
+                                      </span>
+
+                                      {/* BALANCE */}
+                                      <span className="ml-auto shrink-0 text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">
                                         {item.balance} un
                                       </span>
                                   </div>
