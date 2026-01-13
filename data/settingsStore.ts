@@ -1,9 +1,7 @@
+
 import { User } from '../types';
 
 export interface CountingSettings {
-  curveA: number;
-  curveB: number;
-  curveC: number;
   dailyTarget: number;
 }
 
@@ -20,16 +18,18 @@ const STORAGE_KEY_SETTINGS = 'li_app_settings_v1';
 const STORAGE_KEY_HISTORY = 'li_app_settings_history_v1';
 
 const DEFAULT_SETTINGS: CountingSettings = {
-  curveA: 50,
-  curveB: 30,
-  curveC: 20,
   dailyTarget: 150
 };
 
 export const getSettings = (): CountingSettings => {
   try {
     const stored = localStorage.getItem(STORAGE_KEY_SETTINGS);
-    return stored ? JSON.parse(stored) : DEFAULT_SETTINGS;
+    // Migração simples: se existir dados antigos com curvas, pega apenas o dailyTarget
+    if (stored) {
+        const parsed = JSON.parse(stored);
+        return { dailyTarget: parsed.dailyTarget || DEFAULT_SETTINGS.dailyTarget };
+    }
+    return DEFAULT_SETTINGS;
   } catch (e) {
     return DEFAULT_SETTINGS;
   }
@@ -49,18 +49,9 @@ export const saveSettings = (newSettings: CountingSettings, user: User | null) =
   const history = getSettingsHistory();
   const changes: string[] = [];
 
-  // Detect Changes
-  if (currentSettings.curveA !== newSettings.curveA) {
-    changes.push(`Curva A alterada de ${currentSettings.curveA}% para ${newSettings.curveA}%`);
-  }
-  if (currentSettings.curveB !== newSettings.curveB) {
-    changes.push(`Curva B alterada de ${currentSettings.curveB}% para ${newSettings.curveB}%`);
-  }
-  if (currentSettings.curveC !== newSettings.curveC) {
-    changes.push(`Curva C alterada de ${currentSettings.curveC}% para ${newSettings.curveC}%`);
-  }
+  // Detect Changes (Simplificado apenas para Meta)
   if (currentSettings.dailyTarget !== newSettings.dailyTarget) {
-    changes.push(`Meta Diária alterada de ${currentSettings.dailyTarget} para ${newSettings.dailyTarget}`);
+    changes.push(`Meta Diária alterada de ${currentSettings.dailyTarget} para ${newSettings.dailyTarget} itens`);
   }
 
   // Save Settings
