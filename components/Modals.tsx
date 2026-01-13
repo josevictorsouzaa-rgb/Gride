@@ -537,7 +537,7 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
             
             const config = { 
                 fps: 10, 
-                qrbox: { width: 320, height: 320 } // AUMENTADO de 250 para 320
+                qrbox: { width: 320, height: 320 } 
             };
             
             await scanner.start(
@@ -681,14 +681,10 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
 
          {!error && (
              <>
-                <div className="absolute inset-0 pointer-events-none border-[100vh] border-black/60 z-10 flex items-center justify-center" style={{ borderWidth: 'clamp(20px, 20vw, 1000px)' }}>
-                   {/* This is a trick: very thick borders simulate overlay, leaving center transparent. 
-                       However, box-shadow is better for responsive center cutout. */}
-                </div>
-                {/* Better Overlay Method */}
-                <div className="absolute inset-0 pointer-events-none z-10 shadow-[0_0_0_9999px_rgba(0,0,0,0.6)] flex items-center justify-center overflow-hidden">
-                   {/* The Cutout Area */}
-                   <div className="relative w-[80vw] max-w-[350px] aspect-square border-2 border-white/30 rounded-3xl shadow-2xl">
+                {/* CORRECT OVERLAY METHOD: Container transparent, Inner has huge shadow */}
+                <div className="absolute inset-0 z-10 flex items-center justify-center overflow-hidden pointer-events-none">
+                   {/* The Cutout Area with Huge Shadow acting as overlay */}
+                   <div className="relative w-[80vw] max-w-[350px] aspect-square border-2 border-white/30 rounded-3xl shadow-[0_0_0_9999px_rgba(0,0,0,0.6)]">
                       <div className="absolute top-0 left-0 w-8 h-8 border-l-4 border-t-4 border-primary rounded-tl-2xl" />
                       <div className="absolute top-0 right-0 w-8 h-8 border-r-4 border-t-4 border-primary rounded-tr-2xl" />
                       <div className="absolute bottom-0 left-0 w-8 h-8 border-l-4 border-b-4 border-primary rounded-bl-2xl" />
