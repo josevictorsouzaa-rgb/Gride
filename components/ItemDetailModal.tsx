@@ -206,11 +206,8 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
            </div>
         </div>
 
-        <div className="p-5 border-t border-gray-200 dark:border-card-border bg-gray-50 dark:bg-black/20 flex gap-3">
-           <button onClick={onClose} className="flex-1 py-3 bg-white dark:bg-surface-dark border border-gray-300 dark:border-card-border rounded-xl font-bold text-gray-700 dark:text-white hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
-              Fechar
-           </button>
-           {onAction && (
+        {onAction && (
+            <div className="p-5 border-t border-gray-200 dark:border-card-border bg-gray-50 dark:bg-black/20 flex gap-3">
                <button 
                  onClick={() => onAction('primary')}
                  className="flex-1 py-3 bg-primary text-white rounded-xl font-bold shadow-lg shadow-primary/20 hover:bg-primary-dark transition-colors flex items-center justify-center gap-2"
@@ -218,8 +215,8 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
                   {actionLabel || 'Ação'}
                   <Icon name="arrow_forward" size={18} />
                </button>
-           )}
-        </div>
+            </div>
+        )}
 
       </div>
     </div>,
