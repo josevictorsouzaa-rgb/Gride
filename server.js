@@ -591,7 +591,7 @@ app.post('/finalize-block', (req, res) => {
                     });
 
                     // 5. Tratamento se necessário
-                    if (statusEN === 'not_located' || statusEN === 'divergence_info') {
+                    if (statusEN === 'not_located' || statusEN === 'divergence_info' || statusEN === 'issue') {
                         const sqlTreat = `INSERT INTO GRIDE_TRATAMENTO (
                             LOG_ID, PRO_COD, PRO_NRFABRICANTE, NOME_PRODUTO, LOCALIZACAO, 
                             TIPO_ERRO, DESCRICAO_ERRO, REPORTADO_POR, STATUS
