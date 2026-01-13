@@ -105,7 +105,6 @@ export const api = {
       if (!response.ok) throw new Error('Erro');
       const data: ApiCategory[] = await response.json();
       
-      // Enforce frontend icons mapping for better visual representation
       return data.map(cat => ({
           ...cat,
           icon: GROUP_ICONS[cat.db_id] || 'inventory_2',
@@ -117,8 +116,8 @@ export const api = {
     } catch (error) { return []; }
   },
 
-  // NOVA ROTA: Get Daily Suggestions based on Settings
-  getDailyMeta: async (settings: CountingSettings): Promise<Block[]> => {
+  // --- SUGESTÃO INTELIGENTE DE META ---
+  getDailyMetaSuggestions: async (settings: CountingSettings): Promise<Block[]> => {
       try {
           const params = new URLSearchParams({
               dailyTarget: settings.dailyTarget.toString(),
@@ -128,7 +127,7 @@ export const api = {
           });
 
           const response = await fetch(`${API_BASE_URL}/daily-meta-suggestions?${params}`);
-          if (!response.ok) throw new Error('Erro ao buscar meta diária');
+          if (!response.ok) throw new Error('Erro ao buscar sugestões');
           return await response.json();
       } catch (error) {
           console.error(error);
@@ -136,14 +135,14 @@ export const api = {
       }
   },
 
-  // NOVA ROTA: Get Meta Status (Counts)
-  getMetaStatus: async (dailyTarget: number, accumulationMode: boolean): Promise<MetaStatus> => {
+  // --- STATUS DA META ACUMULADA ---
+  getDailyMetaStatus: async (target: number, accumulate: boolean): Promise<MetaStatus> => {
       try {
-          const response = await fetch(`${API_BASE_URL}/meta-status?target=${dailyTarget}&accumulate=${accumulationMode}`);
-          if (!response.ok) throw new Error('Erro ao buscar status da meta');
+          const response = await fetch(`${API_BASE_URL}/daily-meta-status?target=${target}&accumulate=${accumulate}`);
+          if (!response.ok) throw new Error('Erro status meta');
           return await response.json();
       } catch (error) {
-          return { dailyTarget, countedToday: 0, accumulatedPending: 0 };
+          return { dailyTarget: target, countedToday: 0, accumulatedPending: 0 };
       }
   },
 
@@ -244,19 +243,15 @@ export const api = {
   },
 
   resolveTreatment: async (id: number, note: string, user: string, action: 'adjust' | 'inactivate' | 'ignore'): Promise<boolean> => {
-      // Mock implementation since backend route not strictly defined in previous steps, but expected by UI
-      // In a real scenario, you'd POST to /resolve-treatment
       return true; 
   },
 
   saveCount: async (logEntry: Partial<InventoryLogEntry>) => {
-      // Used for ad-hoc scanning (single item)
-      // Implementation pending on backend for ad-hoc, but UI calls it.
       console.log("Saving ad-hoc count:", logEntry);
       return { success: true };
   },
 
-  // --- WMS ADDRESS MANAGEMENT ---
+  // --- WMS & WAREHOUSE ---
   getAddresses: async (): Promise<WMSAddress[]> => {
       try {
           const response = await fetch(`${API_BASE_URL}/addresses`);
@@ -276,7 +271,6 @@ export const api = {
       } catch(e) { return { success: false, count: 0, skipped: 0 }; }
   },
 
-  // --- WAREHOUSE MANAGEMENT ---
   getWarehouses: async (): Promise<Warehouse[]> => {
       try {
           const response = await fetch(`${API_BASE_URL}/warehouses`);
@@ -307,7 +301,6 @@ export const api = {
       } catch(e) { return { success: false }; }
   },
 
-  // --- LAYOUT EDITOR ---
   getLayout: async (): Promise<WarehouseLayout | null> => {
       try {
         const stored = localStorage.getItem('gride_layout_v1');

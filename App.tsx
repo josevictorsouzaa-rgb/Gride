@@ -18,10 +18,11 @@ import { ScannerModal } from './components/Modals';
 import { Icon } from './components/Icon'; 
 import { AutoPartsLoader } from './components/AutoPartsLoader';
 import { api, ApiCategory } from './services/api'; 
+import { getSettings } from './data/settingsStore';
 
 const initialBlocksData: Block[] = [];
 const INACTIVITY_LIMIT = 15 * 60 * 1000;
-const MIN_LOADING_TIME = 600; // ms - Tempo mínimo para o loader ficar visível
+const MIN_LOADING_TIME = 600;
 
 const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<Screen>('login');
@@ -59,7 +60,6 @@ const App: React.FC = () => {
     setCurrentScreen('dashboard');
   };
 
-  // Helper to refresh global counts (Reserved + Treatment)
   const refreshGlobalCounts = useCallback(async () => {
       if (currentUser) {
           try {
@@ -88,7 +88,6 @@ const App: React.FC = () => {
     return () => { clearTimeout(timeoutId); events.forEach(event => window.removeEventListener(event, resetTimer)); };
   }, [currentScreen, handleLogout]);
 
-  // Carrega Categorias e Contadores ao entrar no sistema
   useEffect(() => {
       if (currentUser && currentScreen !== 'login') {
           refreshGlobalCounts();
@@ -99,7 +98,6 @@ const App: React.FC = () => {
       }
   }, [currentScreen, currentUser, refreshGlobalCounts]);
 
-  // Lógica principal de carregamento de blocos baseada na tela e filtros
   useEffect(() => {
     if (currentScreen === 'login') return;
 
@@ -113,19 +111,19 @@ const App: React.FC = () => {
         }
 
         setIsLoading(true);
-        // Delay mínimo artificial para evitar "flash" de tela
         const minDelay = new Promise(resolve => setTimeout(resolve, MIN_LOADING_TIME));
 
         try {
             if (isListScreen) {
-                // META DIÁRIA
+                // META DIÁRIA INTELIGENTE
+                const settings = getSettings();
                 const [metaBlocks] = await Promise.all([
-                    api.getBlocks(1, 100, '', undefined, undefined, true),
+                    api.getDailyMetaSuggestions(settings),
                     minDelay
                 ]);
                 setBlocks(metaBlocks);
             } else if (isFilteredList) {
-                // EXPLORAR
+                // EXPLORAR ESTOQUE (MODO BROWSE)
                 if (segmentFilter !== 'Resultado da Busca' && selectedGrCod) {
                     const [filteredBlocks] = await Promise.all([
                         api.getBlocks(browsePage, BROWSE_LIMIT, '', selectedGrCod, selectedSgCod),
@@ -136,13 +134,12 @@ const App: React.FC = () => {
                     await minDelay;
                 }
             } else if (currentScreen === 'reserved' && currentUser) {
-                // RESERVADOS - FETCH FRESCO GARANTIDO
                 const [myReserved] = await Promise.all([
                     api.getReservedBlocks(currentUser.id),
                     minDelay
                 ]);
                 setBlocks(myReserved);
-                setReservedCount(myReserved.length); // Update local cache of count
+                setReservedCount(myReserved.length);
             } else {
                 await minDelay; 
             }
@@ -174,7 +171,6 @@ const App: React.FC = () => {
     if (!currentUser) return;
     const res = await api.reserveBlock(id, currentUser);
     if (res.success) {
-        // Atualiza visualmente na lista (Opcional, mas bom para feedback imediato)
         setBlocks(prev => prev.map(b => 
           b.id === id ? { 
               ...b, 
@@ -182,22 +178,16 @@ const App: React.FC = () => {
               lockedBy: { userId: currentUser.id, userName: currentUser.name, timestamp: new Date().toISOString() } 
           } : b
         ));
-        
-        // CRUCIAL: Espera a atualização global antes de qualquer outra coisa
         await refreshGlobalCounts(); 
     } else {
         alert(res.message || 'Erro ao reservar.');
     }
   };
 
-  // Special handler for History Screen to ensure atomic update
   const handleHistoryReserve = async (blockId: string) => {
       if (!currentUser) return false;
-      
       const res = await api.reserveBlock(blockId, currentUser);
-      
       if (res.success) {
-          // Wait for the count to update. The navigation is handled by HistoryScreen.
           await refreshGlobalCounts();
           return true;
       } else {
@@ -237,7 +227,6 @@ const App: React.FC = () => {
                 alert(`Nenhum item encontrado na localização: ${cleanCode}`);
             }
         } else {
-            // Busca produto por código
             const [results] = await Promise.all([
                 api.getBlocks(1, 50, cleanCode),
                 minDelay
@@ -302,8 +291,7 @@ const App: React.FC = () => {
 
   return (
     <div className="flex w-full min-h-screen bg-background-light dark:bg-background-dark text-slate-900 dark:text-white transition-opacity duration-300">
-      {/* LOADING OVERLAY GLOBAL */}
-      {isLoading && <AutoPartsLoader message="Buscando Itens..." />}
+      {isLoading && <AutoPartsLoader message="Processando..." />}
       
       <Sidebar 
         currentScreen={activeNavTab} 

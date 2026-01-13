@@ -64,7 +64,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
             setIsLoading(true);
             const settings = getSettings();
             try {
-                const smartBlocks = await api.getDailyMeta(settings);
+                const smartBlocks = await api.getDailyMetaSuggestions(settings);
                 setLocalBlocks(smartBlocks);
             } catch (e) {
                 console.error("Falha ao carregar meta inteligente", e);
