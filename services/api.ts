@@ -105,6 +105,7 @@ export const api = {
       if (!response.ok) throw new Error('Erro');
       const data: ApiCategory[] = await response.json();
       
+      // Enforce frontend icons mapping for better visual representation
       return data.map(cat => ({
           ...cat,
           icon: GROUP_ICONS[cat.db_id] || 'inventory_2',
@@ -116,8 +117,8 @@ export const api = {
     } catch (error) { return []; }
   },
 
-  // --- SUGESTÃO INTELIGENTE DE META ---
-  getDailyMetaSuggestions: async (settings: CountingSettings): Promise<Block[]> => {
+  // NOVA ROTA: Get Daily Suggestions based on Settings
+  getDailyMeta: async (settings: CountingSettings): Promise<Block[]> => {
       try {
           const params = new URLSearchParams({
               dailyTarget: settings.dailyTarget.toString(),
@@ -127,7 +128,7 @@ export const api = {
           });
 
           const response = await fetch(`${API_BASE_URL}/daily-meta-suggestions?${params}`);
-          if (!response.ok) throw new Error('Erro ao buscar sugestões');
+          if (!response.ok) throw new Error('Erro ao buscar meta diária');
           return await response.json();
       } catch (error) {
           console.error(error);
@@ -135,14 +136,14 @@ export const api = {
       }
   },
 
-  // --- STATUS DA META ACUMULADA ---
-  getDailyMetaStatus: async (target: number, accumulate: boolean): Promise<MetaStatus> => {
+  // NOVA ROTA: Get Meta Status (Counts)
+  getMetaStatus: async (dailyTarget: number): Promise<MetaStatus> => {
       try {
-          const response = await fetch(`${API_BASE_URL}/daily-meta-status?target=${target}&accumulate=${accumulate}`);
-          if (!response.ok) throw new Error('Erro status meta');
+          const response = await fetch(`${API_BASE_URL}/meta-status?target=${dailyTarget}`);
+          if (!response.ok) throw new Error('Erro ao buscar status da meta');
           return await response.json();
       } catch (error) {
-          return { dailyTarget: target, countedToday: 0, accumulatedPending: 0 };
+          return { dailyTarget, countedToday: 0, accumulatedPending: 0 };
       }
   },
 
@@ -151,167 +152,4 @@ export const api = {
       const params = new URLSearchParams({ 
           page: page.toString(), 
           limit: limit.toString(), 
-          search,
-          ...(gr_cod ? { gr_cod: gr_cod.toString() } : {}),
-          ...(sg_cod ? { sg_cod: sg_cod.toString() } : {}),
-          ...(location ? { location } : {})
-      });
-      
-      const response = await fetch(`${API_BASE_URL}/blocks?${params}`);
-      if (!response.ok) throw new Error('Network response was not ok');
-      return await response.json();
-    } catch (error) {
-      console.error(error);
-      return [];
-    }
-  },
-
-  getReservedBlocks: async (userId: string): Promise<Block[]> => {
-      try {
-          const response = await fetch(`${API_BASE_URL}/reserved-blocks/${userId}`);
-          if (response.ok) return await response.json();
-          return [];
-      } catch (e) { return []; }
-  },
-
-  reserveBlock: async (blockId: number | string, user: User): Promise<{ success: boolean; message?: string }> => {
-      try {
-          const response = await fetch(`${API_BASE_URL}/reserve-block`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ block_id: blockId, user_id: user.id, user_name: user.name })
-          });
-          return await response.json();
-      } catch (e) { return { success: false, message: 'Erro de conexão' }; }
-  },
-
-  updateReservationProgress: async (blockId: number, items: any[]): Promise<{ success: boolean }> => {
-      try {
-          const response = await fetch(`${API_BASE_URL}/update-reservation-progress`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ block_id: blockId, items })
-          });
-          return await response.json();
-      } catch (e) { return { success: false }; }
-  },
-
-  finalizeBlock: async (data: { block_id: number, user_id: string, user_name: string, items: any[], parent_ref: string }): Promise<{ success: boolean }> => {
-      try {
-          const response = await fetch(`${API_BASE_URL}/finalize-block`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(data)
-          });
-          return await response.json();
-      } catch (e) { return { success: false }; }
-  },
-
-  releaseBlock: async (blockId: number): Promise<{ success: boolean }> => {
-      try {
-          const response = await fetch(`${API_BASE_URL}/release-block`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ block_id: blockId })
-          });
-          return await response.json();
-      } catch (e) { return { success: false }; }
-  },
-
-  getHistory: async (page = 1, limit = 50): Promise<any[]> => {
-      try {
-          const response = await fetch(`${API_BASE_URL}/history?page=${page}&limit=${limit}`);
-          if (response.ok) return await response.json();
-          return [];
-      } catch (e) { return []; }
-  },
-
-  getProductHistory: async (sku: string): Promise<any[]> => {
-      try {
-          const response = await fetch(`${API_BASE_URL}/product-history/${encodeURIComponent(sku)}`);
-          if (response.ok) return await response.json();
-          return [];
-      } catch (e) { return []; }
-  },
-
-  getTreatmentItems: async (): Promise<TreatmentItem[]> => {
-      try {
-          const response = await fetch(`${API_BASE_URL}/treatment-items`);
-          if (response.ok) return await response.json();
-          return [];
-      } catch (e) { return []; }
-  },
-
-  resolveTreatment: async (id: number, note: string, user: string, action: 'adjust' | 'inactivate' | 'ignore'): Promise<boolean> => {
-      return true; 
-  },
-
-  saveCount: async (logEntry: Partial<InventoryLogEntry>) => {
-      console.log("Saving ad-hoc count:", logEntry);
-      return { success: true };
-  },
-
-  // --- WMS & WAREHOUSE ---
-  getAddresses: async (): Promise<WMSAddress[]> => {
-      try {
-          const response = await fetch(`${API_BASE_URL}/addresses`);
-          if (response.ok) return await response.json();
-          return [];
-      } catch(e) { return []; }
-  },
-
-  saveAddresses: async (addresses: Partial<WMSAddress>[]): Promise<{ success: boolean, count: number, skipped: number }> => {
-      try {
-          const response = await fetch(`${API_BASE_URL}/save-addresses`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(addresses)
-          });
-          return await response.json();
-      } catch(e) { return { success: false, count: 0, skipped: 0 }; }
-  },
-
-  getWarehouses: async (): Promise<Warehouse[]> => {
-      try {
-          const response = await fetch(`${API_BASE_URL}/warehouses`);
-          if (response.ok) return await response.json();
-          return [];
-      } catch(e) { return []; }
-  },
-
-  saveWarehouse: async (data: Partial<Warehouse>): Promise<{ success: boolean, message?: string }> => {
-      try {
-          const response = await fetch(`${API_BASE_URL}/save-warehouse`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(data)
-          });
-          return await response.json();
-      } catch(e) { return { success: false, message: 'Erro conexao' }; }
-  },
-
-  deleteWarehouse: async (id: number): Promise<{ success: boolean }> => {
-      try {
-          const response = await fetch(`${API_BASE_URL}/delete-warehouse`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ id })
-          });
-          return await response.json();
-      } catch(e) { return { success: false }; }
-  },
-
-  getLayout: async (): Promise<WarehouseLayout | null> => {
-      try {
-        const stored = localStorage.getItem('gride_layout_v1');
-        return stored ? JSON.parse(stored) : null;
-      } catch (e) { return null; }
-  },
-
-  saveLayout: async (layout: WarehouseLayout): Promise<boolean> => {
-      try {
-        localStorage.setItem('gride_layout_v1', JSON.stringify(layout));
-        return true;
-      } catch (e) { return false; }
-  }
-};
+          search 

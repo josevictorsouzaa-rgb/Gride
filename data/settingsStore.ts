@@ -3,9 +3,9 @@ import { User } from '../types';
 
 export interface CountingSettings {
   dailyTarget: number;
-  cooldownDays: number; // Intervalo minimo entre contagens
-  highGiroThreshold: number; // Mínimo de saídas para considerar alto giro
-  accumulationMode: boolean; // Se deve somar meta atrasada
+  cooldownDays: number;
+  highGiroThreshold: number;
+  accumulationMode: boolean;
 }
 
 export interface SettingsHistoryEntry {
@@ -59,6 +59,7 @@ export const saveSettings = (newSettings: CountingSettings, user: User | null) =
   const history = getSettingsHistory();
   const changes: string[] = [];
 
+  // Detect Changes
   if (currentSettings.dailyTarget !== newSettings.dailyTarget) {
     changes.push(`Meta Diária: ${currentSettings.dailyTarget} -> ${newSettings.dailyTarget}`);
   }
@@ -66,14 +67,16 @@ export const saveSettings = (newSettings: CountingSettings, user: User | null) =
     changes.push(`Cooldown (Dias): ${currentSettings.cooldownDays} -> ${newSettings.cooldownDays}`);
   }
   if (currentSettings.highGiroThreshold !== newSettings.highGiroThreshold) {
-    changes.push(`Giro Alto: ${currentSettings.highGiroThreshold} -> ${newSettings.highGiroThreshold}`);
+    changes.push(`Giro Alto (Saídas): ${currentSettings.highGiroThreshold} -> ${newSettings.highGiroThreshold}`);
   }
   if (currentSettings.accumulationMode !== newSettings.accumulationMode) {
-    changes.push(`Acumulativo: ${currentSettings.accumulationMode} -> ${newSettings.accumulationMode}`);
+    changes.push(`Modo Acumulativo: ${currentSettings.accumulationMode ? 'Ligado' : 'Desligado'} -> ${newSettings.accumulationMode ? 'Ligado' : 'Desligado'}`);
   }
 
+  // Save Settings
   localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(newSettings));
 
+  // If there were changes, add to history
   if (changes.length > 0) {
     const newEntry: SettingsHistoryEntry = {
       id: Date.now().toString(),

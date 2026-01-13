@@ -3,9 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { Icon } from '../components/Icon';
 import { Screen, User } from '../types';
-import { api, ApiCategory, MetaStatus } from '../services/api';
+import { ApiCategory } from '../services/api';
 import { AutoPartsLoader } from '../components/AutoPartsLoader';
-import { getSettings } from '../data/settingsStore';
 
 interface DashboardScreenProps {
   onNavigate: (screen: Screen) => void;
@@ -13,7 +12,7 @@ interface DashboardScreenProps {
   currentUser: User | null;
   onLogout?: () => void;
   categories: ApiCategory[]; 
-  treatmentCount?: number; 
+  treatmentCount?: number; // Nova prop para contagem real
 }
 
 const getInitials = (name: string) => {
@@ -28,55 +27,37 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   categories,
   treatmentCount = 0
 }) => {
+  // Use AutoPartsLoader when categories are not yet loaded
   if (!categories || !Array.isArray(categories) || categories.length === 0) { 
       return <AutoPartsLoader message="Carregando Categorias..." fullScreen={false} />;
   }
 
   const [showAllCategories, setShowAllCategories] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
-  const [metaStatus, setMetaStatus] = useState<MetaStatus>({ dailyTarget: 150, countedToday: 0, accumulatedPending: 0 });
 
   useEffect(() => {
-    const checkDesktop = () => setIsDesktop(window.innerWidth >= 1024);
+    const checkDesktop = () => {
+      setIsDesktop(window.innerWidth >= 1024);
+    };
     checkDesktop();
     window.addEventListener('resize', checkDesktop);
-    
-    // --- LOAD REAL DATA FROM API ---
-    const loadStatus = async () => {
-        const settings = getSettings();
-        // Chama a API com parametros salvos
-        const status = await api.getDailyMetaStatus(settings.dailyTarget, settings.accumulationMode);
-        setMetaStatus(status);
-    };
-    loadStatus();
-
     return () => window.removeEventListener('resize', checkDesktop);
   }, []);
 
-  const displayedCategories = (isDesktop || showAllCategories) ? categories : categories.slice(0, 6);
+  const displayedCategories = (isDesktop || showAllCategories) 
+    ? (categories || []) 
+    : (categories || []).slice(0, 6);
 
-  const { dailyTarget, countedToday, accumulatedPending } = metaStatus;
-  
-  // Lógica de Visualização do Gráfico
-  // Se houver acumulado, o total visual é Meta + Acumulado
-  const effectiveTarget = dailyTarget + accumulatedPending;
-  const progressPercent = effectiveTarget > 0 ? Math.min(100, Math.round((countedToday / effectiveTarget) * 100)) : 0;
-  
-  // Cálculo do restante do dia (não pode ser negativo)
-  // Se contagem > acumulado, abater do acumulado primeiro visualmente? Não, simplifica.
-  // Gráfico:
-  // 1. Contado (Azul)
-  // 2. Acumulado Pendente (Vermelho) - Representa o que falta do passado
-  // 3. Restante Hoje (Cinza) - O que falta da meta original de hoje
-  
-  // Ajuste para não quebrar o gráfico se a contagem superar tudo
-  const pendingAccumulated = Math.max(0, accumulatedPending); 
-  const remainingToday = Math.max(0, dailyTarget - Math.max(0, countedToday - accumulatedPending)); // Simplificação visual
+  const dailyTarget = 150;
+  const countedToday = 98;
+  const lateCount = 12; 
+  const totalYearCounted = 24500;
+  const progressPercent = Math.min(100, Math.round((countedToday / dailyTarget) * 100));
 
   const goalData = [
-    { name: 'Contado', value: countedToday, color: '#137fec' }, // Azul/Verde
-    { name: 'Acumulado', value: pendingAccumulated, color: '#ef4444' }, // Vermelho
-    { name: 'Restante', value: Math.max(0, effectiveTarget - countedToday - pendingAccumulated), color: '#33415520' } // Cinza Fundo
+    { name: 'Contado', value: countedToday, color: '#137fec' },
+    { name: 'Atrasado', value: lateCount, color: '#ef4444' },
+    { name: 'Restante', value: Math.max(0, dailyTarget - countedToday), color: '#33415520' }
   ];
 
   return (
@@ -122,24 +103,11 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
       <main className="flex flex-col p-4 md:px-8 md:pb-8 gap-6 md:grid md:grid-cols-3">
         
         {/* KPI: Daily Goal Card */}
-        <div 
-            onClick={() => onNavigate('list')}
-            className="md:col-span-1 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border p-5 relative overflow-hidden group hover:border-primary/50 transition-all duration-300 cursor-pointer hover:shadow-md"
-        >
+        <div className="md:col-span-1 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border p-5 relative overflow-hidden group hover:border-primary/50 transition-colors duration-300">
            <div className="flex justify-between items-start mb-4 relative z-10">
               <div className="flex flex-col">
-                 <h3 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                     {accumulatedPending > 0 ? 'Meta + Acumulado' : 'Meta Diária'}
-                 </h3>
-                 <div className="flex items-baseline gap-2 mt-1">
-                    <p className="text-3xl font-extrabold text-gray-900 dark:text-white">{countedToday}</p>
-                    <span className="text-lg text-gray-400 font-medium">/ {effectiveTarget}</span>
-                 </div>
-                 {accumulatedPending > 0 && (
-                     <span className="text-[10px] font-bold text-red-500 bg-red-100 dark:bg-red-900/20 px-2 py-0.5 rounded-full w-fit mt-1">
-                         +{accumulatedPending} Pendentes Anteriores
-                     </span>
-                 )}
+                 <h3 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Meta Diária</h3>
+                 <p className="text-3xl font-extrabold text-gray-900 dark:text-white mt-1">{countedToday} <span className="text-lg text-gray-400 font-medium">/ {dailyTarget}</span></p>
               </div>
               <div className="size-16">
                  <ResponsiveContainer width="100%" height="100%">
@@ -163,7 +131,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
            
            <div className="relative z-10">
               <div className="flex justify-between text-xs font-semibold mb-1">
-                 <span className="text-gray-600 dark:text-gray-300">Progresso Real</span>
+                 <span className="text-gray-600 dark:text-gray-300">Progresso</span>
                  <span className="text-primary">{progressPercent}%</span>
               </div>
               <div className="h-2 w-full bg-gray-100 dark:bg-white/10 rounded-full overflow-hidden">
@@ -174,12 +142,17 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
         {/* KPI: Issues Card */}
         {currentUser?.isAdmin && (
-          <div className="md:col-span-1 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border p-5 relative overflow-hidden group hover:border-orange-400/50 transition-colors duration-300 cursor-pointer" onClick={() => onNavigate('treatment')}>
+          <div className="md:col-span-1 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border p-5 relative overflow-hidden group hover:border-orange-400/50 transition-colors duration-300">
              <div className="flex justify-between items-start mb-2 relative z-10">
                 <div className="p-2 rounded-lg bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400">
                    <Icon name="report_problem" />
                 </div>
-                <button className="text-xs font-bold text-primary hover:underline">Resolver</button>
+                <button 
+                  onClick={() => onNavigate('treatment')}
+                  className="text-xs font-bold text-primary hover:underline"
+                >
+                  Resolver
+                </button>
              </div>
              <h3 className="text-2xl font-bold text-gray-900 dark:text-white mt-2">{treatmentCount}</h3>
              <p className="text-xs text-gray-500 font-medium">Divergências pendentes</p>
@@ -193,7 +166,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
                    <Icon name="bar_chart" />
                 </div>
              </div>
-             <h3 className="text-2xl font-bold text-gray-900 dark:text-white mt-2">24.5k</h3>
+             <h3 className="text-2xl font-bold text-gray-900 dark:text-white mt-2">{(totalYearCounted / 1000).toFixed(1)}k</h3>
              <p className="text-xs text-gray-500 font-medium">Itens contados este ano</p>
         </div>
 
