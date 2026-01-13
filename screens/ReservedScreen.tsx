@@ -89,8 +89,15 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
   const handleConfirmCount = async (qty: number, status: 'counted' | 'not_located' | 'issue', reason?: string) => {
     if (!selectedItem || activeBlockId === null) return;
 
-    // Normaliza status para o padrão do backend
-    const finalStatus = status === 'issue' ? 'divergence_info' : status;
+    // Lógica cirúrgica: define status como divergência se houver motivo de ajuste ou se for um problema reportado
+    let finalStatus: 'counted' | 'not_located' | 'divergence_info' = 'counted';
+    
+    if (status === 'not_located') {
+        finalStatus = 'not_located';
+    } else if (status === 'issue' || (reason && reason.trim() !== '')) {
+        finalStatus = 'divergence_info';
+    }
+
     const finalLocation = scannedCode || selectedItem.location || 'GERAL';
 
     // 1. ATUALIZA ESTADO LOCAL
