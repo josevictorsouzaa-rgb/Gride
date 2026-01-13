@@ -26,73 +26,123 @@ const options = {
     pageSize: 4096
 };
 
-// --- INIT DB COM BOOT SINCRONIZADO E SEQUENCIAL ---
+// --- INIT DB COM TRATAMENTO DE ERROS VISÍVEL ---
 const initDb = () => {
-    return new Promise((resolve, reject) => {
-        console.log(">>> Iniciando verificação e criação de tabelas GRIDE...");
-        
-        Firebird.attach(options, async (err, db) => {
-            if (err) {
-                console.error("ERRO CRÍTICO: Não foi possível conectar ao banco para Init.", err.message);
-                // Resolvemos para não travar o boot se o banco estiver offline momentaneamente, 
-                // mas as rotas falharão graciosamente.
-                return resolve(); 
-            }
+    console.log("Iniciando verificação do banco de dados...");
+    
+    Firebird.attach(options, (err, db) => {
+        if (err) {
+            console.error("ERRO CRÍTICO: Não foi possível conectar ao banco para Init.", err.message);
+            return;
+        }
+        console.log("Conexão SYSDBA estabelecida. Verificando tabelas...");
 
-            // Helper para executar DDL sequencialmente e ignorar erros de "já existe"
-            const run = (sql, desc) => new Promise(res => {
-                db.query(sql, [], (e) => {
-                    if (e) {
-                        const msg = e.message.toLowerCase();
-                        if (!msg.includes('already exists') && !msg.includes('unsuccessful metadata update') && !msg.includes('exists')) {
-                            console.error(`[X] Erro ao criar ${desc}:`, e.message);
-                        } else {
-                            // console.log(`[v] ${desc} OK.`);
-                        }
+        // Função auxiliar para rodar queries sem travar o processo, mas logando erros reais
+        const runSchemaQuery = (desc, sql) => {
+            console.log(`Verificando: ${desc}`);
+            db.query(sql, [], (err) => {
+                if (err) {
+                    // Ignora erros de "objeto já existe", mas loga outros
+                    if (!err.message.includes('already exists') && !err.message.includes('unsuccessful metadata update') && !err.message.includes('exists')) {
+                        console.error(`ERRO ao criar ${desc}:`, err.message);
                     } else {
-                        console.log(`[+] ${desc} criada/atualizada.`);
+                        // console.log(`${desc} já existe ou ok.`);
                     }
-                    res();
-                });
+                }
             });
+        };
 
-            try {
-                // 1. Tabela Endereços
-                await run(`CREATE TABLE GRIDE_ENDERECOS (ID INTEGER NOT NULL PRIMARY KEY, CODIGO VARCHAR(50) NOT NULL, DESCRICAO VARCHAR(100), TIPO VARCHAR(20), PRO_COD VARCHAR(20))`, 'Tabela Endereços');
-                
-                // 2. Tabela Galpões
-                await run(`CREATE TABLE GRIDE_GALPOES (ID INTEGER NOT NULL PRIMARY KEY, SIGLA VARCHAR(10) NOT NULL, DESCRICAO VARCHAR(50))`, 'Tabela Galpões');
-                
-                // 3. Tabela Reservas (GARANTIA DE COLUNAS CRÍTICAS)
-                await run(`CREATE TABLE GRIDE_RESERVAS (BLOCK_ID VARCHAR(50) NOT NULL PRIMARY KEY, USER_ID VARCHAR(20) NOT NULL, USER_NAME VARCHAR(100), RESERVED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP, ITEMS_JSON BLOB SUB_TYPE TEXT)`, 'Tabela Reservas');
-                await run(`ALTER TABLE GRIDE_RESERVAS ADD ITEMS_JSON BLOB SUB_TYPE TEXT`, 'Coluna ITEMS_JSON em Reservas');
+        // 1. Recriação Segura das Tabelas (Se foram apagadas, isso as restaura)
+        
+        // GRIDE_ENDERECOS
+        runSchemaQuery('Tabela Endereços', `
+            CREATE TABLE GRIDE_ENDERECOS (
+                ID INTEGER NOT NULL PRIMARY KEY, 
+                CODIGO VARCHAR(50) NOT NULL, 
+                DESCRICAO VARCHAR(100), 
+                TIPO VARCHAR(20), 
+                PRO_COD VARCHAR(20)
+            )
+        `);
 
-                // 4. Tabela Logs (GARANTIA DE BLOCK_REF)
-                await run(`CREATE TABLE GRIDE_INVENTARIO_LOG (ID INTEGER NOT NULL PRIMARY KEY, SKU VARCHAR(50), NOME_PRODUTO VARCHAR(200), USUARIO_ID VARCHAR(20), USUARIO_NOME VARCHAR(100), QTD_SISTEMA DECIMAL(15,4), QTD_CONTADA DECIMAL(15,4), LOCALIZACAO VARCHAR(100), STATUS VARCHAR(20), DIVERGENCIA_MOTIVO VARCHAR(255), DATA_HORA TIMESTAMP DEFAULT CURRENT_TIMESTAMP, BLOCK_REF VARCHAR(50))`, 'Tabela Logs');
-                await run(`ALTER TABLE GRIDE_INVENTARIO_LOG ADD BLOCK_REF VARCHAR(50)`, 'Coluna BLOCK_REF em Logs');
+        // GRIDE_GALPOES
+        runSchemaQuery('Tabela Galpões', `
+            CREATE TABLE GRIDE_GALPOES (
+                ID INTEGER NOT NULL PRIMARY KEY, 
+                SIGLA VARCHAR(10) NOT NULL, 
+                DESCRICAO VARCHAR(50)
+            )
+        `);
+        
+        // GRIDE_RESERVAS (Com ITEMS_JSON garantido)
+        runSchemaQuery('Tabela Reservas', `
+            CREATE TABLE GRIDE_RESERVAS (
+                BLOCK_ID VARCHAR(50) NOT NULL PRIMARY KEY, 
+                USER_ID VARCHAR(20) NOT NULL, 
+                USER_NAME VARCHAR(100), 
+                RESERVED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP, 
+                ITEMS_JSON BLOB SUB_TYPE TEXT
+            )
+        `);
+        // Migração de segurança: Tenta adicionar a coluna caso a tabela exista mas seja antiga
+        runSchemaQuery('Coluna ITEMS_JSON em Reservas', `ALTER TABLE GRIDE_RESERVAS ADD ITEMS_JSON BLOB SUB_TYPE TEXT`);
 
-                // 5. Tabela Tratamento
-                await run(`CREATE TABLE GRIDE_TRATAMENTO (ID INTEGER NOT NULL PRIMARY KEY, LOG_ID INTEGER, SKU VARCHAR(50), NOME_PRODUTO VARCHAR(200), LOCALIZACAO VARCHAR(100), TIPO_ERRO VARCHAR(20), DESCRICAO_ERRO VARCHAR(255), REPORTADO_POR VARCHAR(100), REPORTADO_EM TIMESTAMP DEFAULT CURRENT_TIMESTAMP, STATUS VARCHAR(20) DEFAULT 'PENDING', RESOLVIDO_POR VARCHAR(20), RESOLVIDO_EM TIMESTAMP, RESOLUCAO_NOTA VARCHAR(255))`, 'Tabela Tratamento');
+        // GRIDE_INVENTARIO_LOG (Com BLOCK_REF garantido)
+        runSchemaQuery('Tabela Logs', `
+            CREATE TABLE GRIDE_INVENTARIO_LOG (
+                ID INTEGER NOT NULL PRIMARY KEY, 
+                SKU VARCHAR(50), 
+                NOME_PRODUTO VARCHAR(200), 
+                USUARIO_ID VARCHAR(20), 
+                USUARIO_NOME VARCHAR(100), 
+                QTD_SISTEMA DECIMAL(15,4), 
+                QTD_CONTADA DECIMAL(15,4), 
+                LOCALIZACAO VARCHAR(100), 
+                STATUS VARCHAR(20), 
+                DIVERGENCIA_MOTIVO VARCHAR(255), 
+                DATA_HORA TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                BLOCK_REF VARCHAR(50)
+            )
+        `);
+        // Migração de segurança
+        runSchemaQuery('Coluna BLOCK_REF em Logs', `ALTER TABLE GRIDE_INVENTARIO_LOG ADD BLOCK_REF VARCHAR(50)`);
 
-                // 6. Generators e Triggers
-                const gens = ['GEN_GRIDE_ENDERECOS_ID', 'GEN_GRIDE_GALPOES_ID', 'GEN_GRIDE_LOG_ID', 'GEN_GRIDE_TRATAMENTO_ID'];
-                for(const g of gens) await run(`CREATE GENERATOR ${g}`, `Generator ${g}`);
+        // GRIDE_TRATAMENTO
+        runSchemaQuery('Tabela Tratamento', `
+            CREATE TABLE GRIDE_TRATAMENTO (
+                ID INTEGER NOT NULL PRIMARY KEY,
+                LOG_ID INTEGER,
+                SKU VARCHAR(50),
+                NOME_PRODUTO VARCHAR(200),
+                LOCALIZACAO VARCHAR(100),
+                TIPO_ERRO VARCHAR(20),
+                DESCRICAO_ERRO VARCHAR(255),
+                REPORTADO_POR VARCHAR(100),
+                REPORTADO_EM TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                STATUS VARCHAR(20) DEFAULT 'PENDING',
+                RESOLVIDO_POR VARCHAR(20),
+                RESOLVIDO_EM TIMESTAMP,
+                RESOLUCAO_NOTA VARCHAR(255)
+            )
+        `);
 
-                await run(`CREATE TRIGGER TR_GRIDE_ENDERECOS FOR GRIDE_ENDERECOS ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_ENDERECOS_ID, 1); END`, 'Trigger Endereços');
-                await run(`CREATE TRIGGER TR_GRIDE_GALPOES FOR GRIDE_GALPOES ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_GALPOES_ID, 1); END`, 'Trigger Galpões');
-                await run(`CREATE TRIGGER TR_GRIDE_LOG FOR GRIDE_INVENTARIO_LOG ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_LOG_ID, 1); END`, 'Trigger Logs');
-                await run(`CREATE TRIGGER TR_GRIDE_TRATAMENTO FOR GRIDE_TRATAMENTO ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_TRATAMENTO_ID, 1); END`, 'Trigger Tratamento');
+        // 2. Generators e Triggers (Em blocos separados para evitar falha em cascata)
+        const gens = ['GEN_GRIDE_ENDERECOS_ID', 'GEN_GRIDE_GALPOES_ID', 'GEN_GRIDE_LOG_ID', 'GEN_GRIDE_TRATAMENTO_ID'];
+        gens.forEach(gen => runSchemaQuery(`Generator ${gen}`, `CREATE GENERATOR ${gen}`));
 
-                console.log(">>> Banco de dados inicializado com sucesso.");
-            } catch (e) {
-                console.error(">>> ERRO na sequência de inicialização:", e);
-            } finally {
-                db.detach();
-                resolve();
-            }
-        });
+        runSchemaQuery('Trigger Endereços', `CREATE TRIGGER TR_GRIDE_ENDERECOS FOR GRIDE_ENDERECOS ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_ENDERECOS_ID, 1); END`);
+        runSchemaQuery('Trigger Galpões', `CREATE TRIGGER TR_GRIDE_GALPOES FOR GRIDE_GALPOES ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_GALPOES_ID, 1); END`);
+        runSchemaQuery('Trigger Logs', `CREATE TRIGGER TR_GRIDE_LOG FOR GRIDE_INVENTARIO_LOG ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_LOG_ID, 1); END`);
+        runSchemaQuery('Trigger Tratamento', `CREATE TRIGGER TR_GRIDE_TRATAMENTO FOR GRIDE_TRATAMENTO ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_TRATAMENTO_ID, 1); END`);
+        
+        setTimeout(() => {
+            console.log('Verificação de DB Finalizada. Desconectando Init...');
+            db.detach();
+        }, 2000);
     });
 };
+// Executa Init após 2s para garantir que o server subiu
+setTimeout(initDb, 2000);
 
 const safeString = (value) => {
     if (value === null || value === undefined) return '';
@@ -106,8 +156,6 @@ const blobToString = (blob) => {
     if (typeof blob === 'string') return blob;
     return String(blob);
 };
-
-// --- ROTAS (PRESERVADAS INTEGRALMENTE) ---
 
 // --- AUTH ---
 app.get('/user-name/:id', (req, res) => {
@@ -163,6 +211,7 @@ app.get('/categories', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json([]);
         
+        // Tenta buscar grupos. Se falhar, retorna vazio mas não trava.
         db.query('SELECT GR_COD, GR_DESCRI FROM GRUPOPRODUTOS', [], (errGroups, groups) => {
             if (errGroups) { 
                 console.error("Erro Grupos:", errGroups.message);
@@ -177,6 +226,7 @@ app.get('/categories', (req, res) => {
                     return res.json([]);
                 }
                 
+                // Se contagem falhar, retorna estrutura sem contagens (0)
                 const sqlCounts = `SELECT GR_COD, SG_COD, COUNT(*) as TOTAL FROM PRODUTOS WHERE PRO_ATIVO = 'S' GROUP BY GR_COD, SG_COD`;
                 db.query(sqlCounts, [], (errCount, counts) => {
                     db.detach();
@@ -240,6 +290,7 @@ app.get('/blocks', (req, res) => {
     const limit = parseInt(req.query.limit) || 100;
     const search = req.query.search || '';
     
+    // Tratamento rigoroso de tipos
     const gr_cod = req.query.gr_cod && !isNaN(parseInt(req.query.gr_cod)) ? parseInt(req.query.gr_cod) : null;
     const sg_cod = req.query.sg_cod && !isNaN(parseInt(req.query.sg_cod)) ? parseInt(req.query.sg_cod) : null;
     const location = req.query.location || '';
@@ -249,7 +300,7 @@ app.get('/blocks', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro de Conexão DB' });
         
-        // SOFT FAIL: GRIDE_RESERVAS
+        // SOFT FAIL: Tenta buscar reservas. Se falhar (tabela não existe), usa array vazio.
         db.query('SELECT BLOCK_ID, USER_ID, USER_NAME, RESERVED_AT FROM GRIDE_RESERVAS', [], (errRes, reservations) => {
             if (errRes) console.error("Aviso: Falha ao ler GRIDE_RESERVAS (Ignorando):", errRes.message);
             
@@ -260,7 +311,7 @@ app.get('/blocks', (req, res) => {
                 });
             }
 
-            // SOFT FAIL: GRIDE_TRATAMENTO
+            // SOFT FAIL: Tenta buscar tratamentos. Se falhar, usa set vazio.
             db.query("SELECT SKU FROM GRIDE_TRATAMENTO WHERE STATUS = 'PENDING'", [], (errTreat, treatments) => {
                 if (errTreat) console.error("Aviso: Falha ao ler GRIDE_TRATAMENTO (Ignorando):", errTreat.message);
 
@@ -269,7 +320,7 @@ app.get('/blocks', (req, res) => {
                     treatments.forEach(t => treatmentSet.add(safeString(t.SKU)));
                 }
 
-                // Query Principal PRODUTOS
+                // Query Principal (Produtos) - Esta NÃO pode falhar
                 let sql = `
                     SELECT FIRST ? SKIP ? 
                         P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, P.MAR_COD, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE 
@@ -346,7 +397,8 @@ app.get('/reserved-blocks/:userId', (req, res) => {
         
         db.query('SELECT BLOCK_ID, USER_ID, USER_NAME, RESERVED_AT, ITEMS_JSON FROM GRIDE_RESERVAS WHERE TRIM(USER_ID) = ?', [userId], (err, reservations) => {
             if (err) { 
-                console.error("Erro ao buscar reservados (Possível Soft Fail):", err.message);
+                // Se a tabela não existir, retorna vazio em vez de erro
+                console.error("Erro ao buscar reservados (Tabela pode não existir):", err.message);
                 db.detach(); 
                 return res.json([]); 
             }
@@ -433,13 +485,17 @@ app.post('/reserve-block', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro DB' });
         
+        // Soft fail check for Treatments
         db.query(`SELECT 1 FROM GRIDE_TRATAMENTO WHERE SKU IN (SELECT PRO_NRFABRICANTE FROM PRODUTOS WHERE PRO_COD = ? OR PRO_COD_SIMILAR = ?) AND STATUS = 'PENDING'`, [block_id, block_id], (errT, treatResult) => {
+             // Ignora erro se tabela nao existir
              if (!errT && treatResult && treatResult.length > 0) {
                  db.detach();
                  return res.json({ success: false, message: 'Item em tratamento pendente.' });
              }
 
              db.query('SELECT USER_NAME FROM GRIDE_RESERVAS WHERE BLOCK_ID = ?', [block_id], (errR, result) => {
+                // Se tabela não existir, errR vai acontecer. Nesse caso, tentamos criar a tabela ou falhamos.
+                // Mas para o fluxo de reserva, assumimos que initDb rodou. Se falhar aqui, é erro real.
                 if (errR && !errR.message.includes("doesn't exist")) {
                      db.detach(); return res.status(500).json({ error: errR.message });
                 }
@@ -569,7 +625,7 @@ app.get('/history', (req, res) => {
         `;
         db.query(sql, [limit, skip], (err, result) => {
             db.detach();
-            if (err) return res.json([]);
+            if (err) return res.json([]); // Soft fail
             res.json(result);
         });
     });
@@ -613,6 +669,7 @@ app.get('/product-history/:sku', (req, res) => {
     });
 });
 
+// --- ADDRESS & WAREHOUSE ROUTES (RESTORED) ---
 app.get('/addresses', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json([]);
@@ -625,12 +682,13 @@ app.get('/addresses', (req, res) => {
 });
 
 app.post('/save-addresses', (req, res) => {
-    const addresses = req.body; 
+    const addresses = req.body; // Array
     if(!Array.isArray(addresses)) return res.status(400).json({error: 'Invalid format'});
     
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro DB' });
         
+        // Naive insert loop
         let count = 0;
         let skipped = 0;
         const total = addresses.length;
@@ -641,6 +699,7 @@ app.post('/save-addresses', (req, res) => {
                 return res.json({ success: true, count, skipped });
             }
             const addr = addresses[idx];
+            // Check existence
             db.query('SELECT ID FROM GRIDE_ENDERECOS WHERE CODIGO = ?', [addr.code], (err, resExist) => {
                 if(!err && resExist.length === 0) {
                     db.query('INSERT INTO GRIDE_ENDERECOS (CODIGO, DESCRICAO, TIPO) VALUES (?, ?, ?)', 
@@ -692,12 +751,6 @@ app.post('/delete-warehouse', (req, res) => {
     });
 });
 
-// START SERVER SEQUENCE (Boot Sincronizado)
-const startServer = async () => {
-    await initDb();
-    app.listen(port, '0.0.0.0', () => {
-        console.log(`Servidor GRIDE Firebird rodando em http://localhost:${port}`);
-    });
-};
-
-startServer();
+app.listen(port, '0.0.0.0', () => {
+    console.log(`Servidor GRIDE Firebird rodando em http://localhost:${port}`);
+});
