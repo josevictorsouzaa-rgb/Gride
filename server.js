@@ -26,6 +26,26 @@ const options = {
     pageSize: 4096
 };
 
+// --- MAPAS DE TRADUÇÃO DE STATUS (FRONTEND <-> BANCO) ---
+const TO_DB_STATUS = {
+    'pending': 'Pendente',
+    'progress': 'Em Andamento',
+    'counted': 'Contado',
+    'not_located': 'Não Localizado',
+    'issue': 'Divergência',
+    'divergence_info': 'Divergência',
+    'completed': 'Concluído'
+};
+
+const FROM_DB_STATUS = {
+    'Pendente': 'pending',
+    'Em Andamento': 'progress',
+    'Contado': 'counted',
+    'Não Localizado': 'not_located',
+    'Divergência': 'divergence_info',
+    'Concluído': 'completed'
+};
+
 // --- HELPER DE QUERY PROMISIFIED ---
 const execute = (db, sql, params = []) => {
     return new Promise((resolve, reject) => {
@@ -52,7 +72,20 @@ const safeExecute = async (db, sql, description) => {
     }
 };
 
-// --- INIT DB SEQUENCIAL ---
+const safeString = (value) => {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'object' && Buffer.isBuffer(value)) return value.toString().trim();
+    return String(value).trim();
+};
+
+const blobToString = (blob) => {
+    if (blob === null || blob === undefined) return null;
+    if (Buffer.isBuffer(blob)) return blob.toString('utf8');
+    if (typeof blob === 'string') return blob;
+    return String(blob);
+};
+
+// --- INIT DB (SCHEMA ATUALIZADO PARA PADRÃO LEGADO) ---
 const initDb = () => {
     return new Promise((resolve, reject) => {
         console.log(">>> [INIT] Conectando ao Firebird...");
@@ -60,7 +93,7 @@ const initDb = () => {
         Firebird.attach(options, async (err, db) => {
             if (err) {
                 console.error(">>> [FATAL] Não foi possível conectar ao DB:", err.message);
-                return resolve(); // Resolve para não crashar o node, mas o app ficará instável
+                return resolve(); 
             }
 
             try {
@@ -75,32 +108,75 @@ const initDb = () => {
                     "Tabela Galpões"
                 );
 
-                // 2. Tabela de Reservas e Coluna Blob (Sequencial)
+                // 2. Tabela de Reservas (Atualizado: USU_COD, PRO_COD)
                 await safeExecute(db, 
-                    `CREATE TABLE GRIDE_RESERVAS (BLOCK_ID VARCHAR(50) NOT NULL PRIMARY KEY, USER_ID VARCHAR(20) NOT NULL, USER_NAME VARCHAR(100), RESERVED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`, 
+                    `CREATE TABLE GRIDE_RESERVAS (
+                        BLOCK_ID VARCHAR(50) NOT NULL PRIMARY KEY, 
+                        USU_COD VARCHAR(20) NOT NULL, 
+                        USER_NAME VARCHAR(100), 
+                        PRO_COD INTEGER, 
+                        RESERVED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )`, 
                     "Tabela Reservas"
                 );
-                // Adiciona coluna separadamente para garantir compatibilidade
                 await safeExecute(db, 
                     `ALTER TABLE GRIDE_RESERVAS ADD ITEMS_JSON BLOB SUB_TYPE TEXT`, 
-                    "Coluna ITEMS_JSON"
+                    "Coluna ITEMS_JSON em Reservas"
+                );
+                // Garantir PRO_COD se a tabela já existia antes
+                await safeExecute(db, 
+                    `ALTER TABLE GRIDE_RESERVAS ADD PRO_COD INTEGER`, 
+                    "Coluna PRO_COD em Reservas"
                 );
 
-                // 3. Tabela de Logs e Coluna Block Ref (Sequencial)
+                // 3. Tabela de Logs (Atualizado: USU_COD, PRO_NRFABRICANTE, PRO_COD, Status PT-BR)
                 await safeExecute(db, 
-                    `CREATE TABLE GRIDE_INVENTARIO_LOG (ID INTEGER NOT NULL PRIMARY KEY, SKU VARCHAR(50), NOME_PRODUTO VARCHAR(200), USUARIO_ID VARCHAR(20), USUARIO_NOME VARCHAR(100), QTD_SISTEMA DECIMAL(15,4), QTD_CONTADA DECIMAL(15,4), LOCALIZACAO VARCHAR(100), STATUS VARCHAR(20), DIVERGENCIA_MOTIVO VARCHAR(255), DATA_HORA TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`, 
+                    `CREATE TABLE GRIDE_INVENTARIO_LOG (
+                        ID INTEGER NOT NULL PRIMARY KEY, 
+                        PRO_COD INTEGER,
+                        PRO_NRFABRICANTE VARCHAR(50), 
+                        NOME_PRODUTO VARCHAR(200), 
+                        USU_COD VARCHAR(20), 
+                        USUARIO_NOME VARCHAR(100), 
+                        QTD_SISTEMA DECIMAL(15,4), 
+                        QTD_CONTADA DECIMAL(15,4), 
+                        LOCALIZACAO VARCHAR(100), 
+                        STATUS VARCHAR(50), 
+                        DIVERGENCIA_MOTIVO VARCHAR(255), 
+                        BLOCK_REF VARCHAR(50),
+                        DATA_HORA TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )`, 
                     "Tabela Logs"
                 );
-                await safeExecute(db, 
-                    `ALTER TABLE GRIDE_INVENTARIO_LOG ADD BLOCK_REF VARCHAR(50)`, 
-                    "Coluna BLOCK_REF"
-                );
+                // Migração segura caso colunas faltem em base existente
+                await safeExecute(db, `ALTER TABLE GRIDE_INVENTARIO_LOG ADD PRO_COD INTEGER`, "Coluna PRO_COD em Logs");
+                await safeExecute(db, `ALTER TABLE GRIDE_INVENTARIO_LOG ADD PRO_NRFABRICANTE VARCHAR(50)`, "Coluna PRO_NRFABRICANTE em Logs");
+                
+                // Renomear colunas antigas se necessário (Firebird não suporta RENAME COLUMN facilmente em versões antigas, vamos assumir criação nova ou coexistência)
+                // Se SKU existir, vamos ignorar e usar PRO_NRFABRICANTE daqui pra frente nas queries.
 
-                // 4. Tabela de Tratamento
+                // 4. Tabela de Tratamento (Atualizado: PRO_COD, PRO_NRFABRICANTE)
                 await safeExecute(db, 
-                    `CREATE TABLE GRIDE_TRATAMENTO (ID INTEGER NOT NULL PRIMARY KEY, LOG_ID INTEGER, SKU VARCHAR(50), NOME_PRODUTO VARCHAR(200), LOCALIZACAO VARCHAR(100), TIPO_ERRO VARCHAR(20), DESCRICAO_ERRO VARCHAR(255), REPORTADO_POR VARCHAR(100), REPORTADO_EM TIMESTAMP DEFAULT CURRENT_TIMESTAMP, STATUS VARCHAR(20) DEFAULT 'PENDING', RESOLVIDO_POR VARCHAR(20), RESOLVIDO_EM TIMESTAMP, RESOLUCAO_NOTA VARCHAR(255))`, 
+                    `CREATE TABLE GRIDE_TRATAMENTO (
+                        ID INTEGER NOT NULL PRIMARY KEY, 
+                        LOG_ID INTEGER, 
+                        PRO_COD INTEGER,
+                        PRO_NRFABRICANTE VARCHAR(50), 
+                        NOME_PRODUTO VARCHAR(200), 
+                        LOCALIZACAO VARCHAR(100), 
+                        TIPO_ERRO VARCHAR(50), 
+                        DESCRICAO_ERRO VARCHAR(255), 
+                        REPORTADO_POR VARCHAR(100), 
+                        REPORTADO_EM TIMESTAMP DEFAULT CURRENT_TIMESTAMP, 
+                        STATUS VARCHAR(20) DEFAULT 'PENDING', 
+                        RESOLVIDO_POR VARCHAR(20), 
+                        RESOLVIDO_EM TIMESTAMP, 
+                        RESOLUCAO_NOTA VARCHAR(255)
+                    )`, 
                     "Tabela Tratamento"
                 );
+                await safeExecute(db, `ALTER TABLE GRIDE_TRATAMENTO ADD PRO_COD INTEGER`, "Coluna PRO_COD em Tratamento");
+                await safeExecute(db, `ALTER TABLE GRIDE_TRATAMENTO ADD PRO_NRFABRICANTE VARCHAR(50)`, "Coluna PRO_NRFABRICANTE em Tratamento");
 
                 // 5. Generators e Triggers
                 const gens = ['GEN_GRIDE_ENDERECOS_ID', 'GEN_GRIDE_GALPOES_ID', 'GEN_GRIDE_LOG_ID', 'GEN_GRIDE_TRATAMENTO_ID'];
@@ -113,7 +189,7 @@ const initDb = () => {
                 await safeExecute(db, `CREATE TRIGGER TR_GRIDE_LOG FOR GRIDE_INVENTARIO_LOG ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_LOG_ID, 1); END`, "Trigger Logs");
                 await safeExecute(db, `CREATE TRIGGER TR_GRIDE_TRATAMENTO FOR GRIDE_TRATAMENTO ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_TRATAMENTO_ID, 1); END`, "Trigger Tratamento");
 
-                console.log(">>> [INIT] Banco de dados pronto.");
+                console.log(">>> [INIT] Banco de dados padronizado.");
             } catch (e) {
                 console.error(">>> [INIT ERROR]", e);
             } finally {
@@ -124,27 +200,16 @@ const initDb = () => {
     });
 };
 
-const safeString = (value) => {
-    if (value === null || value === undefined) return '';
-    if (typeof value === 'object' && Buffer.isBuffer(value)) return value.toString().trim();
-    return String(value).trim();
-};
+// --- ROTAS DA API ---
 
-const blobToString = (blob) => {
-    if (blob === null || blob === undefined) return null;
-    if (Buffer.isBuffer(blob)) return blob.toString('utf8');
-    if (typeof blob === 'string') return blob;
-    return String(blob);
-};
-
-// --- ROTAS ---
-
+// 1. Identificação do Usuário (Query via USU_COD)
 app.get('/user-name/:id', (req, res) => {
     const { id } = req.params;
     if (id === '9999') return res.json({ name: 'Gestor de Teste' });
     if (id === '8888') return res.json({ name: 'Colaborador Teste' });
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro DB' });
+        // Alterado para USU_COD
         db.query(`SELECT USU_NOME FROM USUARIOS WHERE USU_COD = ? AND USU_ATIVO = 'S'`, [id], (err, result) => {
             db.detach();
             if (!err && result.length > 0) res.json({ name: safeString(result[0].USU_NOME) });
@@ -153,8 +218,11 @@ app.get('/user-name/:id', (req, res) => {
     });
 });
 
+// 2. Login (Query via USU_COD)
 app.post('/login', (req, res) => {
     const { usuario_id, senha } = req.body;
+    // usuario_id do body mapeia para USU_COD
+    
     if (usuario_id === '9999' && senha === 'admin') return res.json({ success: true, user: { id: '9999', name: 'Gestor', role: 'Gerente', isAdmin: true } });
     if (usuario_id === '8888' && senha === 'user') return res.json({ success: true, user: { id: '8888', name: 'Colaborador', role: 'Conferente', isAdmin: false } });
 
@@ -176,17 +244,20 @@ app.post('/login', (req, res) => {
     });
 });
 
+// 3. Lista de Usuários (Map USU_COD -> id)
 app.get('/users', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json([]);
         db.query(`SELECT USU_COD, USU_NOME FROM USUARIOS WHERE USU_ATIVO = 'S' ORDER BY USU_NOME`, [], (err, result) => {
             db.detach();
             if (err) return res.json([]);
+            // Frontend espera 'id'
             res.json(result.map(u => ({ id: u.USU_COD.toString(), name: safeString(u.USU_NOME), role: 'Colaborador', avatar: '', canTreat: false })));
         });
     });
 });
 
+// 4. Categorias (Mantido, não usa tabelas de usuário/log)
 app.get('/categories', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json([]);
@@ -229,6 +300,7 @@ app.get('/categories', (req, res) => {
     });
 });
 
+// 5. Blocos (Listagem Principal)
 app.get('/blocks', (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 100;
@@ -241,16 +313,23 @@ app.get('/blocks', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro Conexão' });
         
-        // Soft Fail Reservas
-        db.query('SELECT BLOCK_ID, USER_ID, USER_NAME, RESERVED_AT FROM GRIDE_RESERVAS', [], (errRes, reservations) => {
+        // Buscar Reservas usando a nova estrutura (USU_COD, PRO_COD no BLOCK_ID)
+        db.query('SELECT BLOCK_ID, USU_COD, USER_NAME, RESERVED_AT FROM GRIDE_RESERVAS', [], (errRes, reservations) => {
             const lockMap = new Map();
-            if (!errRes && reservations) reservations.forEach(r => lockMap.set(safeString(r.BLOCK_ID), { userId: safeString(r.USER_ID), userName: safeString(r.USER_NAME), timestamp: r.RESERVED_AT }));
+            if (!errRes && reservations) {
+                reservations.forEach(r => lockMap.set(safeString(r.BLOCK_ID), { 
+                    userId: safeString(r.USU_COD), // Mapeia USU_COD -> userId
+                    userName: safeString(r.USER_NAME), 
+                    timestamp: r.RESERVED_AT 
+                }));
+            }
 
-            // Soft Fail Tratamento
-            db.query("SELECT SKU FROM GRIDE_TRATAMENTO WHERE STATUS = 'PENDING'", [], (errTreat, treatments) => {
+            // Buscar Tratamento usando PRO_NRFABRICANTE (SKU)
+            db.query("SELECT PRO_NRFABRICANTE FROM GRIDE_TRATAMENTO WHERE STATUS = 'PENDING'", [], (errTreat, treatments) => {
                 const treatmentSet = new Set();
-                if (!errTreat && treatments) treatments.forEach(t => treatmentSet.add(safeString(t.SKU)));
+                if (!errTreat && treatments) treatments.forEach(t => treatmentSet.add(safeString(t.PRO_NRFABRICANTE)));
 
+                // Query Principal em PRODUTOS
                 let sql = `SELECT FIRST ? SKIP ? P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, P.MAR_COD, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE FROM PRODUTOS P WHERE P.PRO_ATIVO = 'S'`;
                 const params = [limit * 20, skip];
 
@@ -267,11 +346,21 @@ app.get('/blocks', (req, res) => {
                     
                     const groups = new Map();
                     products.forEach(p => {
+                        // Lógica de Agrupamento por Similar ou ID
                         const similarId = p.PRO_COD_SIMILAR ? safeString(p.PRO_COD_SIMILAR) : safeString(p.PRO_COD);
-                        const sku = safeString(p.PRO_NRFABRICANTE);
+                        const sku = safeString(p.PRO_NRFABRICANTE); // Mapeia PRO_NRFABRICANTE -> sku na lógica interna
+                        
                         if (!groups.has(similarId)) groups.set(similarId, []);
+                        
                         groups.get(similarId).push({
-                            id: safeString(p.PRO_COD), db_pro_cod: p.PRO_COD, name: safeString(p.PRO_DESCRI), ref: sku, brand: `MARCA ${p.MAR_COD}`, balance: parseFloat(p.PRO_EST_ATUAL || 0), location: 'GERAL', inTreatment: treatmentSet.has(sku)
+                            id: safeString(p.PRO_COD), // O 'id' do item é o PRO_COD
+                            db_pro_cod: p.PRO_COD, 
+                            name: safeString(p.PRO_DESCRI), 
+                            ref: sku, // Frontend espera 'ref' ou 'sku'
+                            brand: `MARCA ${p.MAR_COD}`, 
+                            balance: parseFloat(p.PRO_EST_ATUAL || 0), 
+                            location: 'GERAL', 
+                            inTreatment: treatmentSet.has(sku)
                         });
                     });
                     
@@ -279,7 +368,13 @@ app.get('/blocks', (req, res) => {
                     groups.forEach((items, key) => {
                         const isLocked = lockMap.get(key);
                         blocks.push({
-                            id: key, parentRef: items[0].ref || items[0].name, location: items[0].location, status: isLocked ? 'progress' : 'pending', date: 'Hoje', items: items, lockedBy: isLocked
+                            id: key, 
+                            parentRef: items[0].ref || items[0].name, 
+                            location: items[0].location, 
+                            status: isLocked ? 'progress' : 'pending', // Status visual (inglês)
+                            date: 'Hoje', 
+                            items: items, 
+                            lockedBy: isLocked
                         });
                     });
                     res.json(blocks.slice(0, limit));
@@ -289,17 +384,20 @@ app.get('/blocks', (req, res) => {
     });
 });
 
+// 6. Blocos Reservados (Pelo Usuário)
 app.get('/reserved-blocks/:userId', (req, res) => {
-    const { userId } = req.params;
+    const { userId } = req.params; // userId aqui é o USU_COD vindo do front
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro DB' });
         
-        db.query('SELECT BLOCK_ID, USER_ID, USER_NAME, RESERVED_AT, ITEMS_JSON FROM GRIDE_RESERVAS WHERE TRIM(USER_ID) = ?', [userId], (err, reservations) => {
+        // Query com USU_COD
+        db.query('SELECT BLOCK_ID, USU_COD, USER_NAME, RESERVED_AT, ITEMS_JSON FROM GRIDE_RESERVAS WHERE TRIM(USU_COD) = ?', [userId], (err, reservations) => {
             if (err) { db.detach(); return res.json([]); }
             if (reservations.length === 0) { db.detach(); return res.json([]); }
             
             const blockIds = [];
             const progressMap = new Map();
+            
             reservations.forEach(r => {
                 const bId = safeString(r.BLOCK_ID).trim();
                 blockIds.push(bId);
@@ -307,17 +405,25 @@ app.get('/reserved-blocks/:userId', (req, res) => {
                 if (jsonStr) {
                     try {
                         const savedItems = JSON.parse(jsonStr);
-                        if (Array.isArray(savedItems)) savedItems.forEach(item => progressMap.set(`${bId}-${String(item.ref).trim()}`, item));
+                        if (Array.isArray(savedItems)) {
+                            savedItems.forEach(item => {
+                                // Mapeia status do JSON (que pode estar em EN ou PT) para EN no frontend
+                                const mappedStatus = FROM_DB_STATUS[item.status] || item.status || 'pending';
+                                item.status = mappedStatus;
+                                progressMap.set(`${bId}-${String(item.ref).trim()}`, item);
+                            });
+                        }
                     } catch (e) {}
                 }
             });
             const idsList = blockIds.map(id => `'${id}'`).join(',');
             
-            db.query("SELECT SKU FROM GRIDE_TRATAMENTO WHERE STATUS = 'PENDING'", [], (errTreat, treatments) => {
+            db.query("SELECT PRO_NRFABRICANTE FROM GRIDE_TRATAMENTO WHERE STATUS = 'PENDING'", [], (errTreat, treatments) => {
                 const treatmentSet = new Set();
-                if(!errTreat && treatments) treatments.forEach(t => treatmentSet.add(safeString(t.SKU).trim()));
+                if(!errTreat && treatments) treatments.forEach(t => treatmentSet.add(safeString(t.PRO_NRFABRICANTE).trim()));
 
                 const sql = `SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, P.MAR_COD, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE FROM PRODUTOS P WHERE P.PRO_ATIVO = 'S' AND (TRIM(P.PRO_COD_SIMILAR) IN (${idsList}) OR (P.PRO_COD_SIMILAR IS NULL AND TRIM(P.PRO_COD) IN (${idsList})))`;
+                
                 db.query(sql, [], (errProd, products) => {
                     db.detach();
                     if (errProd) return res.status(500).json({ error: errProd.message });
@@ -329,11 +435,22 @@ app.get('/reserved-blocks/:userId', (req, res) => {
                         
                         if (!groups.has(similarId)) groups.set(similarId, []);
                         groups.get(similarId).push({
-                            id: safeString(p.PRO_COD).trim(), db_pro_cod: p.PRO_COD, name: safeString(p.PRO_DESCRI), ref: sku, brand: `MARCA ${p.MAR_COD}`, balance: parseFloat(p.PRO_EST_ATUAL || 0), location: 'GERAL', inTreatment: treatmentSet.has(sku),
-                            status: savedProgress?.status || 'pending', countedQty: savedProgress?.countedQty || 0, divergenceReason: savedProgress?.divergenceReason || '', lastCount: savedProgress?.lastCount || null
+                            id: safeString(p.PRO_COD).trim(), 
+                            db_pro_cod: p.PRO_COD, 
+                            name: safeString(p.PRO_DESCRI), 
+                            ref: sku, 
+                            brand: `MARCA ${p.MAR_COD}`, 
+                            balance: parseFloat(p.PRO_EST_ATUAL || 0), 
+                            location: 'GERAL', 
+                            inTreatment: treatmentSet.has(sku),
+                            status: savedProgress?.status || 'pending', 
+                            countedQty: savedProgress?.countedQty || 0, 
+                            divergenceReason: savedProgress?.divergenceReason || '', 
+                            lastCount: savedProgress?.lastCount || null
                         });
                     });
                     const blocks = [];
+                    // Envia status 'progress' fixo para o bloco
                     groups.forEach((items, key) => blocks.push({ id: key, parentRef: items[0].ref || items[0].name, location: items[0].location, status: 'progress', date: 'Hoje', items: items }));
                     res.json(blocks);
                 });
@@ -342,38 +459,34 @@ app.get('/reserved-blocks/:userId', (req, res) => {
     });
 });
 
-// --- ROTA DE RESERVA COM TRATAMENTO DE ERRO MELHORADO ---
+// 7. Reservar Bloco (Insert com USU_COD e PRO_COD fake inicial, depois update?)
+// Como o block_id é a chave lógica (similar_id), usamos ele.
 app.post('/reserve-block', (req, res) => {
-    const { block_id, user_id, user_name } = req.body;
+    const { block_id, user_id, user_name } = req.body; // user_id = USU_COD
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro DB' });
         
-        // Verifica tratamento pendente
-        db.query(`SELECT 1 FROM GRIDE_TRATAMENTO WHERE SKU IN (SELECT PRO_NRFABRICANTE FROM PRODUTOS WHERE PRO_COD = ? OR PRO_COD_SIMILAR = ?) AND STATUS = 'PENDING'`, [block_id, block_id], (errT, treatResult) => {
+        // Verifica tratamento (PRO_NRFABRICANTE)
+        db.query(`SELECT 1 FROM GRIDE_TRATAMENTO WHERE PRO_NRFABRICANTE IN (SELECT PRO_NRFABRICANTE FROM PRODUTOS WHERE PRO_COD = ? OR PRO_COD_SIMILAR = ?) AND STATUS = 'PENDING'`, [block_id, block_id], (errT, treatResult) => {
              if (!errT && treatResult && treatResult.length > 0) {
                  db.detach();
                  return res.json({ success: false, message: 'Item em tratamento pendente.' });
              }
 
-             // Tenta reservar
+             // Verifica reserva
              db.query('SELECT USER_NAME FROM GRIDE_RESERVAS WHERE BLOCK_ID = ?', [block_id], (errR, result) => {
-                // Se a tabela não existir, errR ocorre.
-                if (errR && !errR.message.includes("doesn't exist") && !errR.message.includes("unknown")) {
-                     db.detach(); 
-                     return res.status(500).json({ success: false, message: 'Erro ao verificar reservas: ' + errR.message });
-                }
-
+                if (errR) { db.detach(); return res.status(500).json({ success: false, message: errR.message }); }
                 if (result && result.length > 0) { 
                     db.detach(); 
                     return res.json({ success: false, message: `Bloco já reservado por ${safeString(result[0].USER_NAME)}` }); 
                 }
                 
-                db.query('INSERT INTO GRIDE_RESERVAS (BLOCK_ID, USER_ID, USER_NAME, RESERVED_AT, ITEMS_JSON) VALUES (?, ?, ?, CURRENT_TIMESTAMP, NULL)', [block_id, user_id, user_name], (errIns) => {
+                // Tenta converter block_id para inteiro para salvar em PRO_COD (se for um ID numérico)
+                const proCodVal = isNaN(parseInt(block_id)) ? 0 : parseInt(block_id);
+
+                db.query('INSERT INTO GRIDE_RESERVAS (BLOCK_ID, USU_COD, USER_NAME, PRO_COD, RESERVED_AT, ITEMS_JSON) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, NULL)', [block_id, user_id, user_name, proCodVal], (errIns) => {
                     db.detach();
-                    if (errIns) {
-                        // IMPORTANTE: Retorna 'message' para o frontend exibir no alert
-                        return res.status(500).json({ success: false, message: 'Erro ao inserir reserva: ' + errIns.message });
-                    }
+                    if (errIns) return res.status(500).json({ success: false, message: 'Erro ao reservar: ' + errIns.message });
                     res.json({ success: true });
                 });
             });
@@ -381,10 +494,18 @@ app.post('/reserve-block', (req, res) => {
     });
 });
 
+// 8. Atualizar Progresso
 app.post('/update-reservation-progress', (req, res) => {
     const { block_id, items } = req.body;
-    const jsonStr = JSON.stringify(items);
+    // Traduz status EN -> PT antes de salvar no BLOB
+    const dbItems = items.map(item => ({
+        ...item,
+        status: TO_DB_STATUS[item.status] || item.status // Salva 'Contado' ao invés de 'counted'
+    }));
+
+    const jsonStr = JSON.stringify(dbItems);
     const buffer = Buffer.from(jsonStr, 'utf8');
+    
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro DB' });
         db.query('UPDATE GRIDE_RESERVAS SET ITEMS_JSON = ? WHERE BLOCK_ID = ?', [buffer, block_id], (err) => {
@@ -395,6 +516,7 @@ app.post('/update-reservation-progress', (req, res) => {
     });
 });
 
+// 9. Liberar Bloco
 app.post('/release-block', (req, res) => {
     const { block_id } = req.body;
     Firebird.attach(options, (err, db) => {
@@ -403,8 +525,11 @@ app.post('/release-block', (req, res) => {
     });
 });
 
+// 10. Finalizar Bloco (CRUCIAL: PRO_COD e STATUS PT)
 app.post('/finalize-block', (req, res) => {
     const { block_id, user_id, user_name, items, parent_ref } = req.body; 
+    // user_id aqui é o USU_COD vindo do front
+    
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro DB' });
         
@@ -416,36 +541,74 @@ app.post('/finalize-block', (req, res) => {
                 const uniqueBlockRef = `${parent_ref || 'BLOCO'}||${batchId}`;
 
                 for (const item of items) {
-                    const sqlLog = `INSERT INTO GRIDE_INVENTARIO_LOG (SKU, NOME_PRODUTO, USUARIO_ID, USUARIO_NOME, QTD_SISTEMA, QTD_CONTADA, LOCALIZACAO, STATUS, DIVERGENCIA_MOTIVO, BLOCK_REF, DATA_HORA) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP) RETURNING ID`;
-                    const qtdContada = item.countedQty !== undefined ? item.countedQty : 0;
-                    const status = item.status || 'pending';
-                    const localizacao = (item.lastCount && item.lastCount.location) ? item.lastCount.location : (item.location || 'GERAL');
-                    const motivo = item.divergenceReason || '';
-                    
-                    await new Promise((resolve, reject) => {
-                        transaction.query(sqlLog, [item.ref, item.name, user_id, user_name, item.balance, qtdContada, localizacao, status, motivo, uniqueBlockRef], (err, result) => {
-                            if (err) return reject(err);
-                            
-                            const logId = result.ID;
-                            const sqlUpdate = `UPDATE PRODUTOS SET PRO_EST_ATUAL = ? WHERE PRO_NRFABRICANTE = ?`;
-                            transaction.query(sqlUpdate, [qtdContada, item.ref], (err) => {
-                                if (err) console.warn("Update stock failed for SKU " + item.ref);
-                                
-                                const needsTreatment = status === 'not_located' || status === 'divergence_info';
-                                if (needsTreatment) {
-                                    const sqlTreat = `INSERT INTO GRIDE_TRATAMENTO (LOG_ID, SKU, NOME_PRODUTO, LOCALIZACAO, TIPO_ERRO, DESCRICAO_ERRO, REPORTADO_POR, STATUS) VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING')`;
-                                    transaction.query(sqlTreat, [logId, item.ref, item.name, localizacao, status, motivo || 'Erro reportado', user_name], (err) => {
-                                        if (err) return reject(err);
-                                        resolve();
-                                    });
-                                } else {
-                                    resolve();
-                                }
-                            });
+                    // 1. Busca PRO_COD real baseado no SKU (PRO_NRFABRICANTE)
+                    // Isso garante integridade relacional mesmo se o front não mandou db_pro_cod
+                    const rows = await new Promise((resolve, reject) => {
+                        transaction.query('SELECT FIRST 1 PRO_COD FROM PRODUTOS WHERE PRO_NRFABRICANTE = ?', [item.ref], (err, res) => {
+                            if (err) reject(err); else resolve(res);
                         });
                     });
+
+                    let realProCod = 0;
+                    if (rows && rows.length > 0) {
+                        realProCod = rows[0].PRO_COD;
+                    } else if (item.db_pro_cod) {
+                        realProCod = item.db_pro_cod;
+                    }
+
+                    // 2. Prepara dados para inserção
+                    const qtdContada = item.countedQty !== undefined ? item.countedQty : 0;
+                    const statusEN = item.status || 'pending';
+                    const statusPT = TO_DB_STATUS[statusEN] || statusEN; // 'Contado', 'Divergência', etc.
+                    const localizacao = (item.lastCount && item.lastCount.location) ? item.lastCount.location : (item.location || 'GERAL');
+                    const motivo = item.divergenceReason || '';
+
+                    // 3. Insert Log (Usando colunas novas)
+                    const sqlLog = `INSERT INTO GRIDE_INVENTARIO_LOG (
+                        PRO_COD, PRO_NRFABRICANTE, NOME_PRODUTO, USU_COD, USUARIO_NOME, 
+                        QTD_SISTEMA, QTD_CONTADA, LOCALIZACAO, STATUS, DIVERGENCIA_MOTIVO, 
+                        BLOCK_REF, DATA_HORA
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP) RETURNING ID`;
+                    
+                    const resultLog = await new Promise((resolve, reject) => {
+                        transaction.query(sqlLog, [
+                            realProCod, item.ref, item.name, user_id, user_name,
+                            item.balance, qtdContada, localizacao, statusPT, motivo, uniqueBlockRef
+                        ], (err, res) => {
+                            if (err) reject(err); else resolve(res);
+                        });
+                    });
+                    
+                    const logId = resultLog.ID;
+
+                    // 4. Update Saldo Produto
+                    const sqlUpdate = `UPDATE PRODUTOS SET PRO_EST_ATUAL = ? WHERE PRO_COD = ?`;
+                    await new Promise((resolve) => {
+                        transaction.query(sqlUpdate, [qtdContada, realProCod], (err) => {
+                            if (err) console.warn("Update stock failed for PRO_COD " + realProCod);
+                            resolve();
+                        });
+                    });
+
+                    // 5. Tratamento se necessário
+                    if (statusEN === 'not_located' || statusEN === 'divergence_info') {
+                        const sqlTreat = `INSERT INTO GRIDE_TRATAMENTO (
+                            LOG_ID, PRO_COD, PRO_NRFABRICANTE, NOME_PRODUTO, LOCALIZACAO, 
+                            TIPO_ERRO, DESCRICAO_ERRO, REPORTADO_POR, STATUS
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')`;
+                        
+                        await new Promise((resolve, reject) => {
+                            transaction.query(sqlTreat, [
+                                logId, realProCod, item.ref, item.name, localizacao, 
+                                statusPT, motivo || 'Erro reportado', user_name
+                            ], (err) => {
+                                if (err) reject(err); else resolve();
+                            });
+                        });
+                    }
                 }
 
+                // Remove Reserva
                 await new Promise((resolve, reject) => {
                     transaction.query('DELETE FROM GRIDE_RESERVAS WHERE BLOCK_ID = ?', [block_id], (err) => {
                         if (err) return reject(err);
@@ -469,43 +632,77 @@ app.post('/finalize-block', (req, res) => {
     });
 });
 
+// 11. Histórico (Alias para manter contrato com front)
 app.get('/history', (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 300; 
     const skip = (page - 1) * limit;
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json([]);
-        const sql = `SELECT FIRST ? SKIP ? L.*, T.STATUS as TRATAMENTO_STATUS, P.PRO_COD_SIMILAR, P.PRO_DESCRI as PROD_DESC_ATUAL, P.MAR_COD FROM GRIDE_INVENTARIO_LOG L LEFT JOIN GRIDE_TRATAMENTO T ON T.LOG_ID = L.ID LEFT JOIN PRODUTOS P ON P.PRO_NRFABRICANTE = L.SKU ORDER BY L.DATA_HORA DESC`;
+        const sql = `
+            SELECT FIRST ? SKIP ? 
+            L.ID, L.BLOCK_REF, L.DATA_HORA, L.USUARIO_NOME, L.QTD_CONTADA, L.LOCALIZACAO, 
+            L.PRO_NRFABRICANTE as SKU, 
+            L.NOME_PRODUTO,
+            L.STATUS, 
+            T.STATUS as TRATAMENTO_STATUS, 
+            P.PRO_COD_SIMILAR, P.PRO_DESCRI as PROD_DESC_ATUAL, P.MAR_COD 
+            FROM GRIDE_INVENTARIO_LOG L 
+            LEFT JOIN GRIDE_TRATAMENTO T ON T.LOG_ID = L.ID 
+            LEFT JOIN PRODUTOS P ON P.PRO_COD = L.PRO_COD 
+            ORDER BY L.DATA_HORA DESC
+        `;
         db.query(sql, [limit, skip], (err, result) => {
             db.detach();
             if (err) return res.json([]);
-            res.json(result);
+            // Mapeia status PT -> EN para o frontend
+            const mapped = result.map(r => ({
+                ...r,
+                STATUS: FROM_DB_STATUS[safeString(r.STATUS)] || 'completed' // fallback
+            }));
+            res.json(mapped);
         });
     });
 });
 
+// 12. Tratamento (Alias para manter contrato)
 app.get('/treatment-items', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json([]);
-        db.query(`SELECT ID, SKU, NOME_PRODUTO, LOCALIZACAO, TIPO_ERRO, DESCRICAO_ERRO, REPORTADO_POR, REPORTADO_EM, STATUS FROM GRIDE_TRATAMENTO WHERE STATUS = 'PENDING' ORDER BY REPORTADO_EM DESC`, [], (err, result) => {
+        db.query(`SELECT ID, PRO_NRFABRICANTE, NOME_PRODUTO, LOCALIZACAO, TIPO_ERRO, DESCRICAO_ERRO, REPORTADO_POR, REPORTADO_EM, STATUS FROM GRIDE_TRATAMENTO WHERE STATUS = 'PENDING' ORDER BY REPORTADO_EM DESC`, [], (err, result) => {
             db.detach();
-            res.json(result ? result.map(r => ({ id: r.ID, sku: safeString(r.SKU), name: safeString(r.NOME_PRODUTO), location: safeString(r.LOCALIZACAO), issueType: safeString(r.TIPO_ERRO), description: safeString(r.DESCRICAO_ERRO), reportedBy: safeString(r.REPORTADO_POR), reportedAt: r.REPORTADO_EM, status: safeString(r.STATUS) })) : []);
+            res.json(result ? result.map(r => ({ 
+                id: r.ID, 
+                sku: safeString(r.PRO_NRFABRICANTE), // Map PRO_NRFABRICANTE -> sku
+                name: safeString(r.NOME_PRODUTO), 
+                location: safeString(r.LOCALIZACAO), 
+                issueType: FROM_DB_STATUS[safeString(r.TIPO_ERRO)] || 'issue', // PT -> EN
+                description: safeString(r.DESCRICAO_ERRO), 
+                reportedBy: safeString(r.REPORTADO_POR), 
+                reportedAt: r.REPORTADO_EM, 
+                status: safeString(r.STATUS) 
+            })) : []);
         });
     });
 });
 
+// 13. Histórico Produto (Por SKU/Ref)
 app.get('/product-history/:sku', (req, res) => {
     const { sku } = req.params;
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json([]);
-        db.query(`SELECT L.DATA_HORA, L.USUARIO_NOME, L.QTD_SISTEMA, L.QTD_CONTADA, L.STATUS, L.LOCALIZACAO FROM GRIDE_INVENTARIO_LOG L WHERE L.SKU = ? ORDER BY L.DATA_HORA DESC`, [sku], (err, result) => {
+        db.query(`SELECT L.DATA_HORA, L.USUARIO_NOME, L.QTD_SISTEMA, L.QTD_CONTADA, L.STATUS, L.LOCALIZACAO FROM GRIDE_INVENTARIO_LOG L WHERE L.PRO_NRFABRICANTE = ? ORDER BY L.DATA_HORA DESC`, [sku], (err, result) => {
             db.detach();
             if (err) return res.json([]);
-            res.json(result);
+            res.json(result.map(r => ({
+                ...r,
+                STATUS: FROM_DB_STATUS[safeString(r.STATUS)] || 'completed'
+            })));
         });
     });
 });
 
+// 14. Endereços
 app.get('/addresses', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json([]);
@@ -539,6 +736,7 @@ app.post('/save-addresses', (req, res) => {
     });
 });
 
+// 15. Galpões
 app.get('/warehouses', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json([]);
