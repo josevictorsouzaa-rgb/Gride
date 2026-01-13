@@ -30,7 +30,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const navItems = [
     { id: 'dashboard', label: 'Hub de Controle', icon: 'grid_view' },
     ...(isAdmin ? [{ id: 'analytics', label: 'Indicadores', icon: 'insights' }] : []),
-    // Meta Diária removida conforme solicitado
+    { id: 'list', label: 'Meta Diária', icon: 'checklist' },
     { id: 'reserved', label: 'Meus Reservados', icon: 'assignment' },
     { id: 'history', label: 'Histórico', icon: 'history' },
     
