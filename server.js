@@ -148,7 +148,6 @@ const initDb = () => {
                     )`, 
                     "Tabela Logs"
                 );
-                // Migração segura caso colunas faltem em base existente
                 await safeExecute(db, `ALTER TABLE GRIDE_INVENTARIO_LOG ADD PRO_COD INTEGER`, "Coluna PRO_COD em Logs");
                 await safeExecute(db, `ALTER TABLE GRIDE_INVENTARIO_LOG ADD PRO_NRFABRICANTE VARCHAR(50)`, "Coluna PRO_NRFABRICANTE em Logs");
                 
@@ -313,24 +312,30 @@ app.get('/blocks', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro Conexão' });
         
-        // Buscar Reservas usando a nova estrutura (USU_COD, PRO_COD no BLOCK_ID)
+        // Buscar Reservas
         db.query('SELECT BLOCK_ID, USU_COD, USER_NAME, RESERVED_AT FROM GRIDE_RESERVAS', [], (errRes, reservations) => {
             const lockMap = new Map();
             if (!errRes && reservations) {
                 reservations.forEach(r => lockMap.set(safeString(r.BLOCK_ID), { 
-                    userId: safeString(r.USU_COD), // Mapeia USU_COD -> userId
+                    userId: safeString(r.USU_COD), 
                     userName: safeString(r.USER_NAME), 
                     timestamp: r.RESERVED_AT 
                 }));
             }
 
-            // Buscar Tratamento usando PRO_NRFABRICANTE (SKU)
+            // Buscar Tratamento
             db.query("SELECT PRO_NRFABRICANTE FROM GRIDE_TRATAMENTO WHERE STATUS = 'PENDING'", [], (errTreat, treatments) => {
                 const treatmentSet = new Set();
                 if (!errTreat && treatments) treatments.forEach(t => treatmentSet.add(safeString(t.PRO_NRFABRICANTE)));
 
-                // Query Principal em PRODUTOS
-                let sql = `SELECT FIRST ? SKIP ? P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, P.MAR_COD, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE FROM PRODUTOS P WHERE P.PRO_ATIVO = 'S'`;
+                // Query Principal em PRODUTOS com LEFT JOIN MARCAS
+                let sql = `
+                    SELECT FIRST ? SKIP ? 
+                    P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, M.MAR_DESCRI, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE 
+                    FROM PRODUTOS P 
+                    LEFT JOIN MARCAS M ON (M.MAR_COD = P.MAR_COD)
+                    WHERE P.PRO_ATIVO = 'S'
+                `;
                 const params = [limit * 20, skip];
 
                 if (search) { sql += ` AND (P.PRO_DESCRI CONTAINING ? OR P.PRO_NRFABRICANTE CONTAINING ?)`; params.push(search); params.push(search); }
@@ -348,7 +353,7 @@ app.get('/blocks', (req, res) => {
                     products.forEach(p => {
                         // Lógica de Agrupamento por Similar ou ID
                         const similarId = p.PRO_COD_SIMILAR ? safeString(p.PRO_COD_SIMILAR) : safeString(p.PRO_COD);
-                        const sku = safeString(p.PRO_NRFABRICANTE); // Mapeia PRO_NRFABRICANTE -> sku na lógica interna
+                        const sku = safeString(p.PRO_NRFABRICANTE); 
                         
                         if (!groups.has(similarId)) groups.set(similarId, []);
                         
@@ -356,8 +361,8 @@ app.get('/blocks', (req, res) => {
                             id: safeString(p.PRO_COD), // O 'id' do item é o PRO_COD
                             db_pro_cod: p.PRO_COD, 
                             name: safeString(p.PRO_DESCRI), 
-                            ref: sku, // Frontend espera 'ref' ou 'sku'
-                            brand: `MARCA ${p.MAR_COD}`, 
+                            ref: sku, 
+                            brand: p.MAR_DESCRI ? safeString(p.MAR_DESCRI) : 'SEM MARCA', // Mapeamento Atualizado
                             balance: parseFloat(p.PRO_EST_ATUAL || 0), 
                             location: 'GERAL', 
                             inTreatment: treatmentSet.has(sku)
@@ -371,7 +376,7 @@ app.get('/blocks', (req, res) => {
                             id: key, 
                             parentRef: items[0].ref || items[0].name, 
                             location: items[0].location, 
-                            status: isLocked ? 'progress' : 'pending', // Status visual (inglês)
+                            status: isLocked ? 'progress' : 'pending', 
                             date: 'Hoje', 
                             items: items, 
                             lockedBy: isLocked

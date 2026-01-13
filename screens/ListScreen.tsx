@@ -236,11 +236,11 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                   return (
                     <div key={block.id} className="bg-white dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-card-border shadow-sm p-4 flex flex-col gap-3 animate-fade-in">
                       
-                      {/* HEADER SIMPLIFICADO */}
+                      {/* HEADER SIMPLIFICADO E ESTILIZADO */}
                       <div className="flex justify-between items-center">
-                          <h3 className="font-bold text-gray-900 dark:text-white text-base leading-tight">
+                          <span className="font-bold text-orange-600 dark:text-orange-400 text-sm bg-orange-500/10 px-2 py-0.5 rounded-md">
                               {block.parentRef}
-                          </h3>
+                          </span>
                           <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
                               {block.date}
                           </span>
@@ -277,9 +277,10 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                                         {item.brand}
                                       </span>
 
-                                      {/* LOCATION */}
-                                      <span className="shrink-0 text-[10px] font-mono text-gray-400 dark:text-gray-500 border-l border-gray-300 dark:border-gray-600 pl-2">
-                                        {item.location || '-'}
+                                      {/* LOCATION - INJECTED AS REQUESTED */}
+                                      <span className="shrink-0 text-[10px] font-mono text-gray-400 dark:text-gray-500 border-l border-gray-300 dark:border-gray-600 pl-2 flex items-center gap-1">
+                                        <Icon name="place" size={12} className="text-gray-400" />
+                                        {(item.location && item.location !== 'GERAL') ? item.location : '-'}
                                       </span>
 
                                       {/* BALANCE */}
