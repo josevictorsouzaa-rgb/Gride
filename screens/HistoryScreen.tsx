@@ -1,231 +1,371 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Icon } from '../components/Icon';
-import { Screen, User } from '../types';
-import { api } from '../services/api';
 import { HistoryFilterModal } from '../components/Modals';
+import { ItemDetailModal } from '../components/ItemDetailModal';
+import { api } from '../services/api';
 import { AutoPartsLoader } from '../components/AutoPartsLoader';
+import { User, Screen } from '../types';
 
 interface HistoryScreenProps {
-  currentUser: User | null;
-  onNavigate: (screen: Screen) => void;
-  onReserve: (blockId: string) => Promise<boolean>;
+    currentUser?: User | null;
+    onNavigate: (screen: Screen) => void;
+    onReserve: (blockId: string) => Promise<boolean>;
 }
 
-interface HistoryItem {
-  id: number;
-  sku: string;
-  name: string;
-  qty: number;
-  status: string;
-  location: string;
-  time: string;
-  divergenceReason?: string;
-}
+const getTimeAgo = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    
+    if (diffInSeconds < 60) return 'Agora';
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}min atrás`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h atrás`;
+    if (diffInSeconds < 2592000) return `${Math.floor(diffInSeconds / 86400)}d atrás`;
+    if (diffInSeconds < 31536000) return `${Math.floor(diffInSeconds / 2592000)} meses atrás`;
+    return `${Math.floor(diffInSeconds / 31536000)} ano(s) atrás`;
+};
 
-interface HistoryGroup {
-  id: string; // BLOCK_REF
-  date: string;
-  user: string;
-  items: HistoryItem[];
-  status: 'completed' | 'divergence';
-  location: string;
-  itemCount: number;
-}
+const getInitials = (name: string) => {
+    return name ? name.substring(0, 2).toUpperCase() : '??';
+};
 
 export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNavigate, onReserve }) => {
-  const [groups, setGroups] = useState<HistoryGroup[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showFilter, setShowFilter] = useState(false);
-  const [availableUsers, setAvailableUsers] = useState<string[]>([]);
-  const [filters, setFilters] = useState({ startDate: '', endDate: '', users: [] as string[] });
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [historyBlocks, setHistoryBlocks] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
 
+  // Fetch History from Backend
   useEffect(() => {
-    loadHistory();
-  }, []);
-
-  const loadHistory = async () => {
-    setLoading(true);
-    try {
-        const data = await api.getHistory(1, 300);
+    const fetchHistory = async () => {
+        setLoading(true);
+        // Trazemos um limite maior para garantir que pegamos os blocos únicos mais recentes
+        const data = await api.getHistory(1, 500);
         
-        // Grouping
-        const groupsMap = new Map<string, HistoryGroup>();
-        const userSet = new Set<string>();
+        const blockGroups = new Map();
 
+        // LÓGICA DE DEDUPLICAÇÃO VISUAL (Manutenção Cirúrgica Preservada)
         data.forEach((entry: any) => {
-             const blockRef = entry.BLOCK_REF || `BATCH-${new Date(entry.DATA_HORA).getTime()}`;
-             const userName = entry.USUARIO_NOME || 'Desconhecido';
-             userSet.add(userName);
+            const rawRef = entry.BLOCK_REF || '';
+            let logicalKey = rawRef.includes('||') ? rawRef.split('||')[0] : '';
+            if (!logicalKey) {
+                 logicalKey = entry.PRO_COD_SIMILAR ? String(entry.PRO_COD_SIMILAR) : entry.SKU;
+            }
 
-             if (!groupsMap.has(blockRef)) {
-                 groupsMap.set(blockRef, {
-                     id: blockRef,
-                     date: new Date(entry.DATA_HORA).toLocaleDateString('pt-BR'),
-                     user: userName,
-                     items: [],
-                     status: 'completed',
-                     location: entry.LOCALIZACAO || 'GERAL',
-                     itemCount: 0
-                 });
-             }
-             
-             const group = groupsMap.get(blockRef)!;
-             
-             // Determine group status (if any item has divergence, group has divergence)
-             const isDivergent = entry.STATUS === 'divergence_info' || entry.STATUS === 'not_located' || entry.TRATAMENTO_STATUS === 'PENDING';
-             if (isDivergent) group.status = 'divergence';
+            if (!blockGroups.has(logicalKey)) {
+                blockGroups.set(logicalKey, {
+                    id: logicalKey,
+                    parentRef: logicalKey,
+                    currentBatchId: rawRef, 
+                    name: entry.PROD_DESC_ATUAL || entry.NOME_PRODUTO, 
+                    location: entry.LOCALIZACAO || 'GERAL',
+                    latestDate: entry.DATA_HORA, 
+                    user: entry.USUARIO_NOME,
+                    status: 'concluido',
+                    itemsMap: new Map()
+                });
+            }
 
-             group.items.push({
-                 id: entry.ID,
-                 sku: entry.SKU,
-                 name: entry.NOME_PRODUTO,
-                 qty: entry.QTD_CONTADA,
-                 status: entry.STATUS,
-                 location: entry.LOCALIZACAO,
-                 time: new Date(entry.DATA_HORA).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-             });
-             group.itemCount++;
+            const group = blockGroups.get(logicalKey);
+
+            if (rawRef === group.currentBatchId) {
+                if (!group.itemsMap.has(entry.SKU)) {
+                    const isLocked = entry.TRATAMENTO_STATUS === 'PENDING';
+                    const hasDivergence = entry.STATUS === 'divergence_info' || entry.STATUS === 'not_located';
+                    
+                    if (hasDivergence) group.status = 'divergencia';
+
+                    group.itemsMap.set(entry.SKU, {
+                        id: entry.ID,
+                        name: entry.NOME_PRODUTO,
+                        ref: entry.SKU,
+                        brand: entry.MAR_COD ? `MARCA ${entry.MAR_COD}` : 'GENÉRICO',
+                        qty: entry.QTD_CONTADA,
+                        countedBy: entry.USUARIO_NOME,
+                        countedAt: entry.DATA_HORA,
+                        location: entry.LOCALIZACAO || 'GERAL',
+                        isLocked: isLocked,
+                        status: entry.STATUS
+                    });
+                }
+            } 
         });
 
-        setGroups(Array.from(groupsMap.values()));
-        setAvailableUsers(Array.from(userSet));
-    } catch (e) {
-        console.error(e);
-    } finally {
+        const blocks = Array.from(blockGroups.values()).map((g: any) => ({
+            ...g,
+            items: Array.from(g.itemsMap.values()),
+            timeAgo: getTimeAgo(g.latestDate)
+        }));
+
+        setHistoryBlocks(blocks);
         setLoading(false);
-    }
-  };
+    };
 
-  const filteredGroups = useMemo(() => {
-    return groups.filter(g => {
-        if (filters.users.length > 0 && !filters.users.includes(g.user)) return false;
-        
-        if (filters.startDate) {
-             const [d, m, y] = g.date.split('/');
-             const gDate = `${y}-${m}-${d}`;
-             if (gDate < filters.startDate) return false;
-        }
-        if (filters.endDate) {
-             const [d, m, y] = g.date.split('/');
-             const gDate = `${y}-${m}-${d}`;
-             if (gDate > filters.endDate) return false;
-        }
-        return true;
+    fetchHistory();
+  }, []);
+
+  const [expandedBlocks, setExpandedBlocks] = useState<string[]>([]); 
+  const [selectedItem, setSelectedItem] = useState<any | null>(null);
+
+  const [searchText, setSearchText] = useState('');
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [activeFilters, setActiveFilters] = useState({
+    startDate: '',
+    endDate: '',
+    users: [] as string[]
+  });
+
+  const uniqueUsers = useMemo(() => {
+    const users = new Set<string>();
+    historyBlocks.forEach(b => {
+        b.items.forEach((i: any) => users.add(i.countedBy));
     });
-  }, [groups, filters]);
+    return Array.from(users);
+  }, [historyBlocks]);
 
-  const toggleGroup = (id: string) => {
-    const next = new Set(expandedGroups);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setExpandedGroups(next);
+  const filteredBlocks = useMemo(() => {
+    return historyBlocks.filter(block => {
+      const searchLower = searchText.toLowerCase();
+      const matchesText = 
+        searchText === '' ||
+        block.name.toLowerCase().includes(searchLower) ||
+        block.parentRef.toLowerCase().includes(searchLower) ||
+        block.items.some((item: any) => 
+          item.ref.toLowerCase().includes(searchLower) ||
+          item.location.toLowerCase().includes(searchLower) ||
+          item.countedBy.toLowerCase().includes(searchLower)
+        );
+
+      if (!matchesText) return false;
+
+      if (activeFilters.users.length > 0) {
+          const hasUser = block.items.some((i:any) => activeFilters.users.includes(i.countedBy));
+          if (!hasUser) return false;
+      }
+
+      if (activeFilters.startDate && block.latestDate < activeFilters.startDate) return false;
+      if (activeFilters.endDate && block.latestDate > activeFilters.endDate) return false;
+
+      return true;
+    });
+  }, [historyBlocks, searchText, activeFilters]);
+
+  const hasActiveFilters = activeFilters.startDate || activeFilters.endDate || activeFilters.users.length > 0;
+
+  const toggleBlock = (id: string) => {
+    setExpandedBlocks(prev => 
+      prev.includes(id) ? prev.filter(blockId => blockId !== id) : [...prev, id]
+    );
   };
 
-  const handleRetake = async (e: React.MouseEvent, groupId: string) => {
-    e.stopPropagation();
-    if (confirm(`Deseja retomar a contagem do bloco ${groupId}?`)) {
-        const success = await onReserve(groupId);
-        if (success) {
-            onNavigate('reserved');
-        }
-    }
-  };
-
-  if (loading) return <AutoPartsLoader message="Carregando Histórico..." />;
+  if (loading) {
+      return <AutoPartsLoader message="Carregando Histórico..." />;
+  }
 
   return (
-    <div className="flex flex-col w-full min-h-screen pb-24 md:pb-0 bg-background-light dark:bg-background-dark">
-        {/* Header */}
-        <div className="sticky top-0 z-20 bg-white/95 dark:bg-background-dark/95 backdrop-blur-md border-b border-gray-200 dark:border-card-border p-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-                 <button onClick={() => onNavigate('dashboard')} className="md:hidden p-2 -ml-2 text-gray-600 dark:text-gray-300">
-                     <Icon name="arrow_back" size={24} />
-                 </button>
-                 <div>
-                     <h1 className="text-lg font-bold text-gray-900 dark:text-white">Histórico</h1>
-                     <p className="text-xs text-gray-500">Últimas contagens realizadas</p>
-                 </div>
-            </div>
-            <button onClick={() => setShowFilter(true)} className={`p-2 rounded-full transition-colors ${filters.users.length > 0 || filters.startDate ? 'bg-primary/10 text-primary' : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5'}`}>
-                <Icon name="filter_list" size={24} />
-            </button>
-        </div>
-
-        <main className="flex-1 p-4 space-y-4">
-            {filteredGroups.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-                    <Icon name="history_toggle_off" size={48} className="mb-4 opacity-30" />
-                    <p>Nenhum histórico encontrado.</p>
-                </div>
-            ) : (
-                filteredGroups.map(group => (
-                    <div key={group.id} className="bg-white dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-card-border shadow-sm overflow-hidden animate-fade-in">
-                        <div 
-                           onClick={() => toggleGroup(group.id)}
-                           className="p-4 flex items-center gap-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
-                        >
-                            <div className={`size-10 rounded-full flex items-center justify-center text-white shadow-sm ${group.status === 'divergence' ? 'bg-orange-500' : 'bg-green-500'}`}>
-                                <Icon name={group.status === 'divergence' ? "priority_high" : "check"} size={20} />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <div className="flex justify-between items-start">
-                                    <h3 className="font-bold text-gray-900 dark:text-white text-sm truncate pr-2">{group.id}</h3>
-                                    <span className="text-xs text-gray-500 whitespace-nowrap">{group.date}</span>
-                                </div>
-                                <div className="flex items-center gap-2 mt-1 text-xs text-gray-500 dark:text-gray-400">
-                                    <Icon name="person" size={14} />
-                                    <span className="truncate">{group.user}</span>
-                                    <span>•</span>
-                                    <span>{group.itemCount} itens</span>
-                                </div>
-                            </div>
-                            <Icon name={expandedGroups.has(group.id) ? "expand_less" : "expand_more"} className="text-gray-400" />
-                        </div>
-                        
-                        {expandedGroups.has(group.id) && (
-                            <div className="bg-gray-50 dark:bg-black/20 border-t border-gray-100 dark:border-white/5 p-3">
-                                <div className="flex justify-end mb-3">
-                                    <button 
-                                        onClick={(e) => handleRetake(e, group.id)}
-                                        className="text-xs font-bold text-primary flex items-center gap-1 px-3 py-1.5 bg-white dark:bg-surface-dark border border-gray-200 dark:border-white/10 rounded-lg shadow-sm hover:bg-blue-50 dark:hover:bg-white/10 transition-colors"
-                                    >
-                                        <Icon name="replay" size={14} />
-                                        Retomar Contagem
-                                    </button>
-                                </div>
-                                <div className="space-y-2">
-                                    {group.items.map((item, i) => (
-                                        <div key={i} className="flex justify-between items-center p-2.5 rounded-lg bg-white dark:bg-surface-dark border border-gray-200 dark:border-white/5 shadow-sm">
-                                            <div className="flex flex-col min-w-0 pr-2">
-                                                <span className="font-bold text-sm text-gray-800 dark:text-gray-200 truncate">{item.name}</span>
-                                                <span className="text-[10px] text-gray-500 font-mono">{item.sku}</span>
-                                            </div>
-                                            <div className="text-right whitespace-nowrap">
-                                                <div className={`font-bold text-sm ${item.status === 'not_located' ? 'text-red-500' : 'text-gray-900 dark:text-white'}`}>
-                                                    {item.status === 'not_located' ? 'Não Loc.' : `${item.qty} un`}
-                                                </div>
-                                                <div className="text-[10px] text-gray-400">{item.time}</div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                ))
+    <div className="relative flex flex-col w-full min-h-screen pb-24 md:pb-0 bg-background-light dark:bg-background-dark md:bg-transparent">
+      {/* Header */}
+      <header className="sticky top-0 z-10 bg-background-light/95 dark:bg-background-dark/95 md:bg-transparent backdrop-blur-sm md:backdrop-blur-none p-4 pb-2 border-b border-transparent">
+        <div className="flex items-center justify-between">
+          <button className="flex size-10 shrink-0 items-center justify-center rounded-full active:bg-black/5 dark:active:bg-white/10 transition-colors">
+            <Icon name="arrow_back" size={24} />
+          </button>
+          <h2 className="text-lg font-bold leading-tight flex-1 text-center md:text-left md:ml-4">Histórico de Contagens</h2>
+          <button 
+            onClick={() => setShowFilterModal(true)}
+            className={`flex size-10 shrink-0 items-center justify-center rounded-full transition-colors relative ${
+              hasActiveFilters 
+                ? 'bg-primary/10 text-primary' 
+                : 'active:bg-black/5 dark:active:bg-white/10 text-gray-700 dark:text-white'
+            }`}
+          >
+            <Icon name="filter_list" size={24} />
+            {hasActiveFilters && (
+              <span className="absolute top-2 right-2 size-2 bg-primary rounded-full border border-white dark:border-surface-dark" />
             )}
-        </main>
+          </button>
+        </div>
+      </header>
 
-        <HistoryFilterModal 
-            isOpen={showFilter} 
-            onClose={() => setShowFilter(false)} 
-            availableUsers={availableUsers}
-            currentFilters={filters}
-            onApply={setFilters}
-            onClear={() => setFilters({ startDate: '', endDate: '', users: [] })}
-        />
+      {/* Search */}
+      <div className="px-4 py-3">
+        <div className="flex w-full items-stretch rounded-xl h-12 shadow-sm bg-white dark:bg-surface-dark overflow-hidden focus-within:ring-1 focus-within:ring-primary transition-all">
+           <div className="flex items-center justify-center pl-4 text-gray-400">
+             <Icon name="search" size={24} />
+           </div>
+           <input 
+             className="flex-1 bg-transparent border-none focus:ring-0 text-base px-4 placeholder-gray-400 text-gray-900 dark:text-white" 
+             placeholder="Buscar SKU, nome ou usuário..." 
+             value={searchText}
+             onChange={(e) => setSearchText(e.target.value)}
+           />
+           {searchText && (
+             <button 
+                onClick={() => setSearchText('')}
+                className="flex items-center justify-center px-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+             >
+                <Icon name="close" size={20} />
+             </button>
+           )}
+        </div>
+      </div>
+
+      <div className="px-4 pt-2 pb-2 flex items-center justify-between">
+         <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+           {filteredBlocks.length > 0 ? `${filteredBlocks.length} registros` : 'Nenhum resultado'}
+         </p>
+      </div>
+
+      {/* Blocks List */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 px-4 pb-28 md:pb-0">
+        {filteredBlocks.length === 0 ? (
+          <div className="col-span-full flex flex-col items-center justify-center py-12 text-gray-400 opacity-60">
+             <Icon name="manage_search" size={64} className="mb-2" />
+             <p className="text-sm font-medium">Nenhum histórico encontrado.</p>
+          </div>
+        ) : (
+          filteredBlocks.map((block) => {
+           const isExpanded = expandedBlocks.includes(block.id);
+           const visibleItems = isExpanded ? block.items : block.items.slice(0, 3);
+           const hiddenCount = block.items.length - 3;
+           const hasDivergence = block.status === 'divergencia';
+           
+           // Formato: DD/MM/AAAA HH:mm (sem virgula)
+           const formattedDate = new Date(block.latestDate).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(',', '');
+
+           return (
+             <div key={block.id} className="flex flex-col shadow-lg shadow-black/20 h-full group bg-[#182335] dark:bg-surface-dark rounded-xl border border-white/5 overflow-hidden transition-all hover:border-white/10">
+                {/* CARD HEADER - CRONOLOGIA AJUSTADA */}
+                <div className="p-4 border-b border-white/5 bg-[#182335] dark:bg-surface-dark relative">
+                    <div className="flex justify-between items-start">
+                        {/* Esquerda: Identificação do Bloco */}
+                        <div className="flex-1 pr-2">
+                            <div className="bg-primary/10 border border-primary/20 text-primary px-2 py-1 rounded font-black inline-block mb-2 text-sm">
+                                {block.parentRef}
+                            </div>
+                            
+                            {hasDivergence && (
+                                <div className="text-[9px] font-bold text-orange-400 flex items-center gap-1 bg-orange-900/20 px-2 py-0.5 rounded border border-orange-900/30 w-fit">
+                                    <Icon name="warning" size={10} />
+                                    Divergência
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Direita: Data e Ação */}
+                        <div className="flex items-center gap-3">
+                            <div className="flex flex-col items-end">
+                                <span className="text-sm font-bold text-white leading-none tracking-tight mb-1">
+                                    {formattedDate}
+                                </span>
+                                <div className="flex items-center gap-1 text-[10px] text-gray-400">
+                                    <Icon name="schedule" size={10} />
+                                    {block.timeAgo}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* CARD BODY - ITEMS LIST */}
+                <div className="flex-col divide-y divide-gray-700 dark:divide-white/5">
+                      {visibleItems.map((item: any) => {
+                        const isIssue = item.status === 'not_located' || item.status === 'divergence_info';
+
+                        return (
+                        <div 
+                          key={item.id} 
+                          onClick={() => setSelectedItem(item)}
+                          className="p-4 hover:bg-white/5 transition-colors cursor-pointer"
+                        >
+                            {/* Line 1: Name */}
+                            <h4 className="text-sm font-bold text-white mb-3 line-clamp-1">{item.name}</h4>
+                            
+                            {/* Line 2: Details Row (SKU, Brand, Qty) */}
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="flex items-center gap-2">
+                                    <span className="px-2 py-1 rounded text-[12px] font-bold bg-slate-700 text-white border border-slate-600 font-mono tracking-wide shadow-sm">
+                                        {item.ref}
+                                    </span>
+                                    <span className="text-[10px] text-gray-400 font-bold uppercase border-l border-gray-600 pl-2">
+                                        {item.brand}
+                                    </span>
+                                </div>
+                                
+                                <div className="flex flex-col items-end">
+                                    <span className={`text-xl font-black ${isIssue ? 'text-orange-500' : 'text-green-500'} tracking-tight`}>
+                                        {item.qty} <span className="text-xs font-normal text-gray-500">un</span>
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Line 3: History Info (Avatar, Quem, Loc) */}
+                            <div className="pt-3 border-t border-gray-700/50 flex justify-between items-center text-[10px]">
+                                <div className="flex items-center gap-2">
+                                    <div className="size-5 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-[8px] shadow-sm ring-1 ring-white/10">
+                                        {getInitials(item.countedBy)}
+                                    </div>
+                                    <span className="text-gray-300 font-medium">{item.countedBy.split(' ')[0]}</span>
+                                </div>
+
+                                {/* Location Tag - Dark Grey Badge */}
+                                <div className="flex items-center gap-1 bg-gray-800 text-gray-300 px-2 py-1 rounded-md border border-gray-700 font-mono tracking-tighter">
+                                    <Icon name="place" size={12} className="text-gray-500" />
+                                    <span>{item.location}</span>
+                                </div>
+                            </div>
+                        </div>
+                        );
+                      })}
+                </div>
+
+                {/* CARD FOOTER - EXPAND CONTROLS */}
+                <div className="mt-auto">
+                    {(!isExpanded && hiddenCount > 0) && (
+                        <button 
+                            onClick={() => toggleBlock(block.id)}
+                            className="w-full py-3 text-xs font-bold text-blue-400 hover:text-blue-300 hover:bg-white/5 transition-colors flex items-center justify-center gap-1 bg-[#131b29]"
+                        >
+                            Ver mais {hiddenCount} itens
+                            <Icon name="expand_more" size={16} />
+                        </button>
+                    )}
+                    {(isExpanded && block.items.length > 3) && (
+                        <button 
+                            onClick={() => toggleBlock(block.id)}
+                            className="w-full py-3 text-xs font-bold text-blue-400 hover:text-blue-300 hover:bg-white/5 transition-colors flex items-center justify-center gap-1 bg-[#131b29]"
+                        >
+                            Mostrar menos
+                            <Icon name="expand_less" size={16} />
+                        </button>
+                    )}
+                    
+                    {/* Read Only Footer */}
+                    <div className="p-2 bg-[#0f172a] border-t border-gray-800 flex items-center justify-center">
+                        <span className="text-[9px] font-bold text-gray-600 flex items-center gap-1.5 uppercase tracking-wider">
+                            <Icon name="verified" size={12} className="text-gray-600" />
+                            Registro Auditável
+                        </span>
+                    </div>
+                </div>
+             </div>
+           );
+        }))}
+      </div>
+
+      <ItemDetailModal 
+        isOpen={!!selectedItem} 
+        onClose={() => setSelectedItem(null)} 
+        item={selectedItem}
+      />
+      
+      <HistoryFilterModal 
+        isOpen={showFilterModal}
+        onClose={() => setShowFilterModal(false)}
+        availableUsers={uniqueUsers}
+        currentFilters={activeFilters}
+        onApply={setActiveFilters}
+        onClear={() => setActiveFilters({ startDate: '', endDate: '', users: [] })}
+      />
     </div>
   );
 };

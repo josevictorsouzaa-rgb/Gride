@@ -123,6 +123,7 @@ const initDb = () => {
                     `ALTER TABLE GRIDE_RESERVAS ADD ITEMS_JSON BLOB SUB_TYPE TEXT`, 
                     "Coluna ITEMS_JSON em Reservas"
                 );
+                // Garantir PRO_COD se a tabela já existia antes
                 await safeExecute(db, 
                     `ALTER TABLE GRIDE_RESERVAS ADD PRO_COD INTEGER`, 
                     "Coluna PRO_COD em Reservas"
@@ -142,14 +143,18 @@ const initDb = () => {
                         LOCALIZACAO VARCHAR(100), 
                         STATUS VARCHAR(50), 
                         DIVERGENCIA_MOTIVO VARCHAR(255), 
-                        BLOCK_REF VARCHAR(50), 
+                        BLOCK_REF VARCHAR(50),
                         DATA_HORA TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )`, 
                     "Tabela Logs"
                 );
+                // Migração segura caso colunas faltem em base existente
                 await safeExecute(db, `ALTER TABLE GRIDE_INVENTARIO_LOG ADD PRO_COD INTEGER`, "Coluna PRO_COD em Logs");
                 await safeExecute(db, `ALTER TABLE GRIDE_INVENTARIO_LOG ADD PRO_NRFABRICANTE VARCHAR(50)`, "Coluna PRO_NRFABRICANTE em Logs");
                 
+                // Renomear colunas antigas se necessário (Firebird não suporta RENAME COLUMN facilmente em versões antigas, vamos assumir criação nova ou coexistência)
+                // Se SKU existir, vamos ignorar e usar PRO_NRFABRICANTE daqui pra frente nas queries.
+
                 // 4. Tabela de Tratamento (Atualizado: PRO_COD, PRO_NRFABRICANTE)
                 await safeExecute(db, 
                     `CREATE TABLE GRIDE_TRATAMENTO (
@@ -216,6 +221,7 @@ app.get('/user-name/:id', (req, res) => {
 // 2. Login (Query via USU_COD)
 app.post('/login', (req, res) => {
     const { usuario_id, senha } = req.body;
+    // usuario_id do body mapeia para USU_COD
     
     if (usuario_id === '9999' && senha === 'admin') return res.json({ success: true, user: { id: '9999', name: 'Gestor', role: 'Gerente', isAdmin: true } });
     if (usuario_id === '8888' && senha === 'user') return res.json({ success: true, user: { id: '8888', name: 'Colaborador', role: 'Conferente', isAdmin: false } });
@@ -245,6 +251,7 @@ app.get('/users', (req, res) => {
         db.query(`SELECT USU_COD, USU_NOME FROM USUARIOS WHERE USU_ATIVO = 'S' ORDER BY USU_NOME`, [], (err, result) => {
             db.detach();
             if (err) return res.json([]);
+            // Frontend espera 'id'
             res.json(result.map(u => ({ id: u.USU_COD.toString(), name: safeString(u.USU_NOME), role: 'Colaborador', avatar: '', canTreat: false })));
         });
     });
@@ -443,6 +450,7 @@ app.get('/reserved-blocks/:userId', (req, res) => {
                         });
                     });
                     const blocks = [];
+                    // Envia status 'progress' fixo para o bloco
                     groups.forEach((items, key) => blocks.push({ id: key, parentRef: items[0].ref || items[0].name, location: items[0].location, status: 'progress', date: 'Hoje', items: items }));
                     res.json(blocks);
                 });
@@ -451,7 +459,8 @@ app.get('/reserved-blocks/:userId', (req, res) => {
     });
 });
 
-// 7. Reservar Bloco
+// 7. Reservar Bloco (Insert com USU_COD e PRO_COD fake inicial, depois update?)
+// Como o block_id é a chave lógica (similar_id), usamos ele.
 app.post('/reserve-block', (req, res) => {
     const { block_id, user_id, user_name } = req.body; // user_id = USU_COD
     Firebird.attach(options, (err, db) => {
@@ -533,6 +542,7 @@ app.post('/finalize-block', (req, res) => {
 
                 for (const item of items) {
                     // 1. Busca PRO_COD real baseado no SKU (PRO_NRFABRICANTE)
+                    // Isso garante integridade relacional mesmo se o front não mandou db_pro_cod
                     const rows = await new Promise((resolve, reject) => {
                         transaction.query('SELECT FIRST 1 PRO_COD FROM PRODUTOS WHERE PRO_NRFABRICANTE = ?', [item.ref], (err, res) => {
                             if (err) reject(err); else resolve(res);
@@ -549,11 +559,11 @@ app.post('/finalize-block', (req, res) => {
                     // 2. Prepara dados para inserção
                     const qtdContada = item.countedQty !== undefined ? item.countedQty : 0;
                     const statusEN = item.status || 'pending';
-                    const statusPT = TO_DB_STATUS[statusEN] || statusEN; 
+                    const statusPT = TO_DB_STATUS[statusEN] || statusEN; // 'Contado', 'Divergência', etc.
                     const localizacao = (item.lastCount && item.lastCount.location) ? item.lastCount.location : (item.location || 'GERAL');
                     const motivo = item.divergenceReason || '';
 
-                    // 3. Insert Log
+                    // 3. Insert Log (Usando colunas novas)
                     const sqlLog = `INSERT INTO GRIDE_INVENTARIO_LOG (
                         PRO_COD, PRO_NRFABRICANTE, NOME_PRODUTO, USU_COD, USUARIO_NOME, 
                         QTD_SISTEMA, QTD_CONTADA, LOCALIZACAO, STATUS, DIVERGENCIA_MOTIVO, 
@@ -580,7 +590,7 @@ app.post('/finalize-block', (req, res) => {
                         });
                     });
 
-                    // 5. Tratamento se necessário (Including 'issue')
+                    // 5. Tratamento se necessário
                     if (statusEN === 'not_located' || statusEN === 'divergence_info' || statusEN === 'issue') {
                         const sqlTreat = `INSERT INTO GRIDE_TRATAMENTO (
                             LOG_ID, PRO_COD, PRO_NRFABRICANTE, NOME_PRODUTO, LOCALIZACAO, 
@@ -622,7 +632,7 @@ app.post('/finalize-block', (req, res) => {
     });
 });
 
-// 11. Histórico (Atualizado com JOIN MARCAS)
+// 11. Histórico (Alias para manter contrato com front)
 app.get('/history', (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 300; 
@@ -636,12 +646,10 @@ app.get('/history', (req, res) => {
             L.NOME_PRODUTO,
             L.STATUS, 
             T.STATUS as TRATAMENTO_STATUS, 
-            P.PRO_COD_SIMILAR, P.PRO_DESCRI as PROD_DESC_ATUAL, 
-            M.MAR_DESCRI as MARCA_NOME 
+            P.PRO_COD_SIMILAR, P.PRO_DESCRI as PROD_DESC_ATUAL, P.MAR_COD 
             FROM GRIDE_INVENTARIO_LOG L 
             LEFT JOIN GRIDE_TRATAMENTO T ON T.LOG_ID = L.ID 
             LEFT JOIN PRODUTOS P ON P.PRO_COD = L.PRO_COD 
-            LEFT JOIN MARCAS M ON M.MAR_COD = P.MAR_COD
             ORDER BY L.DATA_HORA DESC
         `;
         db.query(sql, [limit, skip], (err, result) => {
@@ -665,10 +673,10 @@ app.get('/treatment-items', (req, res) => {
             db.detach();
             res.json(result ? result.map(r => ({ 
                 id: r.ID, 
-                sku: safeString(r.PRO_NRFABRICANTE), 
+                sku: safeString(r.PRO_NRFABRICANTE), // Map PRO_NRFABRICANTE -> sku
                 name: safeString(r.NOME_PRODUTO), 
                 location: safeString(r.LOCALIZACAO), 
-                issueType: FROM_DB_STATUS[safeString(r.TIPO_ERRO)] || 'issue', 
+                issueType: FROM_DB_STATUS[safeString(r.TIPO_ERRO)] || 'issue', // PT -> EN
                 description: safeString(r.DESCRICAO_ERRO), 
                 reportedBy: safeString(r.REPORTADO_POR), 
                 reportedAt: r.REPORTADO_EM, 
@@ -694,7 +702,7 @@ app.get('/product-history/:sku', (req, res) => {
     });
 });
 
-// 14. Endereços e Galpões
+// 14. Endereços
 app.get('/addresses', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json([]);
@@ -728,31 +736,7 @@ app.post('/save-addresses', (req, res) => {
     });
 });
 
-// Rotas Extras para AddressManagerScreen (Adicionadas agora)
-app.post('/update-address', (req, res) => {
-    const { id, codigo, descricao } = req.body;
-    Firebird.attach(options, (err, db) => {
-        if (err) return res.status(500).json({ error: 'Erro DB' });
-        db.query('UPDATE GRIDE_ENDERECOS SET CODIGO = ?, DESCRICAO = ? WHERE ID = ?', [codigo, descricao, id], (err) => {
-            db.detach();
-            if (err) return res.status(500).json({ success: false, message: err.message });
-            res.json({ success: true });
-        });
-    });
-});
-
-app.post('/delete-address', (req, res) => {
-    const { id } = req.body;
-    Firebird.attach(options, (err, db) => {
-        if (err) return res.status(500).json({ error: 'Erro DB' });
-        db.query('DELETE FROM GRIDE_ENDERECOS WHERE ID = ?', [id], (err) => {
-            db.detach();
-            if (err) return res.status(500).json({ success: false, message: err.message });
-            res.json({ success: true });
-        });
-    });
-});
-
+// 15. Galpões
 app.get('/warehouses', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json([]);
