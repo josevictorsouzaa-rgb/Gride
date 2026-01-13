@@ -26,90 +26,105 @@ const options = {
     pageSize: 4096
 };
 
-// --- HELPER DE EXECUÇÃO SQL (PROMISE) ---
-const runQueryPromise = (db, sql, logDesc) => {
-    return new Promise((resolve) => {
-        db.query(sql, [], (err) => {
-            if (err) {
-                // Filtra erros de "já existe" para não poluir o log, mas exibe erros reais
-                const msg = err.message ? err.message.toLowerCase() : '';
-                if (!msg.includes('already exists') && !msg.includes('unsuccessful metadata update') && !msg.includes('exists')) {
-                    console.error(`[X] Falha em ${logDesc}:`, err.message);
-                }
-                // Resolvemos sempre para não quebrar a cadeia de inicialização
-                resolve(false);
-            } else {
-                console.log(`[OK] ${logDesc}`);
-                resolve(true);
-            }
+// --- HELPERS SQL ---
+
+const execute = (db, sql, params = []) => {
+    return new Promise((resolve, reject) => {
+        db.query(sql, params, (err, result) => {
+            if (err) return reject(err);
+            resolve(result);
         });
     });
 };
 
-// --- INIT DB SEQUENCIAL E SINCRONIZADO ---
+const tableExists = async (db, tableName) => {
+    try {
+        const result = await execute(db, `SELECT COUNT(*) as CNT FROM RDB$RELATIONS WHERE RDB$RELATION_NAME = '${tableName.toUpperCase()}'`);
+        return result[0].CNT > 0;
+    } catch (e) {
+        console.error("Erro ao checar tabela:", e.message);
+        return false;
+    }
+};
+
+// --- INIT DB ROBUSTO ---
 const initDb = () => {
-    return new Promise((resolve, reject) => {
-        console.log(">>> [INIT] Conectando ao Firebird para verificação de schema...");
+    return new Promise((resolve) => {
+        console.log(">>> [INIT] Conectando ao Firebird...");
         
+        // Timeout de segurança: Se o DB travar (arquivo lockado), libera o boot do server após 10s
+        const timeout = setTimeout(() => {
+            console.error(">>> [TIMEOUT] O Banco de dados não respondeu. O servidor iniciará, mas as rotas podem falhar.");
+            resolve();
+        }, 10000);
+
         Firebird.attach(options, async (err, db) => {
+            clearTimeout(timeout); // Cancela o timeout se conectou
+            
             if (err) {
-                console.error(">>> [FATAL] Não foi possível conectar ao DB:", err.message);
-                // Resolvemos para permitir que o servidor suba (mesmo com DB quebrado),
-                // para que o admin possa ver logs ou tentar novamente.
-                return resolve(); 
+                console.error(">>> [FALHA CONEXÃO]", err.message);
+                console.error("Verifique se o Firebird está rodando e se o caminho do banco está correto.");
+                return resolve();
             }
 
             try {
-                // 1. Tabelas Básicas
-                await runQueryPromise(db, 
-                    `CREATE TABLE GRIDE_ENDERECOS (ID INTEGER NOT NULL PRIMARY KEY, CODIGO VARCHAR(50) NOT NULL, DESCRICAO VARCHAR(100), TIPO VARCHAR(20), PRO_COD VARCHAR(20))`, 
-                    "Criar Tabela Endereços"
-                );
-                
-                await runQueryPromise(db, 
-                    `CREATE TABLE GRIDE_GALPOES (ID INTEGER NOT NULL PRIMARY KEY, SIGLA VARCHAR(10) NOT NULL, DESCRICAO VARCHAR(50))`, 
-                    "Criar Tabela Galpões"
-                );
+                console.log(">>> [INIT] Verificando schema...");
 
-                // 2. Tabela de Reservas e Coluna Blob (Sequencial)
-                await runQueryPromise(db, 
-                    `CREATE TABLE GRIDE_RESERVAS (BLOCK_ID VARCHAR(50) NOT NULL PRIMARY KEY, USER_ID VARCHAR(20) NOT NULL, USER_NAME VARCHAR(100), RESERVED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP, ITEMS_JSON BLOB SUB_TYPE TEXT)`, 
-                    "Criar Tabela Reservas"
-                );
-                // Tenta adicionar a coluna caso a tabela já existisse sem ela
-                await runQueryPromise(db, 
-                    `ALTER TABLE GRIDE_RESERVAS ADD ITEMS_JSON BLOB SUB_TYPE TEXT`, 
-                    "Verificar Coluna ITEMS_JSON"
-                );
-
-                // 3. Tabela de Logs e Coluna Block Ref (Sequencial)
-                await runQueryPromise(db, 
-                    `CREATE TABLE GRIDE_INVENTARIO_LOG (ID INTEGER NOT NULL PRIMARY KEY, SKU VARCHAR(50), NOME_PRODUTO VARCHAR(200), USUARIO_ID VARCHAR(20), USUARIO_NOME VARCHAR(100), QTD_SISTEMA DECIMAL(15,4), QTD_CONTADA DECIMAL(15,4), LOCALIZACAO VARCHAR(100), STATUS VARCHAR(20), DIVERGENCIA_MOTIVO VARCHAR(255), DATA_HORA TIMESTAMP DEFAULT CURRENT_TIMESTAMP, BLOCK_REF VARCHAR(50))`, 
-                    "Criar Tabela Logs"
-                );
-                await runQueryPromise(db, 
-                    `ALTER TABLE GRIDE_INVENTARIO_LOG ADD BLOCK_REF VARCHAR(50)`, 
-                    "Verificar Coluna BLOCK_REF"
-                );
-
-                // 4. Tabela de Tratamento
-                await runQueryPromise(db, 
-                    `CREATE TABLE GRIDE_TRATAMENTO (ID INTEGER NOT NULL PRIMARY KEY, LOG_ID INTEGER, SKU VARCHAR(50), NOME_PRODUTO VARCHAR(200), LOCALIZACAO VARCHAR(100), TIPO_ERRO VARCHAR(20), DESCRICAO_ERRO VARCHAR(255), REPORTADO_POR VARCHAR(100), REPORTADO_EM TIMESTAMP DEFAULT CURRENT_TIMESTAMP, STATUS VARCHAR(20) DEFAULT 'PENDING', RESOLVIDO_POR VARCHAR(20), RESOLVIDO_EM TIMESTAMP, RESOLUCAO_NOTA VARCHAR(255))`, 
-                    "Criar Tabela Tratamento"
-                );
-
-                // 5. Generators e Triggers
-                const gens = ['GEN_GRIDE_ENDERECOS_ID', 'GEN_GRIDE_GALPOES_ID', 'GEN_GRIDE_LOG_ID', 'GEN_GRIDE_TRATAMENTO_ID'];
-                for (const g of gens) {
-                    await runQueryPromise(db, `CREATE GENERATOR ${g}`, `Generator ${g}`);
+                // 1. GRIDE_ENDERECOS
+                if (!(await tableExists(db, 'GRIDE_ENDERECOS'))) {
+                    await execute(db, `CREATE TABLE GRIDE_ENDERECOS (ID INTEGER NOT NULL PRIMARY KEY, CODIGO VARCHAR(50) NOT NULL, DESCRICAO VARCHAR(100), TIPO VARCHAR(20), PRO_COD VARCHAR(20))`);
+                    console.log("   [+] GRIDE_ENDERECOS criada.");
                 }
 
-                await runQueryPromise(db, `CREATE TRIGGER TR_GRIDE_ENDERECOS FOR GRIDE_ENDERECOS ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_ENDERECOS_ID, 1); END`, "Trigger Endereços");
-                await runQueryPromise(db, `CREATE TRIGGER TR_GRIDE_GALPOES FOR GRIDE_GALPOES ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_GALPOES_ID, 1); END`, "Trigger Galpões");
-                await runQueryPromise(db, `CREATE TRIGGER TR_GRIDE_LOG FOR GRIDE_INVENTARIO_LOG ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_LOG_ID, 1); END`, "Trigger Logs");
-                await runQueryPromise(db, `CREATE TRIGGER TR_GRIDE_TRATAMENTO FOR GRIDE_TRATAMENTO ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_TRATAMENTO_ID, 1); END`, "Trigger Tratamento");
+                // 2. GRIDE_GALPOES
+                if (!(await tableExists(db, 'GRIDE_GALPOES'))) {
+                    await execute(db, `CREATE TABLE GRIDE_GALPOES (ID INTEGER NOT NULL PRIMARY KEY, SIGLA VARCHAR(10) NOT NULL, DESCRICAO VARCHAR(50))`);
+                    console.log("   [+] GRIDE_GALPOES criada.");
+                }
 
-                console.log(">>> [INIT] Banco de dados verificado e pronto.");
+                // 3. GRIDE_RESERVAS
+                if (!(await tableExists(db, 'GRIDE_RESERVAS'))) {
+                    await execute(db, `CREATE TABLE GRIDE_RESERVAS (BLOCK_ID VARCHAR(50) NOT NULL PRIMARY KEY, USER_ID VARCHAR(20) NOT NULL, USER_NAME VARCHAR(100), RESERVED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP, ITEMS_JSON BLOB SUB_TYPE TEXT)`);
+                    console.log("   [+] GRIDE_RESERVAS criada.");
+                } else {
+                    // Migração segura
+                    try { await execute(db, `ALTER TABLE GRIDE_RESERVAS ADD ITEMS_JSON BLOB SUB_TYPE TEXT`); console.log("   [+] Coluna ITEMS_JSON adicionada."); } catch(e) {}
+                }
+
+                // 4. GRIDE_INVENTARIO_LOG
+                if (!(await tableExists(db, 'GRIDE_INVENTARIO_LOG'))) {
+                    await execute(db, `CREATE TABLE GRIDE_INVENTARIO_LOG (ID INTEGER NOT NULL PRIMARY KEY, SKU VARCHAR(50), NOME_PRODUTO VARCHAR(200), USUARIO_ID VARCHAR(20), USUARIO_NOME VARCHAR(100), QTD_SISTEMA DECIMAL(15,4), QTD_CONTADA DECIMAL(15,4), LOCALIZACAO VARCHAR(100), STATUS VARCHAR(20), DIVERGENCIA_MOTIVO VARCHAR(255), DATA_HORA TIMESTAMP DEFAULT CURRENT_TIMESTAMP, BLOCK_REF VARCHAR(50))`);
+                    console.log("   [+] GRIDE_INVENTARIO_LOG criada.");
+                } else {
+                    try { await execute(db, `ALTER TABLE GRIDE_INVENTARIO_LOG ADD BLOCK_REF VARCHAR(50)`); console.log("   [+] Coluna BLOCK_REF adicionada."); } catch(e) {}
+                }
+
+                // 5. GRIDE_TRATAMENTO
+                if (!(await tableExists(db, 'GRIDE_TRATAMENTO'))) {
+                    await execute(db, `CREATE TABLE GRIDE_TRATAMENTO (ID INTEGER NOT NULL PRIMARY KEY, LOG_ID INTEGER, SKU VARCHAR(50), NOME_PRODUTO VARCHAR(200), LOCALIZACAO VARCHAR(100), TIPO_ERRO VARCHAR(20), DESCRICAO_ERRO VARCHAR(255), REPORTADO_POR VARCHAR(100), REPORTADO_EM TIMESTAMP DEFAULT CURRENT_TIMESTAMP, STATUS VARCHAR(20) DEFAULT 'PENDING', RESOLVIDO_POR VARCHAR(20), RESOLVIDO_EM TIMESTAMP, RESOLUCAO_NOTA VARCHAR(255))`);
+                    console.log("   [+] GRIDE_TRATAMENTO criada.");
+                }
+
+                // 6. Generators (Ignora erro se existir)
+                const gens = ['GEN_GRIDE_ENDERECOS_ID', 'GEN_GRIDE_GALPOES_ID', 'GEN_GRIDE_LOG_ID', 'GEN_GRIDE_TRATAMENTO_ID'];
+                for(const g of gens) {
+                    try { await execute(db, `CREATE GENERATOR ${g}`); } catch(e) {}
+                }
+
+                // 7. Triggers (Recria se precisar ou ignora erro)
+                // Uma estratégia simples é tentar criar e ignorar erro
+                const triggers = [
+                    `CREATE TRIGGER TR_GRIDE_ENDERECOS FOR GRIDE_ENDERECOS ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_ENDERECOS_ID, 1); END`,
+                    `CREATE TRIGGER TR_GRIDE_GALPOES FOR GRIDE_GALPOES ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_GALPOES_ID, 1); END`,
+                    `CREATE TRIGGER TR_GRIDE_LOG FOR GRIDE_INVENTARIO_LOG ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_LOG_ID, 1); END`,
+                    `CREATE TRIGGER TR_GRIDE_TRATAMENTO FOR GRIDE_TRATAMENTO ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_TRATAMENTO_ID, 1); END`
+                ];
+                for(const t of triggers) {
+                    try { await execute(db, t); } catch(e) {}
+                }
+
+                console.log(">>> [INIT] Banco de dados pronto.");
+
             } catch (e) {
                 console.error(">>> [INIT ERROR]", e);
             } finally {
@@ -135,7 +150,6 @@ const blobToString = (blob) => {
 
 // --- ROTAS (PRESERVADAS) ---
 
-// --- AUTH ---
 app.get('/user-name/:id', (req, res) => {
     const { id } = req.params;
     if (id === '9999') return res.json({ name: 'Gestor de Teste' });
@@ -184,7 +198,6 @@ app.get('/users', (req, res) => {
     });
 });
 
-// --- CATEGORIES ---
 app.get('/categories', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json([]);
@@ -260,16 +273,13 @@ app.get('/categories', (req, res) => {
     });
 });
 
-// --- BLOCKS (Com Try/Catch extra e Soft Fail para tabelas GRIDE) ---
 app.get('/blocks', (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 100;
     const search = req.query.search || '';
-    
     const gr_cod = req.query.gr_cod && !isNaN(parseInt(req.query.gr_cod)) ? parseInt(req.query.gr_cod) : null;
     const sg_cod = req.query.sg_cod && !isNaN(parseInt(req.query.sg_cod)) ? parseInt(req.query.sg_cod) : null;
     const location = req.query.location || '';
-
     const skip = (page - 1) * limit;
 
     Firebird.attach(options, (err, db) => {
@@ -277,10 +287,7 @@ app.get('/blocks', (req, res) => {
         
         // SOFT FAIL: GRIDE_RESERVAS
         db.query('SELECT BLOCK_ID, USER_ID, USER_NAME, RESERVED_AT FROM GRIDE_RESERVAS', [], (errRes, reservations) => {
-            if (errRes) {
-                // Loga erro mas continua assumindo zero reservas
-                console.error("Aviso: Falha ao ler GRIDE_RESERVAS (Ignorando para não travar):", errRes.message);
-            }
+            if (errRes) console.error("Aviso: Falha ao ler GRIDE_RESERVAS (Ignorando):", errRes.message);
             
             const lockMap = new Map();
             if (!errRes && reservations) {
@@ -291,16 +298,13 @@ app.get('/blocks', (req, res) => {
 
             // SOFT FAIL: GRIDE_TRATAMENTO
             db.query("SELECT SKU FROM GRIDE_TRATAMENTO WHERE STATUS = 'PENDING'", [], (errTreat, treatments) => {
-                if (errTreat) {
-                    console.error("Aviso: Falha ao ler GRIDE_TRATAMENTO (Ignorando):", errTreat.message);
-                }
+                if (errTreat) console.error("Aviso: Falha ao ler GRIDE_TRATAMENTO (Ignorando):", errTreat.message);
 
                 const treatmentSet = new Set();
                 if (!errTreat && treatments) {
                     treatments.forEach(t => treatmentSet.add(safeString(t.SKU)));
                 }
 
-                // Query Principal PRODUTOS
                 let sql = `
                     SELECT FIRST ? SKIP ? 
                         P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, P.MAR_COD, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE 
@@ -377,7 +381,7 @@ app.get('/reserved-blocks/:userId', (req, res) => {
         
         db.query('SELECT BLOCK_ID, USER_ID, USER_NAME, RESERVED_AT, ITEMS_JSON FROM GRIDE_RESERVAS WHERE TRIM(USER_ID) = ?', [userId], (err, reservations) => {
             if (err) { 
-                console.error("Erro ao buscar reservados (Retornando vazio):", err.message);
+                console.error("Erro ao buscar reservados (Tabela pode não existir):", err.message);
                 db.detach(); 
                 return res.json([]); 
             }
@@ -471,7 +475,6 @@ app.post('/reserve-block', (req, res) => {
              }
 
              db.query('SELECT USER_NAME FROM GRIDE_RESERVAS WHERE BLOCK_ID = ?', [block_id], (errR, result) => {
-                // Se a tabela não existir, errR ocorre.
                 if (errR && !errR.message.includes("doesn't exist") && !errR.message.includes("unknown")) {
                      db.detach(); return res.status(500).json({ error: errR.message });
                 }
