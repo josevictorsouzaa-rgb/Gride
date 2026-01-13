@@ -33,7 +33,6 @@ const getInitials = (name: string) => {
 export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNavigate, onReserve }) => {
   const [historyBlocks, setHistoryBlocks] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [reservingId, setReservingId] = useState<string | null>(null);
 
   // Fetch History from Backend
   useEffect(() => {
@@ -158,25 +157,6 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
     );
   };
 
-  const handleReReserve = async (blockId: string, e: React.MouseEvent) => {
-      e.stopPropagation();
-      if (!currentUser) return alert("Você precisa estar logado para reservar.");
-      if (reservingId) return; // Prevent double click
-
-      if (confirm(`Deseja re-reservar o bloco ${blockId}?`)) {
-          setReservingId(blockId);
-          // O fluxo agora é: App.tsx processa a reserva e atualiza contadores -> Retorna sucesso -> HistoryScreen navega
-          const success = await onReserve(blockId);
-          
-          if (success) {
-              setReservingId(null);
-              onNavigate('reserved');
-          } else {
-              setReservingId(null);
-          }
-      }
-  };
-
   if (loading) {
       return <AutoPartsLoader message="Carregando Histórico..." />;
   }
@@ -251,7 +231,6 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
            
            // Formato: DD/MM/AAAA HH:mm (sem virgula)
            const formattedDate = new Date(block.latestDate).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(',', '');
-           const isReserving = reservingId === block.id;
 
            return (
              <div key={block.id} className="flex flex-col shadow-lg shadow-black/20 h-full group bg-[#182335] dark:bg-surface-dark rounded-xl border border-white/5 overflow-hidden transition-all hover:border-white/10">
@@ -283,23 +262,6 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
                                     {block.timeAgo}
                                 </div>
                             </div>
-
-                            <button 
-                                onClick={(e) => handleReReserve(block.id, e)}
-                                disabled={isReserving}
-                                className={`flex items-center justify-center w-10 h-10 rounded-lg transition-all shadow-lg ${
-                                    isReserving 
-                                    ? 'bg-gray-600 cursor-not-allowed' 
-                                    : 'bg-blue-600 hover:bg-blue-500 text-white active:scale-95 shadow-blue-900/20'
-                                }`}
-                                title="Re-reservar para contagem"
-                            >
-                                {isReserving ? (
-                                    <Icon name="sync" size={20} className="animate-spin text-white/50" />
-                                ) : (
-                                    <Icon name="bookmark_add" size={20} />
-                                )}
-                            </button>
                         </div>
                     </div>
                 </div>

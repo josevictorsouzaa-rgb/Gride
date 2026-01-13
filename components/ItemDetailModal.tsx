@@ -1,5 +1,6 @@
 
 import React, { useMemo, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Icon } from './Icon';
 import { api } from '../services/api';
 
@@ -24,6 +25,18 @@ const formatHistoryEntry = (entry: any) => {
 export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClose, item, onAction, actionLabel }) => {
   const [history, setHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+
+  // Trava o scroll do body quando o modal abre
+  useEffect(() => {
+    if (isOpen) {
+        document.body.style.overflow = 'hidden';
+    } else {
+        document.body.style.overflow = 'unset';
+    }
+    return () => {
+        document.body.style.overflow = 'unset';
+    };
+  }, [isOpen]);
 
   useEffect(() => {
       if (isOpen && item && item.ref) {
@@ -58,7 +71,7 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
 
   if (!isOpen || !item || !financialData) return null;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
       
@@ -209,6 +222,7 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
         </div>
 
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
