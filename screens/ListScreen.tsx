@@ -241,9 +241,6 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                           <span className="font-bold text-orange-600 dark:text-orange-400 text-sm bg-orange-500/10 px-2 py-0.5 rounded-md">
                               {block.parentRef}
                           </span>
-                          <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                              {block.date}
-                          </span>
                       </div>
 
                       {/* DETAILED Item List */}
