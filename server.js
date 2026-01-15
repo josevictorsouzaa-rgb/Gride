@@ -132,7 +132,7 @@ const initDb = () => {
                 await safeExecute(db, 
                     `CREATE TABLE GRIDE_INVENTARIO_LOG (
                         ID INTEGER NOT NULL PRIMARY KEY, 
-                        PRO_COD INTEGER,
+                        PRO_COD INTEGER, 
                         PRO_NRFABRICANTE VARCHAR(50), 
                         NOME_PRODUTO VARCHAR(200), 
                         USU_COD VARCHAR(20), 
@@ -382,6 +382,7 @@ app.get('/daily-meta-suggestions', (req, res) => {
             const skipIds = [...highGiroIds, ...(excludedIds ? excludedIds.split(',') : [])].filter(x => x).join(',');
             const skipClause = skipIds ? `AND P.PRO_COD NOT IN (${skipIds})` : '';
 
+            // CIRURGICO: Uso explícito do neededForCycle sem limites inferiores
             const sqlCycle = `
                 SELECT FIRST ${neededForCycle} P.PRO_COD
                 FROM PRODUTOS P
@@ -417,6 +418,8 @@ app.get('/daily-meta-suggestions', (req, res) => {
 
             // 6. Formata (CORRIGIDO: P.PRO_PRATELEIRA)
             const groups = new Map();
+            const todayFormatted = new Date().toLocaleDateString('pt-BR');
+
             products.forEach(p => {
                 const similarId = p.PRO_COD_SIMILAR ? safeString(p.PRO_COD_SIMILAR).trim() : safeString(p.PRO_COD).trim();
                 const sku = safeString(p.PRO_NRFABRICANTE).trim();
@@ -443,7 +446,7 @@ app.get('/daily-meta-suggestions', (req, res) => {
                     parentRef: items[0].ref || items[0].name, 
                     location: items[0].location, 
                     status: 'pending', 
-                    date: 'Hoje', 
+                    date: todayFormatted, // Data dinâmica conforme solicitado
                     subcategory: isGiro ? 'Giro Alto' : 'Ciclo', 
                     items: items
                 });

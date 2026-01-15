@@ -42,7 +42,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
   onNavigate, 
   blocks: propBlocks, 
   segmentFilter, 
-  onReserveBlock,
+  onReserveBlock, 
   onClearFilter,
   mode = 'daily_meta',
   page = 1,
@@ -148,7 +148,8 @@ export const ListScreen: React.FC<ListScreenProps> = ({
     });
   }, [localBlocks, segmentFilter, searchText, timeFilter, mode]);
 
-  const displayedBlocks = showAllBlocks || mode === 'browse' ? filteredBlocks : filteredBlocks.slice(0, 10);
+  // ALTERAÇÃO CIRÚRGICA: Removido slice(0, 10) para exibir todos os itens da meta
+  const displayedBlocks = filteredBlocks;
 
   const getPageTitle = () => {
      if (mode === 'daily_meta') return 'Meta Diária';
@@ -269,9 +270,12 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                       
                       {/* HEADER SIMPLIFICADO E ESTILIZADO */}
                       <div className="flex justify-between items-center">
-                          <span className="font-bold text-orange-600 dark:text-orange-400 text-sm bg-orange-500/10 px-2 py-0.5 rounded-md">
-                              {block.parentRef}
-                          </span>
+                          <div className="flex flex-col">
+                              <span className="font-bold text-orange-600 dark:text-orange-400 text-sm bg-orange-500/10 px-2 py-0.5 rounded-md w-fit">
+                                  {block.parentRef}
+                              </span>
+                              <span className="text-[10px] text-gray-400 mt-1 ml-1">{block.date}</span>
+                          </div>
                           
                           {/* Tag de Inteligência */}
                           {mode === 'daily_meta' && block.subcategory && (
