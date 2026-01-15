@@ -186,8 +186,8 @@ app.get('/daily-meta-suggestions', (req, res) => {
             const cycleGroups = await execute(db, sqlCycleIds);
             const cycleIds = cycleGroups.map(r => Number(r.REF_ID)).filter(n => !isNaN(n));
 
-            // Combinar IDs únicos (Numéricos limpos)
-            const finalIds = [...new Set([...highGiroIds, ...cycleIds])].map(Number).filter(id => !isNaN(id));
+            // Combinar IDs únicos (Numéricos limpos e > 0)
+            const finalIds = [...new Set([...highGiroIds, ...cycleIds])].map(id => Number(id)).filter(id => id > 0);
 
             if (finalIds.length === 0) {
                 db.detach();
@@ -195,19 +195,19 @@ app.get('/daily-meta-suggestions', (req, res) => {
             }
 
             // 2. Expandir para buscar TODOS os itens dos grupos (Siblings)
-            // Query aprimorada para buscar blocos completos baseado no similarId
+            // Query Segura e Simplificada
             const finalIdsStr = finalIds.join(',');
+            console.log('IDs para busca:', finalIdsStr);
             
             const sqlDetails = `
                 SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, M.MAR_DESCRI, 
                        P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE, P.PRO_PRATELEIRA 
                 FROM PRODUTOS P 
                 LEFT JOIN MARCAS M ON (M.MAR_COD = P.MAR_COD) 
-                WHERE P.PRO_COD IN (${finalIdsStr})
+                WHERE P.PRO_COD IN (${finalIdsStr}) 
+                   OR (P.PRO_COD_SIMILAR IS NOT NULL AND P.PRO_COD_SIMILAR IN (${finalIdsStr}))
                    OR (P.PRO_COD_SIMILAR IS NOT NULL AND P.PRO_COD_SIMILAR IN (
-                       SELECT DISTINCT COALESCE(P2.PRO_COD_SIMILAR, CAST(P2.PRO_COD AS VARCHAR(20))) 
-                       FROM PRODUTOS P2 
-                       WHERE P2.PRO_COD IN (${finalIdsStr})
+                       SELECT DISTINCT PRO_COD_SIMILAR FROM PRODUTOS WHERE PRO_COD IN (${finalIdsStr})
                    ))
                 ORDER BY P.PRO_PRATELEIRA
             `;
@@ -258,7 +258,7 @@ app.get('/daily-meta-suggestions', (req, res) => {
             console.log('Blocos gerados:', blocks.length);
             res.json(blocks);
         } catch (e) {
-            console.error("ERRO CRÍTICO NA META:", e);
+            console.error('ERRO NA QUERY DA META:', e);
             if (db) db.detach();
             res.status(500).json({ error: e.message });
         }
