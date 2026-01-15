@@ -156,6 +156,7 @@ app.get('/daily-meta-suggestions', (req, res) => {
 
             // 1. Identificar grupos (Retorna um ID representativo - REF_ID - que é MIN(PRO_COD) do grupo)
             // REMOVIDO: WHERE PI.DATA >= ... para evitar erro de coluna inexistente
+            // Mantido WHERE 1=1 para integridade com exclusionClause
             const sqlGiroIds = `
                 SELECT FIRST ${Math.floor(effectiveTarget * 0.4)} 
                 MIN(P2.PRO_COD) as REF_ID
@@ -186,7 +187,7 @@ app.get('/daily-meta-suggestions', (req, res) => {
             const cycleIds = cycleGroups.map(r => Number(r.REF_ID)).filter(n => !isNaN(n));
 
             // Combinar IDs únicos (Numéricos limpos)
-            const finalIds = [...new Set([...highGiroIds, ...cycleIds])].map(Number).filter(id => id && !isNaN(id));
+            const finalIds = [...new Set([...highGiroIds, ...cycleIds])].map(Number).filter(id => !isNaN(id));
 
             if (finalIds.length === 0) {
                 db.detach();
@@ -254,6 +255,7 @@ app.get('/daily-meta-suggestions', (req, res) => {
                 });
             });
 
+            console.log('Blocos gerados:', blocks.length);
             res.json(blocks);
         } catch (e) {
             console.error("ERRO CRÍTICO NA META:", e);
