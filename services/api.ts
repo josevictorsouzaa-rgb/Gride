@@ -117,8 +117,8 @@ export const api = {
     } catch (error) { return []; }
   },
 
-  // NOVA ROTA: Get Daily Suggestions based on Settings
-  getDailyMeta: async (settings: CountingSettings): Promise<Block[]> => {
+  // NOVA ROTA: Get Daily Suggestions based on Settings (Renamed correctly)
+  getDailyMetaSuggestions: async (settings: CountingSettings): Promise<Block[]> => {
       try {
           const params = new URLSearchParams({
               dailyTarget: settings.dailyTarget.toString(),
