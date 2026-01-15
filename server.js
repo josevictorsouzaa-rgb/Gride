@@ -155,7 +155,7 @@ const initDb = () => {
                     `CREATE TABLE GRIDE_TRATAMENTO (
                         ID INTEGER NOT NULL PRIMARY KEY, 
                         LOG_ID INTEGER, 
-                        PRO_COD INTEGER,
+                        PRO_COD INTEGER, 
                         PRO_NRFABRICANTE VARCHAR(50), 
                         NOME_PRODUTO VARCHAR(200), 
                         LOCALIZACAO VARCHAR(100), 
@@ -295,7 +295,28 @@ app.get('/categories', (req, res) => {
     });
 });
 
-// --- NOVA ROTA: SUGESTÕES INTELIGENTES DE META DIÁRIA ---
+// --- ROTA DE ESTATÍSTICAS DIÁRIAS (Correção Solicitada) ---
+app.get('/daily-stats/:userId', (req, res) => {
+    const { userId } = req.params;
+    if (!userId) return res.json({ countedToday: 0 });
+
+    Firebird.attach(options, async (err, db) => {
+        if (err) return res.status(500).json({ countedToday: 0 });
+        try {
+            // Sintaxe exata solicitada: CAST(DATA_HORA as DATE) = CURRENT_DATE
+            const sql = `SELECT COUNT(*) as TOTAL FROM GRIDE_INVENTARIO_LOG WHERE USU_COD = ? AND CAST(DATA_HORA as DATE) = CURRENT_DATE`;
+            const result = await execute(db, sql, [userId]);
+            db.detach();
+            res.json({ countedToday: result[0].TOTAL });
+        } catch (e) {
+            db.detach();
+            console.error("Erro stats:", e);
+            res.json({ countedToday: 0 });
+        }
+    });
+});
+
+// --- SUGESTÕES INTELIGENTES DE META DIÁRIA ---
 app.get('/daily-meta-suggestions', (req, res) => {
     const dailyTarget = parseInt(req.query.dailyTarget) || 150;
     const cooldownDays = parseInt(req.query.cooldownDays) || 30;
@@ -309,8 +330,6 @@ app.get('/daily-meta-suggestions', (req, res) => {
             // 1. Calcula Meta Acumulada se necessário
             let effectiveTarget = dailyTarget;
             if (accumulationMode) {
-                // Cálculo simples: Pega os últimos 3 dias, vê se bateu a meta.
-                // Se não, soma. (Simulação rápida via SQL logs)
                 const pendingSql = `
                     SELECT COUNT(*) as COUNTED 
                     FROM GRIDE_INVENTARIO_LOG 
@@ -322,14 +341,12 @@ app.get('/daily-meta-suggestions', (req, res) => {
                 const expectedLast3Days = dailyTarget * 3;
                 
                 const deficit = Math.max(0, expectedLast3Days - countedLast3Days);
-                // Limita o déficit para não explodir a meta de um dia só (max +50%)
                 const cappedDeficit = Math.min(deficit, Math.floor(dailyTarget * 0.5));
                 
                 effectiveTarget += cappedDeficit;
             }
 
-            // 2. Busca Exclusões (Reservados ou Tratamento)
-            // Firebird legado não curte NOT IN (subquery) pesados, mas ok para volumes pequenos.
+            // 2. Busca Exclusões
             const exclusionSql = `
                 SELECT PRO_COD FROM GRIDE_RESERVAS
                 UNION
@@ -340,11 +357,9 @@ app.get('/daily-meta-suggestions', (req, res) => {
             
             const exclusionClause = excludedIds ? `AND P.PRO_COD NOT IN (${excludedIds})` : '';
 
-            // 3. FILA 1: GIRO ALTO (Baseado em PEDIDOSITENS)
-            // Tenta verificar se a tabela existe primeiro, ou envolve em try/catch na execução
+            // 3. FILA 1: GIRO ALTO
             let highGiroIds = [];
             try {
-                // Seleciona itens com X saídas nos últimos 30 dias E que não foram contados recentemente (cooldown)
                 const sqlGiro = `
                     SELECT FIRST ${Math.floor(effectiveTarget * 0.4)} P.PRO_COD
                     FROM PEDIDOSITENS PI
@@ -362,8 +377,7 @@ app.get('/daily-meta-suggestions', (req, res) => {
                 console.warn("Tabela PEDIDOSITENS não disponível ou erro de query. Pulando Giro.", e.message);
             }
 
-            // 4. FILA 2: CICLO (Antiguidade)
-            // Preenche o restante da meta com itens nunca contados ou contados há mais tempo
+            // 4. FILA 2: CICLO
             const neededForCycle = effectiveTarget - highGiroIds.length;
             const skipIds = [...highGiroIds, ...(excludedIds ? excludedIds.split(',') : [])].filter(x => x).join(',');
             const skipClause = skipIds ? `AND P.PRO_COD NOT IN (${skipIds})` : '';
@@ -388,20 +402,20 @@ app.get('/daily-meta-suggestions', (req, res) => {
                 return res.json([]);
             }
 
-            // 5. Busca detalhes dos blocos finais
+            // 5. Busca detalhes (CORRIGIDO: P.PRO_PRATELEIRA)
             const finalIdsStr = finalIds.join(',');
             const sqlDetails = `
-                SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, M.MAR_DESCRI, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE, P.LOCALIZACAO
+                SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, M.MAR_DESCRI, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE, P.PRO_PRATELEIRA
                 FROM PRODUTOS P 
                 LEFT JOIN MARCAS M ON (M.MAR_COD = P.MAR_COD)
                 WHERE P.PRO_COD IN (${finalIdsStr})
-                ORDER BY P.LOCALIZACAO
+                ORDER BY P.PRO_PRATELEIRA
             `;
 
             const products = await execute(db, sqlDetails);
             db.detach();
 
-            // 6. Formata para Block[]
+            // 6. Formata (CORRIGIDO: P.PRO_PRATELEIRA)
             const groups = new Map();
             products.forEach(p => {
                 const similarId = p.PRO_COD_SIMILAR ? safeString(p.PRO_COD_SIMILAR).trim() : safeString(p.PRO_COD).trim();
@@ -416,14 +430,13 @@ app.get('/daily-meta-suggestions', (req, res) => {
                     ref: sku, 
                     brand: p.MAR_DESCRI ? safeString(p.MAR_DESCRI) : 'SEM MARCA',
                     balance: parseFloat(p.PRO_EST_ATUAL || 0), 
-                    location: safeString(p.LOCALIZACAO) || 'GERAL', 
-                    inTreatment: false // Já filtrado na query
+                    location: safeString(p.PRO_PRATELEIRA) || 'GERAL', 
+                    inTreatment: false 
                 });
             });
 
             const blocks = [];
             groups.forEach((items, key) => {
-                // Adiciona tag para identificar origem na UI (Opcional)
                 const isGiro = highGiroIds.includes(items[0].db_pro_cod);
                 blocks.push({
                     id: key, 
@@ -431,7 +444,7 @@ app.get('/daily-meta-suggestions', (req, res) => {
                     location: items[0].location, 
                     status: 'pending', 
                     date: 'Hoje', 
-                    subcategory: isGiro ? 'Giro Alto' : 'Ciclo', // Abuse subcategory field for UI tag
+                    subcategory: isGiro ? 'Giro Alto' : 'Ciclo', 
                     items: items
                 });
             });
@@ -446,7 +459,7 @@ app.get('/daily-meta-suggestions', (req, res) => {
     });
 });
 
-// --- NOVA ROTA: STATUS DA META (Dashboard) ---
+// --- STATUS DA META (Dashboard) ---
 app.get('/meta-status', (req, res) => {
     const dailyTarget = parseInt(req.query.target) || 150;
     const accumulate = req.query.accumulate === 'true';
@@ -467,9 +480,6 @@ app.get('/meta-status', (req, res) => {
             // 2. Acumulado (Se ativado)
             let accumulatedPending = 0;
             if (accumulate) {
-                // Pega os últimos 3 dias (exclui hoje)
-                // Se contou menos que a meta nesses dias, soma o déficit
-                // Simplificação: (3 * target) - (total contado nos ultimos 3 dias excl. hoje)
                 const sqlPast = `
                     SELECT COUNT(*) as TOTAL
                     FROM GRIDE_INVENTARIO_LOG
@@ -480,7 +490,6 @@ app.get('/meta-status', (req, res) => {
                 const pastCount = pastRes[0].TOTAL;
                 const pastTarget = dailyTarget * 3; 
                 accumulatedPending = Math.max(0, pastTarget - pastCount);
-                // Cap em 50% da meta diária para não desanimar
                 accumulatedPending = Math.min(accumulatedPending, Math.floor(dailyTarget * 0.5));
             }
 
@@ -494,7 +503,7 @@ app.get('/meta-status', (req, res) => {
     });
 });
 
-// 5. Blocos (Listagem Principal - Modificado para aceitar location e filtros)
+// 5. Blocos (CORRIGIDO: P.PRO_PRATELEIRA)
 app.get('/blocks', (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 100;
@@ -507,7 +516,6 @@ app.get('/blocks', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro Conexão' });
         
-        // Buscar Reservas
         db.query('SELECT BLOCK_ID, USU_COD, USER_NAME, RESERVED_AT FROM GRIDE_RESERVAS', [], (errRes, reservations) => {
             const lockMap = new Map();
             if (!errRes && reservations) {
@@ -518,25 +526,23 @@ app.get('/blocks', (req, res) => {
                 }));
             }
 
-            // Buscar Tratamento
             db.query("SELECT PRO_NRFABRICANTE FROM GRIDE_TRATAMENTO WHERE STATUS = 'PENDING'", [], (errTreat, treatments) => {
                 const treatmentSet = new Set();
                 if (!errTreat && treatments) treatments.forEach(t => treatmentSet.add(safeString(t.PRO_NRFABRICANTE)));
 
-                // Query Principal em PRODUTOS com LEFT JOIN MARCAS
                 let sql = `
                     SELECT FIRST ? SKIP ? 
-                    P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, M.MAR_DESCRI, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE, P.LOCALIZACAO 
+                    P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, M.MAR_DESCRI, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE, P.PRO_PRATELEIRA 
                     FROM PRODUTOS P 
                     LEFT JOIN MARCAS M ON (M.MAR_COD = P.MAR_COD)
                     WHERE P.PRO_ATIVO = 'S'
                 `;
-                const params = [limit * 20, skip]; // Fetch extra rows to group later
+                const params = [limit * 20, skip]; 
 
                 if (search) { sql += ` AND (P.PRO_DESCRI CONTAINING ? OR P.PRO_NRFABRICANTE CONTAINING ?)`; params.push(search); params.push(search); }
                 if (gr_cod !== null) { sql += ` AND TRIM(P.GR_COD) = ?`; params.push(gr_cod); }
                 if (sg_cod !== null) { sql += ` AND TRIM(P.SG_COD) = ?`; params.push(sg_cod); }
-                if (location) { sql += ` AND P.LOCALIZACAO STARTING WITH ?`; params.push(location); }
+                if (location) { sql += ` AND P.PRO_PRATELEIRA STARTING WITH ?`; params.push(location); }
 
                 sql += ` ORDER BY P.PRO_COD_SIMILAR, P.PRO_COD`;
 
@@ -558,7 +564,7 @@ app.get('/blocks', (req, res) => {
                             ref: sku, 
                             brand: p.MAR_DESCRI ? safeString(p.MAR_DESCRI) : 'SEM MARCA',
                             balance: parseFloat(p.PRO_EST_ATUAL || 0), 
-                            location: safeString(p.LOCALIZACAO) || 'GERAL', 
+                            location: safeString(p.PRO_PRATELEIRA) || 'GERAL', 
                             inTreatment: treatmentSet.has(sku)
                         });
                     });
@@ -583,13 +589,12 @@ app.get('/blocks', (req, res) => {
     });
 });
 
-// 6. Blocos Reservados (Pelo Usuário)
+// 6. Blocos Reservados (CORRIGIDO: P.PRO_PRATELEIRA)
 app.get('/reserved-blocks/:userId', (req, res) => {
-    const { userId } = req.params; // userId aqui é o USU_COD vindo do front
+    const { userId } = req.params;
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro DB' });
         
-        // Query com USU_COD
         db.query('SELECT BLOCK_ID, USU_COD, USER_NAME, RESERVED_AT, ITEMS_JSON FROM GRIDE_RESERVAS WHERE TRIM(USU_COD) = ?', [userId], (err, reservations) => {
             if (err) { db.detach(); return res.json([]); }
             if (reservations.length === 0) { db.detach(); return res.json([]); }
@@ -620,7 +625,7 @@ app.get('/reserved-blocks/:userId', (req, res) => {
                 const treatmentSet = new Set();
                 if(!errTreat && treatments) treatments.forEach(t => treatmentSet.add(safeString(t.PRO_NRFABRICANTE).trim()));
 
-                const sql = `SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, P.MAR_COD, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE, P.LOCALIZACAO FROM PRODUTOS P WHERE P.PRO_ATIVO = 'S' AND (TRIM(P.PRO_COD_SIMILAR) IN (${idsList}) OR (P.PRO_COD_SIMILAR IS NULL AND TRIM(P.PRO_COD) IN (${idsList})))`;
+                const sql = `SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, P.MAR_COD, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE, P.PRO_PRATELEIRA FROM PRODUTOS P WHERE P.PRO_ATIVO = 'S' AND (TRIM(P.PRO_COD_SIMILAR) IN (${idsList}) OR (P.PRO_COD_SIMILAR IS NULL AND TRIM(P.PRO_COD) IN (${idsList})))`;
                 
                 db.query(sql, [], (errProd, products) => {
                     db.detach();
@@ -639,7 +644,7 @@ app.get('/reserved-blocks/:userId', (req, res) => {
                             ref: sku, 
                             brand: `MARCA ${p.MAR_COD}`, 
                             balance: parseFloat(p.PRO_EST_ATUAL || 0), 
-                            location: safeString(p.LOCALIZACAO) || 'GERAL', 
+                            location: safeString(p.PRO_PRATELEIRA) || 'GERAL', 
                             inTreatment: treatmentSet.has(sku),
                             status: savedProgress?.status || 'pending', 
                             countedQty: savedProgress?.countedQty || 0, 
