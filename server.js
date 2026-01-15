@@ -155,23 +155,23 @@ app.get('/daily-meta-suggestions', (req, res) => {
             const exclusionClause = excludedIds ? `AND P2.PRO_COD NOT IN (${excludedIds})` : '';
 
             // 1. Identificar grupos (Retorna um ID representativo - REF_ID - que é MIN(PRO_COD) do grupo)
-            // Agrupamos por similaridade, mas selecionamos um PRO_COD numérico válido para usar no IN (...)
+            // REMOVIDO: WHERE PI.DATA >= ... para evitar erro de coluna inexistente
             const sqlGiroIds = `
                 SELECT FIRST ${Math.floor(effectiveTarget * 0.4)} 
                 MIN(P2.PRO_COD) as REF_ID
                 FROM PEDIDOSITENS PI 
                 JOIN PRODUTOS P2 ON P2.PRO_COD = PI.PRO_COD 
                 LEFT JOIN GRIDE_INVENTARIO_LOG L ON L.PRO_COD = P2.PRO_COD 
-                WHERE PI.DATA >= DATEADD(-30 DAY TO CURRENT_DATE) ${exclusionClause}
+                WHERE 1=1 ${exclusionClause} 
                 GROUP BY COALESCE(P2.PRO_COD_SIMILAR, CAST(P2.PRO_COD AS VARCHAR(20)))
                 HAVING COUNT(*) >= ${highGiroThreshold} 
                 AND (MAX(L.DATA_HORA) IS NULL OR MAX(L.DATA_HORA) < DATEADD(-${cooldownDays} DAY TO CURRENT_DATE))
             `;
             
             const giroGroups = await execute(db, sqlGiroIds);
-            const highGiroRefIds = giroGroups.map(r => Number(r.REF_ID)).filter(n => !isNaN(n));
+            const highGiroIds = giroGroups.map(r => Number(r.REF_ID)).filter(n => !isNaN(n));
 
-            const neededForCycle = Math.max(0, effectiveTarget - highGiroRefIds.length);
+            const neededForCycle = Math.max(0, effectiveTarget - highGiroIds.length);
             const sqlCycleIds = `
                 SELECT FIRST ${neededForCycle} 
                 MIN(P2.PRO_COD) as REF_ID
@@ -183,29 +183,31 @@ app.get('/daily-meta-suggestions', (req, res) => {
             `;
             
             const cycleGroups = await execute(db, sqlCycleIds);
-            const cycleRefIds = cycleGroups.map(r => Number(r.REF_ID)).filter(n => !isNaN(n));
+            const cycleIds = cycleGroups.map(r => Number(r.REF_ID)).filter(n => !isNaN(n));
 
-            // Combinar IDs únicos (Numéricos)
-            const allRefIds = [...new Set([...highGiroRefIds, ...cycleRefIds])];
+            // Combinar IDs únicos (Numéricos limpos)
+            const finalIds = [...new Set([...highGiroIds, ...cycleIds])].map(Number).filter(id => id && !isNaN(id));
 
-            if (allRefIds.length === 0) {
+            if (finalIds.length === 0) {
                 db.detach();
                 return res.json([]);
             }
 
             // 2. Expandir para buscar TODOS os itens dos grupos (Siblings)
-            // Usa a lista de PRO_COD representativos (allRefIds) para encontrar todos os relacionados
-            const finalIdsStr = allRefIds.join(',');
+            // Query aprimorada para buscar blocos completos baseado no similarId
+            const finalIdsStr = finalIds.join(',');
             
-            // Query robusta fornecida no prompt
             const sqlDetails = `
                 SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, M.MAR_DESCRI, 
                        P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE, P.PRO_PRATELEIRA 
                 FROM PRODUTOS P 
                 LEFT JOIN MARCAS M ON (M.MAR_COD = P.MAR_COD) 
-                WHERE P.PRO_COD_SIMILAR IN (SELECT DISTINCT P2.PRO_COD_SIMILAR FROM PRODUTOS P2 WHERE P2.PRO_COD IN (${finalIdsStr}) AND P2.PRO_COD_SIMILAR IS NOT NULL)
-                   OR P.PRO_COD IN (SELECT DISTINCT P2.PRO_COD_SIMILAR FROM PRODUTOS P2 WHERE P2.PRO_COD IN (${finalIdsStr}) AND P2.PRO_COD_SIMILAR IS NOT NULL)
-                   OR P.PRO_COD IN (${finalIdsStr})
+                WHERE P.PRO_COD IN (${finalIdsStr})
+                   OR (P.PRO_COD_SIMILAR IS NOT NULL AND P.PRO_COD_SIMILAR IN (
+                       SELECT DISTINCT COALESCE(P2.PRO_COD_SIMILAR, CAST(P2.PRO_COD AS VARCHAR(20))) 
+                       FROM PRODUTOS P2 
+                       WHERE P2.PRO_COD IN (${finalIdsStr})
+                   ))
                 ORDER BY P.PRO_PRATELEIRA
             `;
             
@@ -215,7 +217,7 @@ app.get('/daily-meta-suggestions', (req, res) => {
             // 3. Agrupar e Formatar
             const groups = new Map();
             const todayFormatted = new Date().toLocaleDateString('pt-BR');
-            const highGiroSet = new Set(highGiroRefIds);
+            const highGiroSet = new Set(highGiroIds);
 
             products.forEach(p => {
                 // Chave de agrupamento: Similar ID ou o próprio PRO_COD se não houver similar
