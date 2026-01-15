@@ -154,34 +154,53 @@ app.get('/daily-meta-suggestions', (req, res) => {
             const excludedIds = exclusions.map(r => r.PRO_COD).filter(id => id).join(',');
             const exclusionClause = excludedIds ? `AND P2.PRO_COD NOT IN (${excludedIds})` : '';
 
-            // 1. Identificar os IDs de agrupamento que entram na meta
+            // Função para extrair string do banco (lida com Buffer e Null)
+            const parseGrpId = (row) => {
+                if (!row || row.GRP_ID === null || row.GRP_ID === undefined) return null;
+                const val = (typeof row.GRP_ID === 'object' && Buffer.isBuffer(row.GRP_ID)) 
+                    ? row.GRP_ID.toString() 
+                    : String(row.GRP_ID);
+                return val.trim();
+            };
+
+            // 1. Identificar grupos (Similaridades) - Giro Alto
             const sqlGiroIds = `
-                SELECT FIRST ${Math.floor(effectiveTarget * 0.4)} COALESCE(P2.PRO_COD_SIMILAR, P2.PRO_COD) as GRP_ID
+                SELECT FIRST ${Math.floor(effectiveTarget * 0.4)} 
+                COALESCE(P2.PRO_COD_SIMILAR, CAST(P2.PRO_COD AS VARCHAR(20))) as GRP_ID
                 FROM PEDIDOSITENS PI 
                 JOIN PRODUTOS P2 ON P2.PRO_COD = PI.PRO_COD 
                 LEFT JOIN GRIDE_INVENTARIO_LOG L ON L.PRO_COD = P2.PRO_COD 
                 WHERE PI.DATA >= DATEADD(-30 DAY TO CURRENT_DATE) ${exclusionClause}
-                GROUP BY 1
+                GROUP BY COALESCE(P2.PRO_COD_SIMILAR, CAST(P2.PRO_COD AS VARCHAR(20)))
                 HAVING COUNT(*) >= ${highGiroThreshold} 
                 AND (MAX(L.DATA_HORA) IS NULL OR MAX(L.DATA_HORA) < DATEADD(-${cooldownDays} DAY TO CURRENT_DATE))
             `;
             
             const giroGroups = await execute(db, sqlGiroIds);
-            const highGiroSimilarIds = giroGroups.map(r => `'${String(r.GRP_ID).trim()}'`).filter(id => id !== 'null');
+            const highGiroSimilarIds = giroGroups.map(r => {
+                const id = parseGrpId(r);
+                return id ? `'${id}'` : null;
+            }).filter(id => id !== null);
 
+            // 1.1 Identificar grupos - Ciclo (Restante)
             const neededForCycle = Math.max(0, effectiveTarget - highGiroSimilarIds.length);
             const sqlCycleIds = `
-                SELECT FIRST ${neededForCycle} COALESCE(P2.PRO_COD_SIMILAR, P2.PRO_COD) as GRP_ID
+                SELECT FIRST ${neededForCycle} 
+                COALESCE(P2.PRO_COD_SIMILAR, CAST(P2.PRO_COD AS VARCHAR(20))) as GRP_ID
                 FROM PRODUTOS P2 
                 LEFT JOIN GRIDE_INVENTARIO_LOG L ON L.PRO_COD = P2.PRO_COD 
                 WHERE P2.PRO_ATIVO = 'S' ${exclusionClause}
-                GROUP BY 1
+                GROUP BY COALESCE(P2.PRO_COD_SIMILAR, CAST(P2.PRO_COD AS VARCHAR(20)))
                 ORDER BY MAX(L.DATA_HORA) ASC NULLS FIRST
             `;
             
             const cycleGroups = await execute(db, sqlCycleIds);
-            const cycleSimilarIds = cycleGroups.map(r => `'${String(r.GRP_ID).trim()}'`).filter(id => id !== 'null');
+            const cycleSimilarIds = cycleGroups.map(r => {
+                const id = parseGrpId(r);
+                return id ? `'${id}'` : null;
+            }).filter(id => id !== null);
 
+            // Combinar IDs únicos
             const allSimilarIds = [...new Set([...highGiroSimilarIds, ...cycleSimilarIds])];
 
             if (allSimilarIds.length === 0) {
@@ -203,21 +222,23 @@ app.get('/daily-meta-suggestions', (req, res) => {
             const products = await execute(db, sqlDetails);
             db.detach();
 
+            // 3. Montar Objetos de Retorno
             const groups = new Map();
             const todayFormatted = new Date().toLocaleDateString('pt-BR');
 
             products.forEach(p => {
-                const similarId = p.PRO_COD_SIMILAR ? String(p.PRO_COD_SIMILAR).trim() : String(p.PRO_COD).trim();
+                const similarId = p.PRO_COD_SIMILAR ? safeString(p.PRO_COD_SIMILAR) : safeString(p.PRO_COD);
+                
                 if (!groups.has(similarId)) groups.set(similarId, []);
                 
                 groups.get(similarId).push({
-                    id: String(p.PRO_COD).trim(), 
+                    id: safeString(p.PRO_COD), 
                     db_pro_cod: p.PRO_COD, 
-                    name: String(p.PRO_DESCRI || '').trim(), 
-                    ref: String(p.PRO_NRFABRICANTE || '').trim(), 
-                    brand: p.MAR_DESCRI ? String(p.MAR_DESCRI).trim() : 'SEM MARCA', 
+                    name: safeString(p.PRO_DESCRI), 
+                    ref: safeString(p.PRO_NRFABRICANTE), 
+                    brand: p.MAR_DESCRI ? safeString(p.MAR_DESCRI) : 'SEM MARCA', 
                     balance: parseFloat(p.PRO_EST_ATUAL || 0), 
-                    location: String(p.PRO_PRATELEIRA || 'GERAL').trim(), 
+                    location: safeString(p.PRO_PRATELEIRA) || 'GERAL', 
                     inTreatment: false 
                 });
             });
