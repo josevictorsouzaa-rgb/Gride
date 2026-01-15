@@ -137,58 +137,50 @@ app.get('/daily-meta-suggestions', (req, res) => {
     const accumulationMode = req.query.accumulationMode === 'true';
 
     Firebird.attach(options, async (err, db) => {
-        if (err) return res.status(500).json({ error: 'Erro ao ligar ao DB' });
+        if (err) return res.status(500).json({ error: 'Erro ao conectar ao DB' });
 
         try {
             let effectiveTarget = dailyTarget;
             if (accumulationMode) {
                 const pendingSql = `SELECT COUNT(*) as COUNTED FROM GRIDE_INVENTARIO_LOG WHERE DATA_HORA >= DATEADD(-3 DAY TO CURRENT_DATE) AND DATA_HORA < CURRENT_DATE AND (STATUS = 'Contado' OR STATUS = 'Divergência')`;
                 const logsResult = await execute(db, pendingSql);
-                const deficit = Math.max(0, (dailyTarget * 3) - logsResult[0].COUNTED);
+                const countedLast3Days = logsResult[0].COUNTED || 0;
+                const deficit = Math.max(0, (dailyTarget * 3) - countedLast3Days);
                 effectiveTarget += Math.min(deficit, Math.floor(dailyTarget * 0.5));
             }
 
-            // Excluir itens já reservados ou em tratamento
             const exclusionSql = `SELECT PRO_COD FROM GRIDE_RESERVAS UNION SELECT PRO_COD FROM GRIDE_TRATAMENTO WHERE STATUS = 'PENDING'`;
             const exclusions = await execute(db, exclusionSql);
             const excludedIds = exclusions.map(r => r.PRO_COD).filter(id => id).join(',');
             const exclusionClause = excludedIds ? `AND P2.PRO_COD NOT IN (${excludedIds})` : '';
 
-            // 1. Identificar IDs de Similaridade (Grupos) para GIRO ALTO
-            // Seleciona grupos onde PELO MENOS UM item atende aos critérios
+            // 1. Identificar grupos (Similaridades) que atendem aos critérios
             const sqlGiroIds = `
-                SELECT FIRST ${Math.floor(effectiveTarget * 0.4)} P2.PRO_COD_SIMILAR 
+                SELECT FIRST ${Math.floor(effectiveTarget * 0.4)} COALESCE(P2.PRO_COD_SIMILAR, P2.PRO_COD) as GRP_ID
                 FROM PEDIDOSITENS PI 
                 JOIN PRODUTOS P2 ON P2.PRO_COD = PI.PRO_COD 
                 LEFT JOIN GRIDE_INVENTARIO_LOG L ON L.PRO_COD = P2.PRO_COD 
                 WHERE PI.DATA >= DATEADD(-30 DAY TO CURRENT_DATE) ${exclusionClause}
-                GROUP BY P2.PRO_COD_SIMILAR 
+                GROUP BY 1
                 HAVING COUNT(*) >= ${highGiroThreshold} 
                 AND (MAX(L.DATA_HORA) IS NULL OR MAX(L.DATA_HORA) < DATEADD(-${cooldownDays} DAY TO CURRENT_DATE))
-                AND P2.PRO_COD_SIMILAR IS NOT NULL AND P2.PRO_COD_SIMILAR <> ''
             `;
             
             const giroGroups = await execute(db, sqlGiroIds);
-            const highGiroSimilarIds = giroGroups.map(r => `'${String(r.PRO_COD_SIMILAR).trim()}'`).filter(id => id !== "'null'" && id !== "''");
+            const highGiroSimilarIds = giroGroups.map(r => `'${String(r.GRP_ID).trim()}'`).filter(id => id !== 'null');
 
-            // 2. Identificar IDs de Similaridade (Grupos) para CICLO
             const neededForCycle = Math.max(0, effectiveTarget - highGiroSimilarIds.length);
-            
-            // Clausula para não repetir grupos do giro
-            const skipGiroClause = highGiroSimilarIds.length > 0 ? `AND P2.PRO_COD_SIMILAR NOT IN (${highGiroSimilarIds.join(',')})` : '';
-
             const sqlCycleIds = `
-                SELECT FIRST ${neededForCycle} P2.PRO_COD_SIMILAR 
+                SELECT FIRST ${neededForCycle} COALESCE(P2.PRO_COD_SIMILAR, P2.PRO_COD) as GRP_ID
                 FROM PRODUTOS P2 
                 LEFT JOIN GRIDE_INVENTARIO_LOG L ON L.PRO_COD = P2.PRO_COD 
-                WHERE P2.PRO_ATIVO = 'S' ${exclusionClause} ${skipGiroClause}
-                AND P2.PRO_COD_SIMILAR IS NOT NULL AND P2.PRO_COD_SIMILAR <> ''
-                GROUP BY P2.PRO_COD_SIMILAR 
-                ORDER BY MIN(L.DATA_HORA) ASC NULLS FIRST
+                WHERE P2.PRO_ATIVO = 'S' ${exclusionClause}
+                GROUP BY 1
+                ORDER BY MAX(L.DATA_HORA) ASC NULLS FIRST
             `;
             
             const cycleGroups = await execute(db, sqlCycleIds);
-            const cycleSimilarIds = cycleGroups.map(r => `'${String(r.PRO_COD_SIMILAR).trim()}'`).filter(id => id !== "'null'" && id !== "''");
+            const cycleSimilarIds = cycleGroups.map(r => `'${String(r.GRP_ID).trim()}'`).filter(id => id !== 'null');
 
             const allSimilarIds = [...new Set([...highGiroSimilarIds, ...cycleSimilarIds])];
 
@@ -197,15 +189,13 @@ app.get('/daily-meta-suggestions', (req, res) => {
                 return res.json([]);
             }
 
-            // 3. BUSCA DETALHES COMPLETOS DO BLOCO
-            // Traz todos os produtos que possuem esses PRO_COD_SIMILAR
+            // 2. Procurar TODOS os itens que pertencem aos grupos selecionados
             const finalIdsStr = allSimilarIds.join(',');
             const sqlDetails = `
                 SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, M.MAR_DESCRI, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE, P.PRO_PRATELEIRA 
                 FROM PRODUTOS P 
                 LEFT JOIN MARCAS M ON (M.MAR_COD = P.MAR_COD) 
-                WHERE TRIM(P.PRO_COD_SIMILAR) IN (${finalIdsStr}) 
-                OR (P.PRO_COD_SIMILAR IS NULL AND TRIM(P.PRO_COD) IN (${finalIdsStr}))
+                WHERE TRIM(COALESCE(P.PRO_COD_SIMILAR, CAST(P.PRO_COD AS VARCHAR(20)))) IN (${finalIdsStr})
                 ORDER BY P.PRO_PRATELEIRA, P.PRO_COD_SIMILAR
             `;
             
@@ -222,8 +212,8 @@ app.get('/daily-meta-suggestions', (req, res) => {
                 groups.get(similarId).push({
                     id: String(p.PRO_COD).trim(), 
                     db_pro_cod: p.PRO_COD, 
-                    name: String(p.PRO_DESCRI).trim(), 
-                    ref: String(p.PRO_NRFABRICANTE).trim(), 
+                    name: String(p.PRO_DESCRI || '').trim(), 
+                    ref: String(p.PRO_NRFABRICANTE || '').trim(), 
                     brand: p.MAR_DESCRI ? String(p.MAR_DESCRI).trim() : 'SEM MARCA', 
                     balance: parseFloat(p.PRO_EST_ATUAL || 0), 
                     location: String(p.PRO_PRATELEIRA || 'GERAL').trim(), 
@@ -248,6 +238,7 @@ app.get('/daily-meta-suggestions', (req, res) => {
 
             res.json(blocks);
         } catch (e) {
+            console.error("Erro daily-meta:", e);
             if (db) db.detach();
             res.status(500).json({ error: e.message });
         }
