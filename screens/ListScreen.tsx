@@ -9,7 +9,7 @@ import { AutoPartsLoader } from '../components/AutoPartsLoader';
 
 interface ListScreenProps {
   onNavigate: (screen: Screen) => void;
-  blocks: Block[]; // Ainda aceita props para compatibilidade com outros modos, mas sobrescrevemos para daily_meta
+  blocks: Block[]; 
   segmentFilter: string | null;
   onReserveBlock: (id: number) => void;
   onClearFilter: () => void;
@@ -36,6 +36,18 @@ const getDaysSince = (dateStr?: string): number => {
   return 0;
 };
 
+// Helper for Relative Time (AddedAt)
+const getRelativeTime = (isoString?: string) => {
+    if (!isoString) return 'Entrou hoje';
+    const date = new Date(isoString);
+    const now = new Date();
+    const diffHours = Math.abs(now.getTime() - date.getTime()) / 36e5;
+
+    if (diffHours < 24) return 'Entrou hoje';
+    if (diffHours < 48) return 'Há 1 dia';
+    return `Há ${Math.floor(diffHours / 24)} dias`;
+};
+
 type TimeFilter = 'all' | '7_days' | '15_days' | '30_days' | 'never';
 
 export const ListScreen: React.FC<ListScreenProps> = ({ 
@@ -50,14 +62,12 @@ export const ListScreen: React.FC<ListScreenProps> = ({
 }) => {
   const [localBlocks, setLocalBlocks] = useState<Block[]>(propBlocks);
   const [isLoading, setIsLoading] = useState(false);
-  const [showAllBlocks, setShowAllBlocks] = useState(false);
   const [expandedBlocks, setExpandedBlocks] = useState<number[]>([]);
-  const [selectedItem, setSelectedItem] = useState<any | null>(null); // Detail Modal State
+  const [selectedItem, setSelectedItem] = useState<any | null>(null); 
   
   const [searchText, setSearchText] = useState('');
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
 
-  // Load Smart Meta if in daily_meta mode
   useEffect(() => {
     if (mode === 'daily_meta') {
         const fetchSmartMeta = async () => {
@@ -78,7 +88,6 @@ export const ListScreen: React.FC<ListScreenProps> = ({
     }
   }, [mode, propBlocks]);
 
-  // Scroll to top on page change targeting the main container
   useEffect(() => {
     const scrollContainer = document.getElementById('main-scroll-container');
     if (scrollContainer) {
@@ -102,11 +111,8 @@ export const ListScreen: React.FC<ListScreenProps> = ({
 
   const filteredBlocks = useMemo(() => {
     return localBlocks.filter(block => {
-      // 0. Base Status Check
-      // Apenas esconde 'progress' (que significa que EU ou OUTRO já reservou neste momento)
       if (block.status === 'progress') return false; 
       
-      // LOGIC SPLIT BASED ON MODE
       if (mode === 'daily_meta') {
         if (block.status === 'completed') return false; 
         if (searchText) {
@@ -119,7 +125,6 @@ export const ListScreen: React.FC<ListScreenProps> = ({
            if (!matchesItems && !matchesLoc) return false;
         }
       } else {
-        // BROWSE MODE (Explorar Estoque)
         if (searchText) {
            const lowerSearch = searchText.toLowerCase();
            const matchesItems = block.items.some(item => 
@@ -148,7 +153,6 @@ export const ListScreen: React.FC<ListScreenProps> = ({
     });
   }, [localBlocks, segmentFilter, searchText, timeFilter, mode]);
 
-  // ALTERAÇÃO CIRÚRGICA: Removido slice(0, 10) para exibir todos os itens da meta
   const displayedBlocks = filteredBlocks;
 
   const getPageTitle = () => {
@@ -256,14 +260,16 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                     <p className="text-sm font-medium">Nenhum bloco encontrado.</p>
                 </div>
               ) : (
-                displayedBlocks.map((block) => {
+                displayedBlocks.map((block: any) => {
                   const isExpanded = expandedBlocks.includes(block.id);
                   const visibleItems = isExpanded ? block.items : block.items.slice(0, 3);
                   const hiddenCount = block.items.length - 3;
                   
-                  // VERIFICAR IMPEDIMENTOS
                   const hasTreatmentItems = block.items.some((i: any) => i.inTreatment);
                   const isGiro = block.subcategory === 'Giro Alto';
+                  
+                  // Timestamp label from addedAt
+                  const timeLabel = getRelativeTime(block.addedAt);
 
                   return (
                     <div key={block.id} className="bg-white dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-card-border shadow-sm p-4 flex flex-col gap-3 animate-fade-in">
@@ -274,10 +280,12 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                               <span className="font-bold text-orange-600 dark:text-orange-400 text-sm bg-orange-500/10 px-2 py-0.5 rounded-md w-fit">
                                   {block.parentRef}
                               </span>
-                              <span className="text-[10px] text-gray-400 mt-1 ml-1">{block.date}</span>
+                              <div className="flex items-center gap-1 text-[10px] text-gray-400 mt-1 ml-1">
+                                  <Icon name="schedule" size={10} />
+                                  {timeLabel}
+                              </div>
                           </div>
                           
-                          {/* Tag de Inteligência */}
                           {mode === 'daily_meta' && block.subcategory && (
                              <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
                                  isGiro ? 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-300' : 'bg-gray-100 text-gray-500 dark:bg-white/10'
@@ -308,23 +316,19 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                                   
                                   {/* Row 2: Metadata (Ref | Brand | Location | Balance) */}
                                   <div className="flex items-center gap-2 mt-1 w-full overflow-hidden">
-                                      {/* REF */}
                                       <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-white/5">
                                         {item.ref}
                                       </span>
                                       
-                                      {/* BRAND */}
                                       <span className="truncate text-[10px] font-semibold text-gray-500 dark:text-gray-400 border-l border-gray-300 dark:border-gray-600 pl-2 uppercase">
                                         {item.brand}
                                       </span>
 
-                                      {/* LOCATION - INJECTED AS REQUESTED */}
                                       <span className="shrink-0 text-[10px] font-mono text-gray-400 dark:text-gray-500 border-l border-gray-300 dark:border-gray-600 pl-2 flex items-center gap-1">
                                         <Icon name="place" size={12} className="text-gray-400" />
                                         {(item.location && item.location !== 'GERAL') ? item.location : '-'}
                                       </span>
 
-                                      {/* BALANCE */}
                                       <span className="ml-auto shrink-0 text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full">
                                         {item.balance} un
                                       </span>
@@ -332,7 +336,6 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                               </div>
                           ))}
                           
-                          {/* Expand Button */}
                           {hiddenCount > 0 && !isExpanded && (
                              <button 
                                onClick={(e) => toggleBlock(block.id, e)}
@@ -353,7 +356,6 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                           )}
                       </div>
 
-                      {/* Footer Action - BLOQUEIO POR IMPEDIMENTO */}
                       {hasTreatmentItems ? (
                           <div className="w-full h-12 rounded-xl bg-orange-100 dark:bg-orange-900/20 text-orange-700 dark:text-orange-300 border border-orange-200 dark:border-orange-800 text-xs font-bold uppercase tracking-wide flex flex-col items-center justify-center cursor-not-allowed">
                              <div className="flex items-center gap-1">

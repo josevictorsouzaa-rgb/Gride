@@ -34,72 +34,70 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
   const [historyBlocks, setHistoryBlocks] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Fetch History from Backend
+  // Fetch History Function
+  const fetchHistory = async () => {
+      setLoading(true);
+      const data = await api.getHistory(1, 500);
+      
+      const blockGroups = new Map();
+
+      data.forEach((entry: any) => {
+          const rawRef = entry.BLOCK_REF || '';
+          let logicalKey = rawRef.includes('||') ? rawRef.split('||')[0] : '';
+          if (!logicalKey) {
+                logicalKey = entry.PRO_COD_SIMILAR ? String(entry.PRO_COD_SIMILAR) : entry.SKU;
+          }
+
+          if (!blockGroups.has(logicalKey)) {
+              blockGroups.set(logicalKey, {
+                  id: logicalKey,
+                  parentRef: logicalKey,
+                  currentBatchId: rawRef, 
+                  name: entry.PROD_DESC_ATUAL || entry.NOME_PRODUTO, 
+                  location: entry.LOCALIZACAO || 'GERAL',
+                  latestDate: entry.DATA_HORA, 
+                  user: entry.USUARIO_NOME,
+                  status: 'concluido',
+                  itemsMap: new Map()
+              });
+          }
+
+          const group = blockGroups.get(logicalKey);
+
+          if (rawRef === group.currentBatchId) {
+              if (!group.itemsMap.has(entry.SKU)) {
+                  const isLocked = entry.TRATAMENTO_STATUS === 'PENDING';
+                  const hasDivergence = entry.STATUS === 'divergence_info' || entry.STATUS === 'not_located';
+                  
+                  if (hasDivergence) group.status = 'divergencia';
+
+                  group.itemsMap.set(entry.SKU, {
+                      id: entry.ID, // Log ID
+                      name: entry.NOME_PRODUTO,
+                      ref: entry.SKU,
+                      brand: entry.MAR_COD ? `MARCA ${entry.MAR_COD}` : 'GENÉRICO',
+                      qty: entry.QTD_CONTADA,
+                      countedBy: entry.USUARIO_NOME,
+                      countedAt: entry.DATA_HORA,
+                      location: entry.LOCALIZACAO || 'GERAL',
+                      isLocked: isLocked,
+                      status: entry.STATUS
+                  });
+              }
+          } 
+      });
+
+      const blocks = Array.from(blockGroups.values()).map((g: any) => ({
+          ...g,
+          items: Array.from(g.itemsMap.values()),
+          timeAgo: getTimeAgo(g.latestDate)
+      }));
+
+      setHistoryBlocks(blocks);
+      setLoading(false);
+  };
+
   useEffect(() => {
-    const fetchHistory = async () => {
-        setLoading(true);
-        // Trazemos um limite maior para garantir que pegamos os blocos únicos mais recentes
-        const data = await api.getHistory(1, 500);
-        
-        const blockGroups = new Map();
-
-        // LÓGICA DE DEDUPLICAÇÃO VISUAL (Manutenção Cirúrgica Preservada)
-        data.forEach((entry: any) => {
-            const rawRef = entry.BLOCK_REF || '';
-            let logicalKey = rawRef.includes('||') ? rawRef.split('||')[0] : '';
-            if (!logicalKey) {
-                 logicalKey = entry.PRO_COD_SIMILAR ? String(entry.PRO_COD_SIMILAR) : entry.SKU;
-            }
-
-            if (!blockGroups.has(logicalKey)) {
-                blockGroups.set(logicalKey, {
-                    id: logicalKey,
-                    parentRef: logicalKey,
-                    currentBatchId: rawRef, 
-                    name: entry.PROD_DESC_ATUAL || entry.NOME_PRODUTO, 
-                    location: entry.LOCALIZACAO || 'GERAL',
-                    latestDate: entry.DATA_HORA, 
-                    user: entry.USUARIO_NOME,
-                    status: 'concluido',
-                    itemsMap: new Map()
-                });
-            }
-
-            const group = blockGroups.get(logicalKey);
-
-            if (rawRef === group.currentBatchId) {
-                if (!group.itemsMap.has(entry.SKU)) {
-                    const isLocked = entry.TRATAMENTO_STATUS === 'PENDING';
-                    const hasDivergence = entry.STATUS === 'divergence_info' || entry.STATUS === 'not_located';
-                    
-                    if (hasDivergence) group.status = 'divergencia';
-
-                    group.itemsMap.set(entry.SKU, {
-                        id: entry.ID,
-                        name: entry.NOME_PRODUTO,
-                        ref: entry.SKU,
-                        brand: entry.MAR_COD ? `MARCA ${entry.MAR_COD}` : 'GENÉRICO',
-                        qty: entry.QTD_CONTADA,
-                        countedBy: entry.USUARIO_NOME,
-                        countedAt: entry.DATA_HORA,
-                        location: entry.LOCALIZACAO || 'GERAL',
-                        isLocked: isLocked,
-                        status: entry.STATUS
-                    });
-                }
-            } 
-        });
-
-        const blocks = Array.from(blockGroups.values()).map((g: any) => ({
-            ...g,
-            items: Array.from(g.itemsMap.values()),
-            timeAgo: getTimeAgo(g.latestDate)
-        }));
-
-        setHistoryBlocks(blocks);
-        setLoading(false);
-    };
-
     fetchHistory();
   }, []);
 
@@ -155,6 +153,34 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
     setExpandedBlocks(prev => 
       prev.includes(id) ? prev.filter(blockId => blockId !== id) : [...prev, id]
     );
+  };
+
+  // EDIT LOGIC
+  const handleEditCount = async (e: React.MouseEvent, item: any) => {
+      e.stopPropagation();
+      if (!currentUser) return;
+
+      const newQtyStr = prompt(`Editar contagem para ${item.name}?\nQuantidade atual: ${item.qty}`, item.qty);
+      if (newQtyStr === null) return;
+      
+      const newQty = parseFloat(newQtyStr);
+      if (isNaN(newQty)) return alert("Valor inválido.");
+
+      const res = await api.updateCount({
+          logId: item.id,
+          sku: item.ref,
+          newQty: newQty,
+          oldQty: item.qty,
+          user_name: currentUser.name,
+          user_id: currentUser.id
+      });
+
+      if (res.success) {
+          alert("Contagem atualizada e registrada com sucesso!");
+          fetchHistory(); // Refresh to show new edit log or updated value
+      } else {
+          alert("Erro ao atualizar contagem.");
+      }
   };
 
   if (loading) {
@@ -228,22 +254,18 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
            const visibleItems = isExpanded ? block.items : block.items.slice(0, 3);
            const hiddenCount = block.items.length - 3;
            
-           // Formato: DD/MM/AAAA HH:mm (sem virgula)
            const formattedDate = new Date(block.latestDate).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(',', '');
 
            return (
              <div key={block.id} className="flex flex-col shadow-lg shadow-black/20 h-full group bg-[#182335] dark:bg-surface-dark rounded-xl border border-white/5 overflow-hidden transition-all hover:border-white/10">
-                {/* CARD HEADER - CRONOLOGIA AJUSTADA */}
+                {/* CARD HEADER */}
                 <div className="p-4 border-b border-white/5 bg-[#182335] dark:bg-surface-dark relative">
                     <div className="flex justify-between items-start">
-                        {/* Esquerda: Identificação do Bloco */}
                         <div className="flex-1 pr-2">
                             <div className="bg-primary/10 border border-primary/20 text-primary px-2 py-1 rounded font-black inline-block mb-2 text-sm">
                                 {block.parentRef}
                             </div>
                         </div>
-
-                        {/* Direita: Data e Ação */}
                         <div className="flex items-center gap-3">
                             <div className="flex flex-col items-end">
                                 <span className="text-sm font-bold text-white leading-none tracking-tight mb-1">
@@ -258,21 +280,21 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
                     </div>
                 </div>
 
-                {/* CARD BODY - ITEMS LIST */}
+                {/* CARD BODY */}
                 <div className="flex-col divide-y divide-gray-700 dark:divide-white/5">
                       {visibleItems.map((item: any) => {
                         const isIssue = item.status === 'not_located' || item.status === 'divergence_info';
+                        // EDIT PERMISSION CHECK: Must match current user name
+                        const canEdit = currentUser && currentUser.name === item.countedBy;
 
                         return (
                         <div 
                           key={item.id} 
                           onClick={() => setSelectedItem(item)}
-                          className="p-4 hover:bg-white/5 transition-colors cursor-pointer"
+                          className="p-4 hover:bg-white/5 transition-colors cursor-pointer relative group/item"
                         >
-                            {/* Line 1: Name */}
                             <h4 className="text-sm font-bold text-white mb-3 line-clamp-1">{item.name}</h4>
                             
-                            {/* Line 2: Details Row (SKU, Brand, Qty) */}
                             <div className="flex items-center justify-between mb-4">
                                 <div className="flex items-center gap-2">
                                     <span className="px-2 py-1 rounded text-[12px] font-bold bg-slate-700 text-white border border-slate-600 font-mono tracking-wide shadow-sm">
@@ -290,14 +312,25 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
                                             AGUARDANDO REGULARIZAÇÃO
                                         </span>
                                     ) : (
-                                        <span className={`text-xl font-black ${isIssue ? 'text-orange-500' : 'text-green-500'} tracking-tight`}>
-                                            {item.qty} <span className="text-xs font-normal text-gray-500">un</span>
-                                        </span>
+                                        <div className="flex items-center gap-2">
+                                            <span className={`text-xl font-black ${isIssue ? 'text-orange-500' : 'text-green-500'} tracking-tight`}>
+                                                {item.qty} <span className="text-xs font-normal text-gray-500">un</span>
+                                            </span>
+                                            {/* EDIT BUTTON */}
+                                            {canEdit && (
+                                                <button 
+                                                    onClick={(e) => handleEditCount(e, item)}
+                                                    className="size-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white opacity-0 group-hover/item:opacity-100 transition-opacity"
+                                                    title="Editar Contagem"
+                                                >
+                                                    <Icon name="edit" size={16} />
+                                                </button>
+                                            )}
+                                        </div>
                                     )}
                                 </div>
                             </div>
 
-                            {/* Line 3: History Info (Avatar, Quem, Loc) */}
                             <div className="pt-3 border-t border-gray-700/50 flex justify-between items-center text-[10px]">
                                 <div className="flex items-center gap-2">
                                     <div className="size-5 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-[8px] shadow-sm ring-1 ring-white/10">
@@ -306,7 +339,6 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
                                     <span className="text-gray-300 font-medium">{item.countedBy.split(' ')[0]}</span>
                                 </div>
 
-                                {/* Location Tag - Dark Grey Badge */}
                                 <div className="flex items-center gap-1 bg-gray-800 text-gray-300 px-2 py-1 rounded-md border border-gray-700 font-mono tracking-tighter">
                                     <Icon name="place" size={12} className="text-gray-500" />
                                     <span>{item.location}</span>
@@ -317,7 +349,6 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
                       })}
                 </div>
 
-                {/* CARD FOOTER - EXPAND CONTROLS */}
                 <div className="mt-auto">
                     {(!isExpanded && hiddenCount > 0) && (
                         <button 
@@ -338,7 +369,6 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
                         </button>
                     )}
                     
-                    {/* Read Only Footer */}
                     <div className="p-2 bg-[#0f172a] border-t border-gray-800 flex items-center justify-center">
                         <span className="text-[9px] font-bold text-gray-600 flex items-center gap-1.5 uppercase tracking-wider">
                             <Icon name="verified" size={12} className="text-gray-600" />

@@ -16,9 +16,10 @@ const formatHistoryEntry = (entry: any) => {
     return {
         date: new Date(entry.DATA_HORA).toLocaleDateString('pt-BR') + ' ' + new Date(entry.DATA_HORA).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'}),
         user: entry.USUARIO_NOME,
-        action: entry.STATUS === 'counted' ? 'Contagem' : (entry.STATUS === 'not_located' ? 'Não Localizado' : 'Divergência'),
+        action: entry.STATUS === 'counted' ? 'Contagem' : (entry.STATUS === 'not_located' ? 'Não Localizado' : (entry.STATUS === 'EDIÇÃO' ? 'Edição' : entry.STATUS)),
         oldValue: entry.QTD_SISTEMA,
-        newValue: entry.QTD_CONTADA
+        newValue: entry.QTD_CONTADA,
+        location: entry.LOCALIZACAO
     };
 };
 
@@ -26,7 +27,6 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
   const [history, setHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  // Trava o scroll do body quando o modal abre
   useEffect(() => {
     if (isOpen) {
         document.body.style.overflow = 'hidden';
@@ -40,17 +40,12 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
 
   useEffect(() => {
       if (isOpen && item && item.ref) {
-          // Se já vier com histórico (mock ou passado), usa. Senão, busca.
-          if (item.history && item.history.length > 0) {
-              setHistory(item.history);
-          } else {
-              setLoadingHistory(true);
-              api.getProductHistory(item.ref).then(data => {
-                  const formatted = data.map(formatHistoryEntry);
-                  setHistory(formatted);
-                  setLoadingHistory(false);
-              }).catch(() => setLoadingHistory(false));
-          }
+          setLoadingHistory(true);
+          api.getProductHistory(item.ref).then(data => {
+              const formatted = data.map(formatHistoryEntry);
+              setHistory(formatted);
+              setLoadingHistory(false);
+          }).catch(() => setLoadingHistory(false));
       } else {
           setHistory([]);
       }
@@ -143,64 +138,74 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
               </div>
            </div>
 
-           {/* History Timeline (Lastro) */}
+           {/* TIMELINE (AUDIT TRAIL) */}
            <div>
-              <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider mb-3 flex items-center gap-2">
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider mb-4 flex items-center gap-2">
                  <Icon name="history_edu" size={18} className="text-primary" />
-                 Lastro de Movimentação (Audit Trail)
+                 Linha do Tempo (Audit Trail)
               </h3>
-              <div className="border border-gray-200 dark:border-card-border rounded-xl overflow-hidden min-h-[100px]">
+              
+              <div className="relative pl-2">
+                 {/* Vertical Line */}
+                 <div className="absolute top-0 bottom-0 left-2 w-0.5 bg-gray-200 dark:bg-gray-700" />
+
                  {loadingHistory ? (
-                     <div className="flex flex-col items-center justify-center py-8 text-gray-400">
-                         <Icon name="sync" className="animate-spin mb-2" size={24} />
-                         <span className="text-xs">Carregando histórico...</span>
+                     <div className="flex items-center gap-3 py-4 pl-6">
+                         <Icon name="sync" className="animate-spin text-gray-400" />
+                         <span className="text-sm text-gray-500">Carregando histórico...</span>
                      </div>
                  ) : history.length === 0 ? (
-                     <div className="flex flex-col items-center justify-center py-8 text-gray-400">
-                         <Icon name="event_busy" size={24} className="mb-2 opacity-50" />
-                         <span className="text-xs">Nenhum registro encontrado.</span>
+                     <div className="flex items-center gap-3 py-4 pl-6">
+                         <Icon name="event_busy" className="text-gray-300" />
+                         <span className="text-sm text-gray-400">Nenhum evento registrado.</span>
                      </div>
                  ) : (
-                     <table className="w-full text-left text-sm">
-                        <thead className="bg-gray-50 dark:bg-white/5 text-gray-500">
-                        <tr>
-                            <th className="p-3 font-medium">Data</th>
-                            <th className="p-3 font-medium">Usuário</th>
-                            <th className="p-3 font-medium">Ação</th>
-                            <th className="p-3 font-medium text-right">Alteração</th>
-                        </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-                        {history.map((h: any, idx: number) => (
-                            <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-white/5">
-                                <td className="p-3 text-gray-700 dark:text-gray-300 font-medium whitespace-nowrap text-xs">{h.date}</td>
-                                <td className="p-3 text-gray-600 dark:text-gray-400 flex items-center gap-2">
-                                    <div className="size-5 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center text-[9px] font-bold">
-                                        {h.user ? h.user.charAt(0) : '?'}
-                                    </div>
-                                    <span className="truncate max-w-[100px]">{h.user}</span>
-                                </td>
-                                <td className="p-3 text-gray-600 dark:text-gray-400">
-                                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold border ${
-                                        h.action === 'Divergência' ? 'bg-red-50 text-red-600 border-red-100' : 
-                                        h.action === 'Não Localizado' ? 'bg-gray-100 text-gray-600 border-gray-200' :
-                                        'bg-green-50 text-green-600 border-green-100'
-                                    }`}>
-                                    {h.action}
-                                    </span>
-                                </td>
-                                <td className="p-3 text-right">
-                                    {h.oldValue !== undefined && h.newValue !== undefined ? (
-                                        <span className="font-mono text-xs text-gray-500">
-                                            {h.oldValue} <Icon name="arrow_right_alt" size={12} className="align-middle mx-1" /> 
-                                            <span className={h.newValue !== h.oldValue ? 'font-bold text-gray-900 dark:text-white' : ''}>{h.newValue}</span>
-                                        </span>
-                                    ) : '-'}
-                                </td>
-                            </tr>
-                        ))}
-                        </tbody>
-                    </table>
+                     history.map((h, idx) => {
+                         const isEdit = h.action === 'Edição';
+                         const isCount = h.action === 'Contagem';
+                         const isReserve = h.action === 'RESERVADO';
+                         
+                         let dotColor = 'bg-gray-300 dark:bg-gray-600';
+                         if (isCount) dotColor = 'bg-green-500';
+                         if (isEdit) dotColor = 'bg-orange-500';
+                         if (isReserve) dotColor = 'bg-blue-500';
+
+                         return (
+                             <div key={idx} className="relative pl-6 pb-6 last:pb-0 group">
+                                 {/* Dot */}
+                                 <div className={`absolute top-1 left-[0.15rem] size-3.5 rounded-full border-2 border-white dark:border-surface-dark ${dotColor} z-10`} />
+                                 
+                                 <div className="flex flex-col bg-gray-50 dark:bg-white/5 p-3 rounded-xl border border-gray-100 dark:border-white/5 hover:border-gray-300 dark:hover:border-gray-500 transition-colors">
+                                     <div className="flex justify-between items-start mb-1">
+                                         <span className={`text-xs font-bold uppercase tracking-wide ${isEdit ? 'text-orange-600' : (isCount ? 'text-green-600' : 'text-gray-600 dark:text-gray-300')}`}>
+                                             {h.action}
+                                         </span>
+                                         <span className="text-[10px] text-gray-400 font-mono">{h.date}</span>
+                                     </div>
+                                     
+                                     <div className="text-sm text-gray-800 dark:text-gray-200 font-medium">
+                                         {h.user || 'Sistema'}
+                                     </div>
+
+                                     {(isCount || isEdit) && (
+                                         <div className="mt-2 text-xs bg-white dark:bg-black/20 p-2 rounded-lg border border-gray-200 dark:border-white/5 flex justify-between">
+                                             <span className="text-gray-500">Valor:</span>
+                                             <span className="font-mono font-bold">
+                                                 {h.oldValue !== undefined ? <span className="line-through text-gray-400 mr-2">{h.oldValue}</span> : ''}
+                                                 {h.newValue} un
+                                             </span>
+                                         </div>
+                                     )}
+                                     
+                                     {h.location && (
+                                         <div className="mt-1 text-[10px] text-gray-400 flex items-center gap-1">
+                                             <Icon name="place" size={10} /> {h.location}
+                                         </div>
+                                     )}
+                                 </div>
+                             </div>
+                         );
+                     })
                  )}
               </div>
            </div>
