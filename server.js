@@ -544,7 +544,7 @@ app.get('/reserved-blocks/:userId', (req, res) => {
     });
 });
 
-// 7. Reservar Bloco (COM AUDITORIA)
+// 7. Reservar Bloco (COM AUDITORIA E LOG DE SUCESSO)
 app.post('/reserve-block', (req, res) => {
     const { block_id, user_id, user_name } = req.body; 
     Firebird.attach(options, (err, db) => {
@@ -559,7 +559,7 @@ app.post('/reserve-block', (req, res) => {
                 
                 const proCodVal = isNaN(parseInt(block_id)) ? 0 : parseInt(block_id);
 
-                // Inserir Reserva
+                // Inserir Reserva (TIMESTAMP EXPLÍCITO)
                 db.query('INSERT INTO GRIDE_RESERVAS (BLOCK_ID, USU_COD, USER_NAME, PRO_COD, RESERVED_AT, ITEMS_JSON) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, NULL)', [block_id, user_id, user_name, proCodVal], (errIns) => {
                     if (errIns) { db.detach(); return res.status(500).json({ success: false, message: 'Erro ao reservar: ' + errIns.message }); }
                     
@@ -567,6 +567,7 @@ app.post('/reserve-block', (req, res) => {
                     const logSql = `INSERT INTO GRIDE_INVENTARIO_LOG (PRO_COD, USU_COD, USUARIO_NOME, STATUS, BLOCK_REF, DATA_HORA) VALUES (?, ?, ?, 'RESERVADO', ?, CURRENT_TIMESTAMP)`;
                     db.query(logSql, [proCodVal, user_id, user_name, block_id], (errLog) => {
                         db.detach();
+                        console.log(`[RESERVA] Bloco ${block_id} reservado com sucesso para ${user_name}`); // LOG DE SUCESSO
                         res.json({ success: true });
                     });
                 });

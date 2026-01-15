@@ -174,17 +174,14 @@ const App: React.FC = () => {
     if (!currentUser) return;
     const res = await api.reserveBlock(id, currentUser);
     if (res.success) {
-        // Atualiza visualmente na lista (Opcional, mas bom para feedback imediato)
-        setBlocks(prev => prev.map(b => 
-          b.id === id ? { 
-              ...b, 
-              status: 'progress', 
-              lockedBy: { userId: currentUser.id, userName: currentUser.name, timestamp: new Date().toISOString() } 
-          } : b
-        ));
+        // Remover da lista atual imediatamente para feedback visual
+        setBlocks(prev => prev.filter(b => b.id !== id));
         
-        // CRUCIAL: Espera a atualização global antes de qualquer outra coisa
-        await refreshGlobalCounts(); 
+        // Atualizar contadores globais
+        await refreshGlobalCounts();
+        
+        // Navegar para a tela de reservados
+        setCurrentScreen('reserved');
     } else {
         alert(res.message || 'Erro ao reservar.');
     }

@@ -37,21 +37,22 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
   const [showScanner, setShowScanner] = useState(false);
   const [scannedCode, setScannedCode] = useState('');
 
+  // Fetch fresco ao montar para garantir dados atualizados
   useEffect(() => {
-    // Ensures status fields are populated correctly from props to prevent stale empty bars
-    const initialized = blocks
-      .filter(b => b.status === 'progress')
-      .map(b => ({
-        ...b,
-        items: b.items.map(i => ({
-            ...i,
-            // FIX: Ensure status is strictly respected from backend logic
-            status: (i.status && i.status !== 'pending') ? i.status : 'pending',
-            countedQty: i.countedQty !== undefined ? i.countedQty : 0
-        }))
-      }));
-    setLocalBlocks(initialized);
-  }, [blocks]);
+      if (currentUser) {
+          api.getReservedBlocks(currentUser.id).then(freshBlocks => {
+              const initialized = freshBlocks.map(b => ({
+                ...b,
+                items: b.items.map(i => ({
+                    ...i,
+                    status: (i.status && i.status !== 'pending') ? i.status : 'pending',
+                    countedQty: i.countedQty !== undefined ? i.countedQty : 0
+                }))
+              }));
+              setLocalBlocks(initialized);
+          });
+      }
+  }, [currentUser]);
 
   const handleOpenCount = (blockId: number, item: any) => {
     setActiveBlockId(blockId);
