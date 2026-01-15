@@ -154,7 +154,7 @@ app.get('/daily-meta-suggestions', (req, res) => {
             const excludedIds = exclusions.map(r => r.PRO_COD).filter(id => id).join(',');
             const exclusionClause = excludedIds ? `AND P2.PRO_COD NOT IN (${excludedIds})` : '';
 
-            // 1. Identificar grupos (Similaridades) que atendem aos critérios
+            // 1. Identificar os IDs de agrupamento que entram na meta
             const sqlGiroIds = `
                 SELECT FIRST ${Math.floor(effectiveTarget * 0.4)} COALESCE(P2.PRO_COD_SIMILAR, P2.PRO_COD) as GRP_ID
                 FROM PEDIDOSITENS PI 
@@ -189,13 +189,13 @@ app.get('/daily-meta-suggestions', (req, res) => {
                 return res.json([]);
             }
 
-            // 2. Procurar TODOS os itens que pertencem aos grupos selecionados
+            // 2. Buscar TODOS os itens pertencentes aos grupos identificados
             const finalIdsStr = allSimilarIds.join(',');
             const sqlDetails = `
                 SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, M.MAR_DESCRI, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE, P.PRO_PRATELEIRA 
                 FROM PRODUTOS P 
                 LEFT JOIN MARCAS M ON (M.MAR_COD = P.MAR_COD) 
-                WHERE TRIM(COALESCE(P.PRO_COD_SIMILAR, CAST(P.PRO_COD AS VARCHAR(20)))) IN (${finalIdsStr})
+                WHERE TRIM(COALESCE(CAST(P.PRO_COD_SIMILAR AS VARCHAR(20)), CAST(P.PRO_COD AS VARCHAR(20)))) IN (${finalIdsStr})
                 ORDER BY P.PRO_PRATELEIRA, P.PRO_COD_SIMILAR
             `;
             
@@ -238,7 +238,7 @@ app.get('/daily-meta-suggestions', (req, res) => {
 
             res.json(blocks);
         } catch (e) {
-            console.error("Erro daily-meta:", e);
+            console.error("Erro na rota daily-meta:", e);
             if (db) db.detach();
             res.status(500).json({ error: e.message });
         }
