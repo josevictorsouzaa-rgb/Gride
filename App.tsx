@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Screen, User, Block, ApiCategory } from './types';
-import { api } from './services/api';
+import { Screen, User, Block } from './types';
+import { api, ApiCategory } from './services/api';
 import { LoginScreen } from './screens/LoginScreen';
 import { DashboardScreen } from './screens/DashboardScreen';
 import { ListScreen } from './screens/ListScreen';
