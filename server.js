@@ -154,19 +154,11 @@ app.get('/daily-meta-suggestions', (req, res) => {
             const excludedIds = exclusions.map(r => r.PRO_COD).filter(id => id).join(',');
             const exclusionClause = excludedIds ? `AND P2.PRO_COD NOT IN (${excludedIds})` : '';
 
-            // Função para extrair string do banco (lida com Buffer e Null)
-            const parseGrpId = (row) => {
-                if (!row || row.GRP_ID === null || row.GRP_ID === undefined) return null;
-                const val = (typeof row.GRP_ID === 'object' && Buffer.isBuffer(row.GRP_ID)) 
-                    ? row.GRP_ID.toString() 
-                    : String(row.GRP_ID);
-                return val.trim();
-            };
-
-            // 1. Identificar grupos (Similaridades) - Giro Alto
+            // 1. Identificar grupos (Retorna um ID representativo - REF_ID - que é MIN(PRO_COD) do grupo)
+            // Agrupamos por similaridade, mas selecionamos um PRO_COD numérico válido para usar no IN (...)
             const sqlGiroIds = `
                 SELECT FIRST ${Math.floor(effectiveTarget * 0.4)} 
-                COALESCE(P2.PRO_COD_SIMILAR, CAST(P2.PRO_COD AS VARCHAR(20))) as GRP_ID
+                MIN(P2.PRO_COD) as REF_ID
                 FROM PEDIDOSITENS PI 
                 JOIN PRODUTOS P2 ON P2.PRO_COD = PI.PRO_COD 
                 LEFT JOIN GRIDE_INVENTARIO_LOG L ON L.PRO_COD = P2.PRO_COD 
@@ -177,16 +169,12 @@ app.get('/daily-meta-suggestions', (req, res) => {
             `;
             
             const giroGroups = await execute(db, sqlGiroIds);
-            const highGiroSimilarIds = giroGroups.map(r => {
-                const id = parseGrpId(r);
-                return id ? `'${id}'` : null;
-            }).filter(id => id !== null);
+            const highGiroRefIds = giroGroups.map(r => Number(r.REF_ID)).filter(n => !isNaN(n));
 
-            // 1.1 Identificar grupos - Ciclo (Restante)
-            const neededForCycle = Math.max(0, effectiveTarget - highGiroSimilarIds.length);
+            const neededForCycle = Math.max(0, effectiveTarget - highGiroRefIds.length);
             const sqlCycleIds = `
                 SELECT FIRST ${neededForCycle} 
-                COALESCE(P2.PRO_COD_SIMILAR, CAST(P2.PRO_COD AS VARCHAR(20))) as GRP_ID
+                MIN(P2.PRO_COD) as REF_ID
                 FROM PRODUTOS P2 
                 LEFT JOIN GRIDE_INVENTARIO_LOG L ON L.PRO_COD = P2.PRO_COD 
                 WHERE P2.PRO_ATIVO = 'S' ${exclusionClause}
@@ -195,57 +183,63 @@ app.get('/daily-meta-suggestions', (req, res) => {
             `;
             
             const cycleGroups = await execute(db, sqlCycleIds);
-            const cycleSimilarIds = cycleGroups.map(r => {
-                const id = parseGrpId(r);
-                return id ? `'${id}'` : null;
-            }).filter(id => id !== null);
+            const cycleRefIds = cycleGroups.map(r => Number(r.REF_ID)).filter(n => !isNaN(n));
 
-            // Combinar IDs únicos
-            const allSimilarIds = [...new Set([...highGiroSimilarIds, ...cycleSimilarIds])];
+            // Combinar IDs únicos (Numéricos)
+            const allRefIds = [...new Set([...highGiroRefIds, ...cycleRefIds])];
 
-            if (allSimilarIds.length === 0) {
+            if (allRefIds.length === 0) {
                 db.detach();
                 return res.json([]);
             }
 
-            // 2. Buscar TODOS os itens pertencentes aos grupos identificados (Bloco Completo)
-            const finalIdsStr = allSimilarIds.join(',');
+            // 2. Expandir para buscar TODOS os itens dos grupos (Siblings)
+            // Usa a lista de PRO_COD representativos (allRefIds) para encontrar todos os relacionados
+            const finalIdsStr = allRefIds.join(',');
+            
+            // Query robusta fornecida no prompt
             const sqlDetails = `
-                SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, M.MAR_DESCRI, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE, P.PRO_PRATELEIRA 
+                SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, M.MAR_DESCRI, 
+                       P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE, P.PRO_PRATELEIRA 
                 FROM PRODUTOS P 
                 LEFT JOIN MARCAS M ON (M.MAR_COD = P.MAR_COD) 
-                WHERE 
-                    TRIM(COALESCE(P.PRO_COD_SIMILAR, CAST(P.PRO_COD AS VARCHAR(20)))) IN (${finalIdsStr})
-                ORDER BY P.PRO_PRATELEIRA, P.PRO_COD_SIMILAR
+                WHERE P.PRO_COD_SIMILAR IN (SELECT DISTINCT P2.PRO_COD_SIMILAR FROM PRODUTOS P2 WHERE P2.PRO_COD IN (${finalIdsStr}) AND P2.PRO_COD_SIMILAR IS NOT NULL)
+                   OR P.PRO_COD IN (SELECT DISTINCT P2.PRO_COD_SIMILAR FROM PRODUTOS P2 WHERE P2.PRO_COD IN (${finalIdsStr}) AND P2.PRO_COD_SIMILAR IS NOT NULL)
+                   OR P.PRO_COD IN (${finalIdsStr})
+                ORDER BY P.PRO_PRATELEIRA
             `;
             
             const products = await execute(db, sqlDetails);
             db.detach();
 
-            // 3. Montar Objetos de Retorno
+            // 3. Agrupar e Formatar
             const groups = new Map();
             const todayFormatted = new Date().toLocaleDateString('pt-BR');
+            const highGiroSet = new Set(highGiroRefIds);
 
             products.forEach(p => {
-                const similarId = p.PRO_COD_SIMILAR ? safeString(p.PRO_COD_SIMILAR) : safeString(p.PRO_COD);
+                // Chave de agrupamento: Similar ID ou o próprio PRO_COD se não houver similar
+                const similarId = p.PRO_COD_SIMILAR ? String(p.PRO_COD_SIMILAR).trim() : String(p.PRO_COD).trim();
                 
                 if (!groups.has(similarId)) groups.set(similarId, []);
                 
                 groups.get(similarId).push({
-                    id: safeString(p.PRO_COD), 
+                    id: String(p.PRO_COD).trim(), 
                     db_pro_cod: p.PRO_COD, 
-                    name: safeString(p.PRO_DESCRI), 
-                    ref: safeString(p.PRO_NRFABRICANTE), 
-                    brand: p.MAR_DESCRI ? safeString(p.MAR_DESCRI) : 'SEM MARCA', 
+                    name: String(p.PRO_DESCRI || '').trim(), 
+                    ref: String(p.PRO_NRFABRICANTE || '').trim(), 
+                    brand: p.MAR_DESCRI ? String(p.MAR_DESCRI).trim() : 'SEM MARCA', 
                     balance: parseFloat(p.PRO_EST_ATUAL || 0), 
-                    location: safeString(p.PRO_PRATELEIRA) || 'GERAL', 
+                    location: String(p.PRO_PRATELEIRA || 'GERAL').trim(), 
                     inTreatment: false 
                 });
             });
 
             const blocks = [];
             groups.forEach((items, key) => {
-                const isGiro = highGiroSimilarIds.includes(`'${key}'`);
+                // Verifica se algum item do bloco faz parte da lista de Giro Alto original
+                const isGiro = items.some(item => highGiroSet.has(item.db_pro_cod));
+                
                 blocks.push({
                     id: key, 
                     parentRef: items[0].ref || items[0].name, 
@@ -260,7 +254,7 @@ app.get('/daily-meta-suggestions', (req, res) => {
 
             res.json(blocks);
         } catch (e) {
-            console.error("Erro na rota daily-meta:", e);
+            console.error("ERRO CRÍTICO NA META:", e);
             if (db) db.detach();
             res.status(500).json({ error: e.message });
         }
