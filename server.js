@@ -140,6 +140,8 @@ app.get('/daily-meta-suggestions', (req, res) => {
         if (err) return res.status(500).json({ error: 'Erro ao conectar ao DB' });
 
         try {
+            console.time('meta-query'); // Start Timer
+
             let effectiveTarget = dailyTarget;
             if (accumulationMode) {
                 const pendingSql = `SELECT COUNT(*) as COUNTED FROM GRIDE_INVENTARIO_LOG WHERE DATA_HORA >= DATEADD(-3 DAY TO CURRENT_DATE) AND DATA_HORA < CURRENT_DATE AND (STATUS = 'Contado' OR STATUS = 'Divergência')`;
@@ -190,30 +192,46 @@ app.get('/daily-meta-suggestions', (req, res) => {
             const finalIds = [...new Set([...highGiroIds, ...cycleIds])].map(id => Number(id)).filter(id => id > 0);
 
             if (finalIds.length === 0) {
+                console.timeEnd('meta-query');
                 db.detach();
                 return res.json([]);
             }
 
-            // 2. Expandir para buscar TODOS os itens dos grupos (Siblings)
-            // Query Segura e Simplificada
+            // OTIMIZAÇÃO: Lógica de 2 Etapas para Performance
             const finalIdsStr = finalIds.join(',');
             console.log('IDs para busca:', finalIdsStr);
-            
+
+            // Etapa 1: Obter os agrupadores (SIMILAR ou PRO_COD) dos itens selecionados
+            // CAST para garantir compatibilidade caso PRO_COD_SIMILAR seja varchar
+            const sqlGetGroups = `SELECT DISTINCT COALESCE(PRO_COD_SIMILAR, CAST(PRO_COD AS VARCHAR(20))) as GRP FROM PRODUTOS WHERE PRO_COD IN (${finalIdsStr})`;
+            const groupResult = await execute(db, sqlGetGroups);
+
+            // Filtrar e formatar com aspas para o SQL
+            const uniqueGroups = [...new Set(groupResult.map(r => safeString(r.GRP)))].filter(g => g);
+
+            if (uniqueGroups.length === 0) {
+                console.timeEnd('meta-query');
+                db.detach();
+                return res.json([]);
+            }
+
+            const groupIdsStr = uniqueGroups.map(g => `'${g}'`).join(',');
+
+            // Etapa 2: Busca Direta usando os Grupos (Remove Subquery lenta)
             const sqlDetails = `
                 SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, M.MAR_DESCRI, 
                        P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE, P.PRO_PRATELEIRA 
                 FROM PRODUTOS P 
                 LEFT JOIN MARCAS M ON (M.MAR_COD = P.MAR_COD) 
-                WHERE P.PRO_COD IN (${finalIdsStr}) 
-                   OR (P.PRO_COD_SIMILAR IS NOT NULL AND P.PRO_COD_SIMILAR IN (${finalIdsStr}))
-                   OR (P.PRO_COD_SIMILAR IS NOT NULL AND P.PRO_COD_SIMILAR IN (
-                       SELECT DISTINCT PRO_COD_SIMILAR FROM PRODUTOS WHERE PRO_COD IN (${finalIdsStr})
-                   ))
+                WHERE (P.PRO_COD_SIMILAR IN (${groupIdsStr})) 
+                   OR (P.PRO_COD_SIMILAR IS NULL AND CAST(P.PRO_COD AS VARCHAR(20)) IN (${groupIdsStr}))
                 ORDER BY P.PRO_PRATELEIRA
             `;
             
             const products = await execute(db, sqlDetails);
             db.detach();
+            
+            console.timeEnd('meta-query'); // Stop Timer
 
             // 3. Agrupar e Formatar
             const groups = new Map();
