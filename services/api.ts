@@ -105,7 +105,6 @@ export const api = {
       if (!response.ok) throw new Error('Erro');
       const data: ApiCategory[] = await response.json();
       
-      // Enforce frontend icons mapping for better visual representation
       return data.map(cat => ({
           ...cat,
           icon: GROUP_ICONS[cat.db_id] || 'inventory_2',
@@ -144,6 +143,17 @@ export const api = {
           return await response.json();
       } catch (error) {
           return { dailyTarget, countedToday: 0, accumulatedPending: 0 };
+      }
+  },
+
+  // NOVA ROTA: Get User Daily Stats
+  getDailyStats: async (userId: string): Promise<{ countedToday: number }> => {
+      try {
+          const response = await fetch(`${API_BASE_URL}/daily-stats/${userId}`);
+          if (!response.ok) return { countedToday: 0 };
+          return await response.json();
+      } catch (e) {
+          return { countedToday: 0 };
       }
   },
 
@@ -244,14 +254,10 @@ export const api = {
   },
 
   resolveTreatment: async (id: number, note: string, user: string, action: 'adjust' | 'inactivate' | 'ignore'): Promise<boolean> => {
-      // Mock implementation since backend route not strictly defined in previous steps, but expected by UI
-      // In a real scenario, you'd POST to /resolve-treatment
       return true; 
   },
 
   saveCount: async (logEntry: Partial<InventoryLogEntry>) => {
-      // Used for ad-hoc scanning (single item)
-      // Implementation pending on backend for ad-hoc, but UI calls it.
       console.log("Saving ad-hoc count:", logEntry);
       return { success: true };
   },

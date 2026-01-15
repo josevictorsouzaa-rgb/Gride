@@ -35,7 +35,10 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
   const [showAllCategories, setShowAllCategories] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
+  
+  // States for Real Data
   const [metaStatus, setMetaStatus] = useState<MetaStatus>({ dailyTarget: 150, countedToday: 0, accumulatedPending: 0 });
+  const [userDailyCount, setUserDailyCount] = useState(0);
 
   useEffect(() => {
     const checkDesktop = () => {
@@ -44,41 +47,43 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     checkDesktop();
     window.addEventListener('resize', checkDesktop);
     
-    // Load Meta Status
-    const loadStatus = async () => {
+    // Load Real Data
+    const loadData = async () => {
         const settings = getSettings();
+        
+        // 1. Status Global da Meta (Configurações + Acumulado)
         const status = await api.getMetaStatus(settings.dailyTarget, settings.accumulationMode);
         setMetaStatus(status);
+
+        // 2. Contagem Individual do Usuário (Para o gráfico de progresso)
+        if (currentUser) {
+            const stats = await api.getDailyStats(currentUser.id);
+            setUserDailyCount(stats.countedToday);
+        }
     };
-    loadStatus();
+    loadData();
 
     return () => window.removeEventListener('resize', checkDesktop);
-  }, []);
+  }, [currentUser]);
 
   const displayedCategories = (isDesktop || showAllCategories) 
     ? (categories || []) 
     : (categories || []).slice(0, 6);
 
-  const { dailyTarget, countedToday, accumulatedPending } = metaStatus;
+  const { dailyTarget, accumulatedPending } = metaStatus;
   
-  // Se houver acumulado, a meta visual do dia aumenta? 
-  // O prompt pede para "saldo restante deve ser somado à meta de hoje" (visualmente ou logicamente?)
-  // Visualmente no gráfico: Fatia Verde (Contado), Fatia Vermelha (Pendente Atrasado), Fatia Cinza (Restante Hoje)
+  // Use the user's specific count for the main KPI, not the global count
+  const countedToday = userDailyCount;
   
-  // Total Visual do Gráfico = Target + Accumulated
   const effectiveTarget = dailyTarget + accumulatedPending;
   const progressPercent = effectiveTarget > 0 ? Math.min(100, Math.round((countedToday / effectiveTarget) * 100)) : 0;
   
-  const remainingToday = Math.max(0, dailyTarget - (countedToday - Math.max(0, countedToday - accumulatedPending))); 
-  // Simplified logic for chart data:
-  // 1. Counted Today (Green)
-  // 2. Accumulated Pending (Red) - Only shows what is NOT yet counted of the accumulated pile? 
-  //    Actually, accumulation adds to the TO-DO list.
+  const pendingAccumulated = Math.max(0, accumulatedPending); 
   
   const goalData = [
     { name: 'Contado', value: countedToday, color: '#137fec' }, // Blue/Green
-    { name: 'Acumulado', value: accumulatedPending, color: '#ef4444' }, // Red (Debt)
-    { name: 'Restante Dia', value: Math.max(0, dailyTarget - Math.max(0, countedToday - accumulatedPending)), color: '#33415520' } // Gray
+    { name: 'Acumulado', value: pendingAccumulated, color: '#ef4444' }, // Red (Debt)
+    { name: 'Restante', value: Math.max(0, effectiveTarget - countedToday - pendingAccumulated), color: '#33415520' } // Gray
   ];
 
   return (
