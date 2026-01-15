@@ -10,6 +10,14 @@ const port = 8000;
 // Configuração do Banco de Dados
 const DB_PATH = 'C:\\Users\\DELL G15\\Desktop\\BD\\DATABASE\\DATABASE.FDB';
 
+// Parâmetros Globais da Meta (Padrões)
+const GLOBAL_SETTINGS = {
+    dailyTarget: 150,
+    cooldownDays: 30,
+    highGiroThreshold: 5,
+    accumulationMode: true
+};
+
 // Middleware
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
@@ -101,7 +109,7 @@ const initDb = () => {
                 return resolve(); 
             }
             try {
-                // Tabelas
+                // Tabelas Existentes
                 await safeExecute(db, `CREATE TABLE GRIDE_ENDERECOS (ID INTEGER NOT NULL PRIMARY KEY, CODIGO VARCHAR(50) NOT NULL, DESCRICAO VARCHAR(100), TIPO VARCHAR(20), PRO_COD VARCHAR(20))`, "Tabela Endereços");
                 await safeExecute(db, `CREATE TABLE GRIDE_GALPOES (ID INTEGER NOT NULL PRIMARY KEY, SIGLA VARCHAR(10) NOT NULL, DESCRICAO VARCHAR(50))`, "Tabela Galpões");
                 await safeExecute(db, `CREATE TABLE GRIDE_RESERVAS (BLOCK_ID VARCHAR(50) NOT NULL PRIMARY KEY, USU_COD VARCHAR(20) NOT NULL, USER_NAME VARCHAR(100), PRO_COD INTEGER, RESERVED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`, "Tabela Reservas");
@@ -110,8 +118,11 @@ const initDb = () => {
                 await safeExecute(db, `CREATE TABLE GRIDE_CONTAS_FINALIZADAS (ID INTEGER NOT NULL PRIMARY KEY, SKU VARCHAR(50), PRO_COD INTEGER, QTD_FINAL DECIMAL(15,4), DATA_HORA TIMESTAMP DEFAULT CURRENT_TIMESTAMP, USUARIO_NOME VARCHAR(100), STATUS VARCHAR(20), LOG_ORIGEM_ID INTEGER)`, "Tabela Contas Finalizadas");
                 await safeExecute(db, `CREATE TABLE GRIDE_TRATAMENTO (ID INTEGER NOT NULL PRIMARY KEY, LOG_ID INTEGER, PRO_COD INTEGER, PRO_NRFABRICANTE VARCHAR(50), NOME_PRODUTO VARCHAR(200), LOCALIZACAO VARCHAR(100), TIPO_ERRO VARCHAR(50), DESCRICAO_ERRO VARCHAR(255), REPORTADO_POR VARCHAR(100), REPORTADO_EM TIMESTAMP DEFAULT CURRENT_TIMESTAMP, STATUS VARCHAR(20) DEFAULT 'PENDING', RESOLVIDO_POR VARCHAR(20), RESOLVIDO_EM TIMESTAMP, RESOLUCAO_NOTA VARCHAR(255))`, "Tabela Tratamento");
 
+                // --- TABELA DE CACHE (NOVO) ---
+                await safeExecute(db, `CREATE TABLE GRIDE_SUGESTOES_CACHE (ID INTEGER NOT NULL PRIMARY KEY, BLOCK_ID VARCHAR(50), PRO_COD INTEGER, SKU VARCHAR(50), NOME VARCHAR(200), MARCA VARCHAR(100), SALDO DECIMAL(15,4), LOCALIZACAO VARCHAR(100), CATEGORIA VARCHAR(100), TIPO_SUGESTAO VARCHAR(20), DATA_GERACAO DATE)`, "Tabela Cache Sugestões");
+                
                 // Generators
-                const gens = ['GEN_GRIDE_ENDERECOS_ID', 'GEN_GRIDE_GALPOES_ID', 'GEN_GRIDE_LOG_ID', 'GEN_GRIDE_TRATAMENTO_ID', 'GEN_GRIDE_CONTAS_FIN_ID'];
+                const gens = ['GEN_GRIDE_ENDERECOS_ID', 'GEN_GRIDE_GALPOES_ID', 'GEN_GRIDE_LOG_ID', 'GEN_GRIDE_TRATAMENTO_ID', 'GEN_GRIDE_CONTAS_FIN_ID', 'GEN_GRIDE_CACHE_ID'];
                 for (const g of gens) await safeExecute(db, `CREATE GENERATOR ${g}`, `Generator ${g}`);
 
                 // Triggers
@@ -120,6 +131,7 @@ const initDb = () => {
                 await safeExecute(db, `CREATE TRIGGER TR_GRIDE_LOG FOR GRIDE_INVENTARIO_LOG ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_LOG_ID, 1); END`, "Trigger Logs");
                 await safeExecute(db, `CREATE TRIGGER TR_GRIDE_TRATAMENTO FOR GRIDE_TRATAMENTO ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_TRATAMENTO_ID, 1); END`, "Trigger Tratamento");
                 await safeExecute(db, `CREATE TRIGGER TR_GRIDE_CONTAS_FIN FOR GRIDE_CONTAS_FINALIZADAS ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_CONTAS_FIN_ID, 1); END`, "Trigger Contas Finalizadas");
+                await safeExecute(db, `CREATE TRIGGER TR_GRIDE_CACHE FOR GRIDE_SUGESTOES_CACHE ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_CACHE_ID, 1); END`, "Trigger Cache");
 
                 console.log(">>> [INIT] Banco de dados padronizado.");
             } catch (e) { console.error(">>> [INIT ERROR]", e); } 
@@ -128,37 +140,54 @@ const initDb = () => {
     });
 };
 
-// --- ROTAS ---
-
-app.get('/daily-meta-suggestions', (req, res) => {
-    const dailyTarget = parseInt(req.query.dailyTarget) || 150;
-    const cooldownDays = parseInt(req.query.cooldownDays) || 30;
-    const highGiroThreshold = parseInt(req.query.highGiroThreshold) || 5;
-    const accumulationMode = req.query.accumulationMode === 'true';
+// --- FUNÇÃO DE PROCESSAMENTO AUTOMÁTICO (CACHE) ---
+const refreshMetaCache = async () => {
+    console.log(">>> [AUTO] Iniciando atualização do cache de sugestões...");
+    
+    // 1. Verificar Dia Útil (0 = Domingo, 6 = Sábado)
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    if (dayOfWeek === 0 || dayOfWeek === 6) {
+        console.log(">>> [AUTO] Fim de semana detectado. Cache não será atualizado.");
+        return;
+    }
 
     Firebird.attach(options, async (err, db) => {
-        if (err) return res.status(500).json({ error: 'Erro ao conectar ao DB' });
+        if (err) {
+            console.error(">>> [AUTO ERROR] Falha conexão DB:", err.message);
+            return;
+        }
 
         try {
-            console.time('meta-query'); // Start Timer
+            console.time('cache-process');
 
+            // Parâmetros
+            const { dailyTarget, cooldownDays, highGiroThreshold, accumulationMode } = GLOBAL_SETTINGS;
+            
+            // Cálculo de Meta Efetiva
             let effectiveTarget = dailyTarget;
             if (accumulationMode) {
+                // Verifica contagens dos últimos 3 dias
                 const pendingSql = `SELECT COUNT(*) as COUNTED FROM GRIDE_INVENTARIO_LOG WHERE DATA_HORA >= DATEADD(-3 DAY TO CURRENT_DATE) AND DATA_HORA < CURRENT_DATE AND (STATUS = 'Contado' OR STATUS = 'Divergência')`;
                 const logsResult = await execute(db, pendingSql);
                 const countedLast3Days = logsResult[0].COUNTED || 0;
-                const deficit = Math.max(0, (dailyTarget * 3) - countedLast3Days);
+                
+                // Meta esperada 3 dias
+                const expected3Days = dailyTarget * 3;
+                const deficit = Math.max(0, expected3Days - countedLast3Days);
+                
+                // Limita o acréscimo a 50% da meta diária para não sobrecarregar
                 effectiveTarget += Math.min(deficit, Math.floor(dailyTarget * 0.5));
+                console.log(`>>> [AUTO] Meta Base: ${dailyTarget}, Déficit: ${deficit}, Meta Efetiva: ${effectiveTarget}`);
             }
 
+            // Cláusula de Exclusão (Reservados ou em Tratamento)
             const exclusionSql = `SELECT PRO_COD FROM GRIDE_RESERVAS UNION SELECT PRO_COD FROM GRIDE_TRATAMENTO WHERE STATUS = 'PENDING'`;
             const exclusions = await execute(db, exclusionSql);
             const excludedIds = exclusions.map(r => r.PRO_COD).filter(id => id).join(',');
             const exclusionClause = excludedIds ? `AND P2.PRO_COD NOT IN (${excludedIds})` : '';
 
-            // 1. Identificar grupos (Retorna um ID representativo - REF_ID - que é MIN(PRO_COD) do grupo)
-            // REMOVIDO: WHERE PI.DATA >= ... para evitar erro de coluna inexistente
-            // Mantido WHERE 1=1 para integridade com exclusionClause
+            // 1. Identificar GIRO ALTO (Lógica Original corrigida)
             const sqlGiroIds = `
                 SELECT FIRST ${Math.floor(effectiveTarget * 0.4)} 
                 MIN(P2.PRO_COD) as REF_ID
@@ -170,10 +199,10 @@ app.get('/daily-meta-suggestions', (req, res) => {
                 HAVING COUNT(*) >= ${highGiroThreshold} 
                 AND (MAX(L.DATA_HORA) IS NULL OR MAX(L.DATA_HORA) < DATEADD(-${cooldownDays} DAY TO CURRENT_DATE))
             `;
-            
             const giroGroups = await execute(db, sqlGiroIds);
             const highGiroIds = giroGroups.map(r => Number(r.REF_ID)).filter(n => !isNaN(n));
 
+            // 2. Identificar CICLO (Preencher o restante)
             const neededForCycle = Math.max(0, effectiveTarget - highGiroIds.length);
             const sqlCycleIds = `
                 SELECT FIRST ${neededForCycle} 
@@ -184,102 +213,188 @@ app.get('/daily-meta-suggestions', (req, res) => {
                 GROUP BY COALESCE(P2.PRO_COD_SIMILAR, CAST(P2.PRO_COD AS VARCHAR(20)))
                 ORDER BY MAX(L.DATA_HORA) ASC NULLS FIRST
             `;
-            
             const cycleGroups = await execute(db, sqlCycleIds);
             const cycleIds = cycleGroups.map(r => Number(r.REF_ID)).filter(n => !isNaN(n));
 
-            // Combinar IDs únicos (Numéricos limpos e > 0)
+            // IDs Principais Selecionados
             const finalIds = [...new Set([...highGiroIds, ...cycleIds])].map(id => Number(id)).filter(id => id > 0);
 
             if (finalIds.length === 0) {
-                console.timeEnd('meta-query');
+                console.log(">>> [AUTO] Nenhum item elegível para meta hoje.");
                 db.detach();
-                return res.json([]);
+                return;
             }
 
-            // OTIMIZAÇÃO: Lógica de 2 Etapas para Performance
+            // 3. Expansão para BLOCO COMPLETO (Siblings) - Otimizado em 2 Etapas
             const finalIdsStr = finalIds.join(',');
-            console.log('IDs para busca:', finalIdsStr);
-
-            // Etapa 1: Obter os agrupadores (SIMILAR ou PRO_COD) dos itens selecionados
-            // CAST para garantir compatibilidade caso PRO_COD_SIMILAR seja varchar
+            
+            // Etapa A: Buscar Grupos
             const sqlGetGroups = `SELECT DISTINCT COALESCE(PRO_COD_SIMILAR, CAST(PRO_COD AS VARCHAR(20))) as GRP FROM PRODUTOS WHERE PRO_COD IN (${finalIdsStr})`;
             const groupResult = await execute(db, sqlGetGroups);
-
-            // Filtrar e formatar com aspas para o SQL
             const uniqueGroups = [...new Set(groupResult.map(r => safeString(r.GRP)))].filter(g => g);
-
-            if (uniqueGroups.length === 0) {
-                console.timeEnd('meta-query');
-                db.detach();
-                return res.json([]);
-            }
-
+            
+            if (uniqueGroups.length === 0) { db.detach(); return; }
+            
             const groupIdsStr = uniqueGroups.map(g => `'${g}'`).join(',');
 
-            // Etapa 2: Busca Direta usando os Grupos (Remove Subquery lenta)
+            // Etapa B: Buscar Todos os Itens dos Grupos
             const sqlDetails = `
                 SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, M.MAR_DESCRI, 
-                       P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE, P.PRO_PRATELEIRA 
+                       COALESCE(P.PRO_COD_SIMILAR, CAST(P.PRO_COD AS VARCHAR(20))) as BLOCK_KEY, 
+                       P.PRO_NRFABRICANTE, P.PRO_PRATELEIRA 
                 FROM PRODUTOS P 
                 LEFT JOIN MARCAS M ON (M.MAR_COD = P.MAR_COD) 
                 WHERE (P.PRO_COD_SIMILAR IN (${groupIdsStr})) 
                    OR (P.PRO_COD_SIMILAR IS NULL AND CAST(P.PRO_COD AS VARCHAR(20)) IN (${groupIdsStr}))
                 ORDER BY P.PRO_PRATELEIRA
             `;
-            
             const products = await execute(db, sqlDetails);
-            db.detach();
-            
-            console.timeEnd('meta-query'); // Stop Timer
 
-            // 3. Agrupar e Formatar
+            // 4. Transação de Atualização do Cache
+            db.transaction(Firebird.ISOLATION_READ_COMMITTED, async (err, transaction) => {
+                if (err) {
+                    console.error(">>> [AUTO ERROR] Erro ao iniciar transação:", err);
+                    db.detach();
+                    return;
+                }
+
+                try {
+                    // Limpar Cache Antigo
+                    await new Promise((resolve, reject) => {
+                        transaction.query('DELETE FROM GRIDE_SUGESTOES_CACHE', (err) => {
+                            if (err) reject(err); else resolve();
+                        });
+                    });
+
+                    // Inserir Novos Itens
+                    const highGiroSet = new Set(highGiroIds);
+                    
+                    for (const p of products) {
+                        const blockKey = safeString(p.BLOCK_KEY);
+                        // Se o pai do grupo estava na lista de giro alto, todo o grupo é giro alto
+                        // Simplificação: Se PRO_COD está na lista original de High Giro, marcamos.
+                        // Mas aqui temos todos os irmãos. Vamos verificar se algum ID do grupo (blockKey) foi selecionado como Giro.
+                        // (Lógica refinada: Verificar na hora do SELECT da API ou marcar aqui se este item específico era o trigger)
+                        
+                        const tipoSugestao = highGiroSet.has(p.PRO_COD) ? 'Giro Alto' : 'Ciclo'; 
+                        // Nota: A marcação exata do bloco como "Giro Alto" na UI depende se *algum* item do bloco é giro.
+                        // Vamos salvar item a item e a UI/API agrupa.
+
+                        const insertSql = `
+                            INSERT INTO GRIDE_SUGESTOES_CACHE 
+                            (BLOCK_ID, PRO_COD, SKU, NOME, MARCA, SALDO, LOCALIZACAO, CATEGORIA, TIPO_SUGESTAO, DATA_GERACAO) 
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_DATE)
+                        `;
+                        
+                        const params = [
+                            blockKey,
+                            p.PRO_COD,
+                            safeString(p.PRO_NRFABRICANTE),
+                            safeString(p.PRO_DESCRI).substring(0, 200),
+                            safeString(p.MAR_DESCRI).substring(0, 100) || 'SEM MARCA',
+                            p.PRO_EST_ATUAL || 0,
+                            safeString(p.PRO_PRATELEIRA) || 'GERAL',
+                            safeString(p.GR_COD), // Usando GR_COD como categoria macro
+                            tipoSugestao
+                        ];
+
+                        await new Promise((resolve, reject) => {
+                            transaction.query(insertSql, params, (err) => {
+                                if (err) reject(err); else resolve();
+                            });
+                        });
+                    }
+
+                    transaction.commit((err) => {
+                        if (err) {
+                            console.error(">>> [AUTO ERROR] Erro no Commit:", err);
+                            transaction.rollback();
+                        } else {
+                            console.log(`>>> [AUTO] Cache atualizado com sucesso! ${products.length} itens inseridos.`);
+                        }
+                        db.detach();
+                        console.timeEnd('cache-process');
+                    });
+
+                } catch (txErr) {
+                    console.error(">>> [AUTO ERROR] Rollback devido a erro:", txErr);
+                    transaction.rollback();
+                    db.detach();
+                }
+            });
+
+        } catch (procErr) {
+            console.error(">>> [AUTO ERROR] Erro no processo:", procErr);
+            db.detach();
+        }
+    });
+};
+
+// --- ROTAS ---
+
+app.get('/daily-meta-suggestions', (req, res) => {
+    // Rota Otimizada: Lê apenas do Cache
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.status(500).json({ error: 'Erro Conexão' });
+
+        const sql = `
+            SELECT BLOCK_ID, PRO_COD, SKU, NOME, MARCA, SALDO, LOCALIZACAO, TIPO_SUGESTAO 
+            FROM GRIDE_SUGESTOES_CACHE 
+            WHERE DATA_GERACAO = CURRENT_DATE 
+            ORDER BY BLOCK_ID, LOCALIZACAO
+        `;
+
+        db.query(sql, [], (err, result) => {
+            db.detach();
+            if (err) return res.status(500).json({ error: err.message });
+
+            // Agrupamento para formato do Frontend
             const groups = new Map();
             const todayFormatted = new Date().toLocaleDateString('pt-BR');
-            const highGiroSet = new Set(highGiroIds);
 
-            products.forEach(p => {
-                // Chave de agrupamento: Similar ID ou o próprio PRO_COD se não houver similar
-                const similarId = p.PRO_COD_SIMILAR ? String(p.PRO_COD_SIMILAR).trim() : String(p.PRO_COD).trim();
+            result.forEach(r => {
+                const bId = safeString(r.BLOCK_ID);
+                if (!groups.has(bId)) {
+                    groups.set(bId, {
+                        id: bId,
+                        items: [],
+                        isGiro: false
+                    });
+                }
+                const group = groups.get(bId);
                 
-                if (!groups.has(similarId)) groups.set(similarId, []);
-                
-                groups.get(similarId).push({
-                    id: String(p.PRO_COD).trim(), 
-                    db_pro_cod: p.PRO_COD, 
-                    name: String(p.PRO_DESCRI || '').trim(), 
-                    ref: String(p.PRO_NRFABRICANTE || '').trim(), 
-                    brand: p.MAR_DESCRI ? String(p.MAR_DESCRI).trim() : 'SEM MARCA', 
-                    balance: parseFloat(p.PRO_EST_ATUAL || 0), 
-                    location: String(p.PRO_PRATELEIRA || 'GERAL').trim(), 
-                    inTreatment: false 
+                group.items.push({
+                    id: String(r.PRO_COD),
+                    db_pro_cod: r.PRO_COD,
+                    name: safeString(r.NOME),
+                    ref: safeString(r.SKU),
+                    brand: safeString(r.MARCA),
+                    balance: parseFloat(r.SALDO),
+                    location: safeString(r.LOCALIZACAO),
+                    inTreatment: false
                 });
+
+                if (safeString(r.TIPO_SUGESTAO) === 'Giro Alto') {
+                    group.isGiro = true;
+                }
             });
 
             const blocks = [];
-            groups.forEach((items, key) => {
-                // Verifica se algum item do bloco faz parte da lista de Giro Alto original
-                const isGiro = items.some(item => highGiroSet.has(item.db_pro_cod));
-                
+            groups.forEach((group, key) => {
                 blocks.push({
-                    id: key, 
-                    parentRef: items[0].ref || items[0].name, 
-                    location: items[0].location, 
-                    status: 'pending', 
-                    date: todayFormatted, 
-                    subcategory: isGiro ? 'Giro Alto' : 'Ciclo', 
-                    items: items,
+                    id: key,
+                    parentRef: group.items[0].ref || group.items[0].name,
+                    location: group.items[0].location,
+                    status: 'pending',
+                    date: todayFormatted,
+                    subcategory: group.isGiro ? 'Giro Alto' : 'Ciclo',
+                    items: group.items,
                     addedAt: new Date().toISOString()
                 });
             });
 
-            console.log('Blocos gerados:', blocks.length);
             res.json(blocks);
-        } catch (e) {
-            console.error('ERRO NA QUERY DA META:', e);
-            if (db) db.detach();
-            res.status(500).json({ error: e.message });
-        }
+        });
     });
 });
 
@@ -779,6 +894,13 @@ app.post('/delete-warehouse', (req, res) => {
 const startServer = async () => {
     try {
         await initDb();
+        
+        // Inicializa a Meta (Primeira Execução)
+        refreshMetaCache();
+        
+        // Agendamento: A cada 1 Hora
+        setInterval(refreshMetaCache, 60 * 60 * 1000);
+
         app.listen(port, '0.0.0.0', () => {
             console.log(`Servidor GRIDE Firebird rodando em http://localhost:${port}`);
         });
