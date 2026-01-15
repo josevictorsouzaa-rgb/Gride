@@ -3,10 +3,13 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Icon } from '../components/Icon';
 import { Screen, Block } from '../types';
 import { ItemDetailModal } from '../components/ItemDetailModal';
+import { getSettings } from '../data/settingsStore';
+import { api } from '../services/api';
+import { AutoPartsLoader } from '../components/AutoPartsLoader';
 
 interface ListScreenProps {
   onNavigate: (screen: Screen) => void;
-  blocks: Block[];
+  blocks: Block[]; // Ainda aceita props para compatibilidade com outros modos, mas sobrescrevemos para daily_meta
   segmentFilter: string | null;
   onReserveBlock: (id: number) => void;
   onClearFilter: () => void;
@@ -37,7 +40,7 @@ type TimeFilter = 'all' | '7_days' | '15_days' | '30_days' | 'never';
 
 export const ListScreen: React.FC<ListScreenProps> = ({ 
   onNavigate, 
-  blocks, 
+  blocks: propBlocks, 
   segmentFilter, 
   onReserveBlock,
   onClearFilter,
@@ -45,12 +48,35 @@ export const ListScreen: React.FC<ListScreenProps> = ({
   page = 1,
   onPageChange
 }) => {
+  const [localBlocks, setLocalBlocks] = useState<Block[]>(propBlocks);
+  const [isLoading, setIsLoading] = useState(false);
   const [showAllBlocks, setShowAllBlocks] = useState(false);
   const [expandedBlocks, setExpandedBlocks] = useState<number[]>([]);
   const [selectedItem, setSelectedItem] = useState<any | null>(null); // Detail Modal State
   
   const [searchText, setSearchText] = useState('');
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all');
+
+  // Load Smart Meta if in daily_meta mode
+  useEffect(() => {
+    if (mode === 'daily_meta') {
+        const fetchSmartMeta = async () => {
+            setIsLoading(true);
+            const settings = getSettings();
+            try {
+                const smartBlocks = await api.getDailyMeta(settings);
+                setLocalBlocks(smartBlocks);
+            } catch (e) {
+                console.error("Falha ao carregar meta inteligente", e);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        fetchSmartMeta();
+    } else {
+        setLocalBlocks(propBlocks);
+    }
+  }, [mode, propBlocks]);
 
   // Scroll to top on page change targeting the main container
   useEffect(() => {
@@ -75,7 +101,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
   };
 
   const filteredBlocks = useMemo(() => {
-    return blocks.filter(block => {
+    return localBlocks.filter(block => {
       // 0. Base Status Check
       // Apenas esconde 'progress' (que significa que EU ou OUTRO já reservou neste momento)
       if (block.status === 'progress') return false; 
@@ -120,7 +146,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
 
       return true;
     });
-  }, [blocks, segmentFilter, searchText, timeFilter, mode]);
+  }, [localBlocks, segmentFilter, searchText, timeFilter, mode]);
 
   const displayedBlocks = showAllBlocks || mode === 'browse' ? filteredBlocks : filteredBlocks.slice(0, 10);
 
@@ -128,6 +154,10 @@ export const ListScreen: React.FC<ListScreenProps> = ({
      if (mode === 'daily_meta') return 'Meta Diária';
      return segmentFilter || 'Explorar Estoque';
   };
+
+  if (isLoading && mode === 'daily_meta') {
+      return <AutoPartsLoader message="Gerando Meta Inteligente..." fullScreen={false} />;
+  }
 
   return (
     <div className="relative flex flex-col w-full min-h-screen pb-24 md:pb-0 bg-background-light dark:bg-background-dark md:bg-transparent">
@@ -154,7 +184,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
           <div className="flex-1 md:text-left text-center pr-2 md:pr-0">
             <h2 className="text-lg font-bold leading-tight">{getPageTitle()}</h2>
             <p className="text-xs text-gray-500 dark:text-gray-400">
-               {filteredBlocks.length} blocos disponíveis
+               {filteredBlocks.length} blocos sugeridos
             </p>
           </div>
           
@@ -232,6 +262,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                   
                   // VERIFICAR IMPEDIMENTOS
                   const hasTreatmentItems = block.items.some((i: any) => i.inTreatment);
+                  const isGiro = block.subcategory === 'Giro Alto';
 
                   return (
                     <div key={block.id} className="bg-white dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-card-border shadow-sm p-4 flex flex-col gap-3 animate-fade-in">
@@ -241,6 +272,15 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                           <span className="font-bold text-orange-600 dark:text-orange-400 text-sm bg-orange-500/10 px-2 py-0.5 rounded-md">
                               {block.parentRef}
                           </span>
+                          
+                          {/* Tag de Inteligência */}
+                          {mode === 'daily_meta' && block.subcategory && (
+                             <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
+                                 isGiro ? 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-300' : 'bg-gray-100 text-gray-500 dark:bg-white/10'
+                             }`}>
+                                 {block.subcategory}
+                             </span>
+                          )}
                       </div>
 
                       {/* DETAILED Item List */}
