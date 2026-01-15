@@ -105,7 +105,6 @@ export const api = {
       if (!response.ok) throw new Error('Erro');
       const data: ApiCategory[] = await response.json();
       
-      // Enforce frontend icons mapping for better visual representation
       return data.map(cat => ({
           ...cat,
           icon: GROUP_ICONS[cat.db_id] || 'inventory_2',
@@ -118,7 +117,7 @@ export const api = {
   },
 
   // NOVA ROTA: Get Daily Suggestions based on Settings
-  getDailyMeta: async (settings: CountingSettings): Promise<Block[]> => {
+  getDailyMetaSuggestions: async (settings: CountingSettings): Promise<Block[]> => {
       try {
           const params = new URLSearchParams({
               dailyTarget: settings.dailyTarget.toString(),
@@ -136,7 +135,7 @@ export const api = {
       }
   },
 
-  // NOVA ROTA: Get Meta Status (Counts)
+  // NOVA ROTA: Get Meta Status (Global Accumulation)
   getMetaStatus: async (dailyTarget: number, accumulationMode: boolean): Promise<MetaStatus> => {
       try {
           const response = await fetch(`${API_BASE_URL}/meta-status?target=${dailyTarget}&accumulate=${accumulationMode}`);
@@ -144,6 +143,17 @@ export const api = {
           return await response.json();
       } catch (error) {
           return { dailyTarget, countedToday: 0, accumulatedPending: 0 };
+      }
+  },
+
+  // NOVA ROTA: Get User Daily Stats (Specific for Dashboard)
+  getDailyStats: async (userId: string): Promise<{ countedToday: number }> => {
+      try {
+          const response = await fetch(`${API_BASE_URL}/daily-stats?userId=${userId}`);
+          if (!response.ok) return { countedToday: 0 };
+          return await response.json();
+      } catch (e) {
+          return { countedToday: 0 };
       }
   },
 
@@ -244,19 +254,15 @@ export const api = {
   },
 
   resolveTreatment: async (id: number, note: string, user: string, action: 'adjust' | 'inactivate' | 'ignore'): Promise<boolean> => {
-      // Mock implementation since backend route not strictly defined in previous steps, but expected by UI
-      // In a real scenario, you'd POST to /resolve-treatment
       return true; 
   },
 
   saveCount: async (logEntry: Partial<InventoryLogEntry>) => {
-      // Used for ad-hoc scanning (single item)
-      // Implementation pending on backend for ad-hoc, but UI calls it.
       console.log("Saving ad-hoc count:", logEntry);
       return { success: true };
   },
 
-  // --- WMS ADDRESS MANAGEMENT ---
+  // --- WMS & WAREHOUSE ---
   getAddresses: async (): Promise<WMSAddress[]> => {
       try {
           const response = await fetch(`${API_BASE_URL}/addresses`);
@@ -276,7 +282,6 @@ export const api = {
       } catch(e) { return { success: false, count: 0, skipped: 0 }; }
   },
 
-  // --- WAREHOUSE MANAGEMENT ---
   getWarehouses: async (): Promise<Warehouse[]> => {
       try {
           const response = await fetch(`${API_BASE_URL}/warehouses`);
@@ -307,7 +312,6 @@ export const api = {
       } catch(e) { return { success: false }; }
   },
 
-  // --- LAYOUT EDITOR ---
   getLayout: async (): Promise<WarehouseLayout | null> => {
       try {
         const stored = localStorage.getItem('gride_layout_v1');

@@ -28,7 +28,6 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   categories,
   treatmentCount = 0
 }) => {
-  // Use AutoPartsLoader when categories are not yet loaded
   if (!categories || !Array.isArray(categories) || categories.length === 0) { 
       return <AutoPartsLoader message="Carregando Categorias..." fullScreen={false} />;
   }
@@ -36,49 +35,46 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   const [showAllCategories, setShowAllCategories] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
   const [metaStatus, setMetaStatus] = useState<MetaStatus>({ dailyTarget: 150, countedToday: 0, accumulatedPending: 0 });
+  const [userDailyCount, setUserDailyCount] = useState(0);
 
   useEffect(() => {
-    const checkDesktop = () => {
-      setIsDesktop(window.innerWidth >= 1024);
-    };
+    const checkDesktop = () => setIsDesktop(window.innerWidth >= 1024);
     checkDesktop();
     window.addEventListener('resize', checkDesktop);
     
-    // Load Meta Status
+    // --- LOAD REAL DATA ---
     const loadStatus = async () => {
         const settings = getSettings();
+        // 1. Status Global da Meta
         const status = await api.getMetaStatus(settings.dailyTarget, settings.accumulationMode);
         setMetaStatus(status);
+
+        // 2. Contagem Individual do Usuário (Query Real)
+        if (currentUser) {
+            const stats = await api.getDailyStats(currentUser.id);
+            setUserDailyCount(stats.countedToday);
+        }
     };
     loadStatus();
 
     return () => window.removeEventListener('resize', checkDesktop);
-  }, []);
+  }, [currentUser]);
 
-  const displayedCategories = (isDesktop || showAllCategories) 
-    ? (categories || []) 
-    : (categories || []).slice(0, 6);
+  const displayedCategories = (isDesktop || showAllCategories) ? categories : categories.slice(0, 6);
 
-  const { dailyTarget, countedToday, accumulatedPending } = metaStatus;
+  // Usar dailyTarget das configurações, mas a contagem do usuário logado
+  const { dailyTarget, accumulatedPending } = metaStatus;
+  const countedToday = userDailyCount; 
   
-  // Se houver acumulado, a meta visual do dia aumenta? 
-  // O prompt pede para "saldo restante deve ser somado à meta de hoje" (visualmente ou logicamente?)
-  // Visualmente no gráfico: Fatia Verde (Contado), Fatia Vermelha (Pendente Atrasado), Fatia Cinza (Restante Hoje)
-  
-  // Total Visual do Gráfico = Target + Accumulated
   const effectiveTarget = dailyTarget + accumulatedPending;
   const progressPercent = effectiveTarget > 0 ? Math.min(100, Math.round((countedToday / effectiveTarget) * 100)) : 0;
   
-  const remainingToday = Math.max(0, dailyTarget - (countedToday - Math.max(0, countedToday - accumulatedPending))); 
-  // Simplified logic for chart data:
-  // 1. Counted Today (Green)
-  // 2. Accumulated Pending (Red) - Only shows what is NOT yet counted of the accumulated pile? 
-  //    Actually, accumulation adds to the TO-DO list.
+  const pendingAccumulated = Math.max(0, accumulatedPending); 
   
   const goalData = [
-    { name: 'Contado', value: countedToday, color: '#137fec' }, // Blue/Green
-    { name: 'Acumulado', value: accumulatedPending, color: '#ef4444' }, // Red (Debt)
-    { name: 'Restante Dia', value: Math.max(0, dailyTarget - Math.max(0, countedToday - accumulatedPending)), color: '#33415520' } // Gray
+    { name: 'Contado', value: countedToday, color: '#137fec' }, // Azul
+    { name: 'Acumulado', value: pendingAccumulated, color: '#ef4444' }, // Vermelho
+    { name: 'Restante', value: Math.max(0, effectiveTarget - countedToday - pendingAccumulated), color: '#33415520' } // Cinza
   ];
 
   return (
@@ -123,7 +119,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
       <main className="flex flex-col p-4 md:px-8 md:pb-8 gap-6 md:grid md:grid-cols-3">
         
-        {/* KPI: Daily Goal Card (UPDATED) */}
+        {/* KPI: Daily Goal Card */}
         <div 
             onClick={() => onNavigate('list')}
             className="md:col-span-1 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border p-5 relative overflow-hidden group hover:border-primary/50 transition-all duration-300 cursor-pointer hover:shadow-md"
@@ -181,11 +177,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
                 <div className="p-2 rounded-lg bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400">
                    <Icon name="report_problem" />
                 </div>
-                <button 
-                  className="text-xs font-bold text-primary hover:underline"
-                >
-                  Resolver
-                </button>
+                <button className="text-xs font-bold text-primary hover:underline">Resolver</button>
              </div>
              <h3 className="text-2xl font-bold text-gray-900 dark:text-white mt-2">{treatmentCount}</h3>
              <p className="text-xs text-gray-500 font-medium">Divergências pendentes</p>
