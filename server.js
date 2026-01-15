@@ -321,7 +321,7 @@ app.get('/daily-stats/:userId', (req, res) => {
     });
 });
 
-// --- SUGESTÕES INTELIGENTES (COM BLOCO COMPLETO E ADDEDAT) ---
+// --- SUGESTÕES INTELIGENTES (COM ADDEDAT) ---
 app.get('/daily-meta-suggestions', (req, res) => {
     const dailyTarget = parseInt(req.query.dailyTarget) || 150;
     const cooldownDays = parseInt(req.query.cooldownDays) || 30;
@@ -367,18 +367,7 @@ app.get('/daily-meta-suggestions', (req, res) => {
             if (finalIds.length === 0) { db.detach(); return res.json([]); }
 
             const finalIdsStr = finalIds.join(',');
-            
-            // Query ajustada para trazer todos os itens relacionados por PRO_COD_SIMILAR (Bloco Completo)
-            const sqlDetails = `
-                SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, M.MAR_DESCRI, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE, P.PRO_PRATELEIRA
-                FROM PRODUTOS P 
-                LEFT JOIN MARCAS M ON (M.MAR_COD = P.MAR_COD)
-                WHERE P.PRO_COD IN (${finalIdsStr}) 
-                   OR P.PRO_COD_SIMILAR IN (SELECT DISTINCT PRO_COD_SIMILAR FROM PRODUTOS WHERE PRO_COD IN (${finalIdsStr}) AND PRO_COD_SIMILAR IS NOT NULL AND PRO_COD_SIMILAR <> '')
-                   OR P.PRO_COD IN (SELECT DISTINCT PRO_COD_SIMILAR FROM PRODUTOS WHERE PRO_COD IN (${finalIdsStr}) AND PRO_COD_SIMILAR IS NOT NULL AND PRO_COD_SIMILAR <> '')
-                ORDER BY P.PRO_PRATELEIRA
-            `;
-
+            const sqlDetails = `SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, M.MAR_DESCRI, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE, P.PRO_PRATELEIRA FROM PRODUTOS P LEFT JOIN MARCAS M ON (M.MAR_COD = P.MAR_COD) WHERE P.PRO_COD IN (${finalIdsStr}) ORDER BY P.PRO_PRATELEIRA`;
             const products = await execute(db, sqlDetails);
             db.detach();
 
