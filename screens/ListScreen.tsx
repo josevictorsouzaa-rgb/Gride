@@ -42,7 +42,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
   onNavigate, 
   blocks: propBlocks, 
   segmentFilter, 
-  onReserveBlock, 
+  onReserveBlock,
   onClearFilter,
   mode = 'daily_meta',
   page = 1,
@@ -64,8 +64,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
             setIsLoading(true);
             const settings = getSettings();
             try {
-                // Corrected API method call
-                const smartBlocks = await api.getDailyMetaSuggestions(settings);
+                const smartBlocks = await api.getDailyMeta(settings);
                 setLocalBlocks(smartBlocks);
             } catch (e) {
                 console.error("Falha ao carregar meta inteligente", e);
