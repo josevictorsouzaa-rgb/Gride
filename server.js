@@ -108,7 +108,7 @@ const initDb = () => {
                     "Tabela Galpões"
                 );
 
-                // 2. Tabela de Reservas
+                // 2. Tabela de Reservas (Atualizado: USU_COD, PRO_COD)
                 await safeExecute(db, 
                     `CREATE TABLE GRIDE_RESERVAS (
                         BLOCK_ID VARCHAR(50) NOT NULL PRIMARY KEY, 
@@ -128,7 +128,7 @@ const initDb = () => {
                     "Coluna PRO_COD em Reservas"
                 );
 
-                // 3. Tabela de Logs
+                // 3. Tabela de Logs (Atualizado: USU_COD, PRO_NRFABRICANTE, PRO_COD, Status PT-BR)
                 await safeExecute(db, 
                     `CREATE TABLE GRIDE_INVENTARIO_LOG (
                         ID INTEGER NOT NULL PRIMARY KEY, 
@@ -150,7 +150,7 @@ const initDb = () => {
                 await safeExecute(db, `ALTER TABLE GRIDE_INVENTARIO_LOG ADD PRO_COD INTEGER`, "Coluna PRO_COD em Logs");
                 await safeExecute(db, `ALTER TABLE GRIDE_INVENTARIO_LOG ADD PRO_NRFABRICANTE VARCHAR(50)`, "Coluna PRO_NRFABRICANTE em Logs");
 
-                // 4. Tabela de Tratamento
+                // 4. Tabela de Tratamento (Atualizado: PRO_COD, PRO_NRFABRICANTE)
                 await safeExecute(db, 
                     `CREATE TABLE GRIDE_TRATAMENTO (
                         ID INTEGER NOT NULL PRIMARY KEY, 
@@ -197,13 +197,14 @@ const initDb = () => {
 
 // --- ROTAS DA API ---
 
-// 1. Identificação do Usuário
+// 1. Identificação do Usuário (Query via USU_COD)
 app.get('/user-name/:id', (req, res) => {
     const { id } = req.params;
     if (id === '9999') return res.json({ name: 'Gestor de Teste' });
     if (id === '8888') return res.json({ name: 'Colaborador Teste' });
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro DB' });
+        // Alterado para USU_COD
         db.query(`SELECT USU_NOME FROM USUARIOS WHERE USU_COD = ? AND USU_ATIVO = 'S'`, [id], (err, result) => {
             db.detach();
             if (!err && result.length > 0) res.json({ name: safeString(result[0].USU_NOME) });
@@ -212,9 +213,11 @@ app.get('/user-name/:id', (req, res) => {
     });
 });
 
-// 2. Login
+// 2. Login (Query via USU_COD)
 app.post('/login', (req, res) => {
     const { usuario_id, senha } = req.body;
+    // usuario_id do body mapeia para USU_COD
+    
     if (usuario_id === '9999' && senha === 'admin') return res.json({ success: true, user: { id: '9999', name: 'Gestor', role: 'Gerente', isAdmin: true } });
     if (usuario_id === '8888' && senha === 'user') return res.json({ success: true, user: { id: '8888', name: 'Colaborador', role: 'Conferente', isAdmin: false } });
 
@@ -236,19 +239,20 @@ app.post('/login', (req, res) => {
     });
 });
 
-// 3. Lista de Usuários
+// 3. Lista de Usuários (Map USU_COD -> id)
 app.get('/users', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json([]);
         db.query(`SELECT USU_COD, USU_NOME FROM USUARIOS WHERE USU_ATIVO = 'S' ORDER BY USU_NOME`, [], (err, result) => {
             db.detach();
             if (err) return res.json([]);
+            // Frontend espera 'id'
             res.json(result.map(u => ({ id: u.USU_COD.toString(), name: safeString(u.USU_NOME), role: 'Colaborador', avatar: '', canTreat: false })));
         });
     });
 });
 
-// 4. Categorias
+// 4. Categorias (Mantido, não usa tabelas de usuário/log)
 app.get('/categories', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json([]);
@@ -291,28 +295,7 @@ app.get('/categories', (req, res) => {
     });
 });
 
-// --- ROTA DE ESTATÍSTICAS DIÁRIAS (Correção Solicitada) ---
-app.get('/daily-stats/:userId', (req, res) => {
-    const { userId } = req.params;
-    if (!userId) return res.json({ countedToday: 0 });
-
-    Firebird.attach(options, async (err, db) => {
-        if (err) return res.status(500).json({ countedToday: 0 });
-        try {
-            // Sintaxe exata solicitada: CAST(DATA_HORA as DATE) = CURRENT_DATE
-            const sql = `SELECT COUNT(*) as TOTAL FROM GRIDE_INVENTARIO_LOG WHERE USU_COD = ? AND CAST(DATA_HORA as DATE) = CURRENT_DATE`;
-            const result = await execute(db, sql, [userId]);
-            db.detach();
-            res.json({ countedToday: result[0].TOTAL });
-        } catch (e) {
-            db.detach();
-            console.error("Erro stats:", e);
-            res.json({ countedToday: 0 });
-        }
-    });
-});
-
-// --- SUGESTÕES INTELIGENTES (Correção DATEADD -> CURRENT_DATE) ---
+// --- NOVA ROTA: SUGESTÕES INTELIGENTES DE META DIÁRIA ---
 app.get('/daily-meta-suggestions', (req, res) => {
     const dailyTarget = parseInt(req.query.dailyTarget) || 150;
     const cooldownDays = parseInt(req.query.cooldownDays) || 30;
@@ -323,57 +306,68 @@ app.get('/daily-meta-suggestions', (req, res) => {
         if (err) return res.status(500).json({ error: 'Erro DB' });
 
         try {
-            // 1. Calcula Meta Acumulada
+            // 1. Calcula Meta Acumulada se necessário
             let effectiveTarget = dailyTarget;
             if (accumulationMode) {
-                // FIXED: CURRENT_DATE - 3
+                // Cálculo simples: Pega os últimos 3 dias, vê se bateu a meta.
+                // Se não, soma. (Simulação rápida via SQL logs)
                 const pendingSql = `
                     SELECT COUNT(*) as COUNTED 
                     FROM GRIDE_INVENTARIO_LOG 
-                    WHERE DATA_HORA >= CURRENT_DATE - 3
+                    WHERE DATA_HORA >= DATEADD(-3 DAY TO CURRENT_DATE)
                     AND DATA_HORA < CURRENT_DATE
                 `;
                 const logsResult = await execute(db, pendingSql);
                 const countedLast3Days = logsResult[0].COUNTED;
                 const expectedLast3Days = dailyTarget * 3;
+                
                 const deficit = Math.max(0, expectedLast3Days - countedLast3Days);
+                // Limita o déficit para não explodir a meta de um dia só (max +50%)
                 const cappedDeficit = Math.min(deficit, Math.floor(dailyTarget * 0.5));
+                
                 effectiveTarget += cappedDeficit;
             }
 
-            // 2. Busca Exclusões
-            const exclusionSql = `SELECT PRO_COD FROM GRIDE_RESERVAS UNION SELECT PRO_COD FROM GRIDE_TRATAMENTO WHERE STATUS = 'PENDING'`;
+            // 2. Busca Exclusões (Reservados ou Tratamento)
+            // Firebird legado não curte NOT IN (subquery) pesados, mas ok para volumes pequenos.
+            const exclusionSql = `
+                SELECT PRO_COD FROM GRIDE_RESERVAS
+                UNION
+                SELECT PRO_COD FROM GRIDE_TRATAMENTO WHERE STATUS = 'PENDING'
+            `;
             const exclusions = await execute(db, exclusionSql);
             const excludedIds = exclusions.map(r => r.PRO_COD).filter(id => id).join(',');
+            
             const exclusionClause = excludedIds ? `AND P.PRO_COD NOT IN (${excludedIds})` : '';
 
-            // 3. FILA 1: GIRO ALTO
+            // 3. FILA 1: GIRO ALTO (Baseado em PEDIDOSITENS)
+            // Tenta verificar se a tabela existe primeiro, ou envolve em try/catch na execução
             let highGiroIds = [];
             try {
-                // FIXED: CURRENT_DATE - 30, CURRENT_DATE - cooldown
+                // Seleciona itens com X saídas nos últimos 30 dias E que não foram contados recentemente (cooldown)
                 const sqlGiro = `
                     SELECT FIRST ${Math.floor(effectiveTarget * 0.4)} P.PRO_COD
                     FROM PEDIDOSITENS PI
                     JOIN PRODUTOS P ON P.PRO_COD = PI.PRO_COD
                     LEFT JOIN GRIDE_INVENTARIO_LOG L ON L.PRO_COD = P.PRO_COD
-                    WHERE PI.DATA >= CURRENT_DATE - 30
+                    WHERE PI.DATA >= DATEADD(-30 DAY TO CURRENT_DATE)
                     ${exclusionClause}
                     GROUP BY P.PRO_COD
                     HAVING COUNT(*) >= ${highGiroThreshold}
-                    AND (MAX(L.DATA_HORA) IS NULL OR MAX(L.DATA_HORA) < CURRENT_DATE - ${cooldownDays})
+                    AND (MAX(L.DATA_HORA) IS NULL OR MAX(L.DATA_HORA) < DATEADD(-${cooldownDays} DAY TO CURRENT_DATE))
                 `;
                 const giroResult = await execute(db, sqlGiro);
                 highGiroIds = giroResult.map(r => r.PRO_COD);
             } catch (e) {
-                console.warn("Erro Giro:", e.message);
+                console.warn("Tabela PEDIDOSITENS não disponível ou erro de query. Pulando Giro.", e.message);
             }
 
-            // 4. FILA 2: CICLO
+            // 4. FILA 2: CICLO (Antiguidade)
+            // Preenche o restante da meta com itens nunca contados ou contados há mais tempo
             const neededForCycle = effectiveTarget - highGiroIds.length;
             const skipIds = [...highGiroIds, ...(excludedIds ? excludedIds.split(',') : [])].filter(x => x).join(',');
             const skipClause = skipIds ? `AND P.PRO_COD NOT IN (${skipIds})` : '';
 
-            // FIXED: CURRENT_DATE - cooldown
             const sqlCycle = `
                 SELECT FIRST ${neededForCycle} P.PRO_COD
                 FROM PRODUTOS P
@@ -381,7 +375,6 @@ app.get('/daily-meta-suggestions', (req, res) => {
                 WHERE P.PRO_ATIVO = 'S'
                 ${skipClause}
                 GROUP BY P.PRO_COD
-                HAVING (MAX(L.DATA_HORA) IS NULL OR MAX(L.DATA_HORA) < CURRENT_DATE - ${cooldownDays})
                 ORDER BY MAX(L.DATA_HORA) ASC NULLS FIRST
             `;
             
@@ -395,7 +388,7 @@ app.get('/daily-meta-suggestions', (req, res) => {
                 return res.json([]);
             }
 
-            // 5. Busca detalhes
+            // 5. Busca detalhes dos blocos finais
             const finalIdsStr = finalIds.join(',');
             const sqlDetails = `
                 SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, M.MAR_DESCRI, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE, P.LOCALIZACAO
@@ -408,25 +401,38 @@ app.get('/daily-meta-suggestions', (req, res) => {
             const products = await execute(db, sqlDetails);
             db.detach();
 
-            // 6. Formata
+            // 6. Formata para Block[]
             const groups = new Map();
             products.forEach(p => {
                 const similarId = p.PRO_COD_SIMILAR ? safeString(p.PRO_COD_SIMILAR).trim() : safeString(p.PRO_COD).trim();
                 const sku = safeString(p.PRO_NRFABRICANTE).trim();
+
                 if (!groups.has(similarId)) groups.set(similarId, []);
+                
                 groups.get(similarId).push({
-                    id: safeString(p.PRO_COD).trim(), db_pro_cod: p.PRO_COD, name: safeString(p.PRO_DESCRI), ref: sku, 
-                    brand: p.MAR_DESCRI ? safeString(p.MAR_DESCRI) : 'SEM MARCA', balance: parseFloat(p.PRO_EST_ATUAL || 0), 
-                    location: safeString(p.LOCALIZACAO) || 'GERAL', inTreatment: false
+                    id: safeString(p.PRO_COD).trim(), 
+                    db_pro_cod: p.PRO_COD, 
+                    name: safeString(p.PRO_DESCRI), 
+                    ref: sku, 
+                    brand: p.MAR_DESCRI ? safeString(p.MAR_DESCRI) : 'SEM MARCA',
+                    balance: parseFloat(p.PRO_EST_ATUAL || 0), 
+                    location: safeString(p.LOCALIZACAO) || 'GERAL', 
+                    inTreatment: false // Já filtrado na query
                 });
             });
 
             const blocks = [];
             groups.forEach((items, key) => {
+                // Adiciona tag para identificar origem na UI (Opcional)
                 const isGiro = highGiroIds.includes(items[0].db_pro_cod);
                 blocks.push({
-                    id: key, parentRef: items[0].ref || items[0].name, location: items[0].location, status: 'pending', date: 'Hoje', 
-                    subcategory: isGiro ? 'Giro Alto' : 'Ciclo', items: items
+                    id: key, 
+                    parentRef: items[0].ref || items[0].name, 
+                    location: items[0].location, 
+                    status: 'pending', 
+                    date: 'Hoje', 
+                    subcategory: isGiro ? 'Giro Alto' : 'Ciclo', // Abuse subcategory field for UI tag
+                    items: items
                 });
             });
 
@@ -440,7 +446,7 @@ app.get('/daily-meta-suggestions', (req, res) => {
     });
 });
 
-// --- STATUS DA META (Dashboard) ---
+// --- NOVA ROTA: STATUS DA META (Dashboard) ---
 app.get('/meta-status', (req, res) => {
     const dailyTarget = parseInt(req.query.target) || 150;
     const accumulate = req.query.accumulate === 'true';
@@ -449,24 +455,32 @@ app.get('/meta-status', (req, res) => {
         if (err) return res.status(500).json({ dailyTarget, countedToday: 0, accumulatedPending: 0 });
 
         try {
-            // FIXED: CAST(DATA_HORA as DATE) = CURRENT_DATE
-            const sqlToday = `SELECT COUNT(*) as TOTAL FROM GRIDE_INVENTARIO_LOG WHERE CAST(DATA_HORA AS DATE) = CURRENT_DATE`;
+            // 1. Contados Hoje
+            const sqlToday = `
+                SELECT COUNT(*) as TOTAL 
+                FROM GRIDE_INVENTARIO_LOG 
+                WHERE CAST(DATA_HORA AS DATE) = CAST('NOW' AS DATE)
+            `;
             const todayRes = await execute(db, sqlToday);
             const countedToday = todayRes[0].TOTAL;
 
+            // 2. Acumulado (Se ativado)
             let accumulatedPending = 0;
             if (accumulate) {
-                // FIXED: CURRENT_DATE - 3
+                // Pega os últimos 3 dias (exclui hoje)
+                // Se contou menos que a meta nesses dias, soma o déficit
+                // Simplificação: (3 * target) - (total contado nos ultimos 3 dias excl. hoje)
                 const sqlPast = `
                     SELECT COUNT(*) as TOTAL
                     FROM GRIDE_INVENTARIO_LOG
-                    WHERE DATA_HORA >= CURRENT_DATE - 3
-                    AND DATA_HORA < CURRENT_DATE
+                    WHERE DATA_HORA >= DATEADD(-3 DAY TO CAST('NOW' AS DATE))
+                    AND DATA_HORA < CAST('NOW' AS DATE)
                 `;
                 const pastRes = await execute(db, sqlPast);
                 const pastCount = pastRes[0].TOTAL;
                 const pastTarget = dailyTarget * 3; 
                 accumulatedPending = Math.max(0, pastTarget - pastCount);
+                // Cap em 50% da meta diária para não desanimar
                 accumulatedPending = Math.min(accumulatedPending, Math.floor(dailyTarget * 0.5));
             }
 
@@ -480,7 +494,7 @@ app.get('/meta-status', (req, res) => {
     });
 });
 
-// 5. Blocos
+// 5. Blocos (Listagem Principal - Modificado para aceitar location e filtros)
 app.get('/blocks', (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 100;
@@ -493,20 +507,31 @@ app.get('/blocks', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro Conexão' });
         
+        // Buscar Reservas
         db.query('SELECT BLOCK_ID, USU_COD, USER_NAME, RESERVED_AT FROM GRIDE_RESERVAS', [], (errRes, reservations) => {
             const lockMap = new Map();
             if (!errRes && reservations) {
                 reservations.forEach(r => lockMap.set(safeString(r.BLOCK_ID), { 
-                    userId: safeString(r.USU_COD), userName: safeString(r.USER_NAME), timestamp: r.RESERVED_AT 
+                    userId: safeString(r.USU_COD), 
+                    userName: safeString(r.USER_NAME), 
+                    timestamp: r.RESERVED_AT 
                 }));
             }
 
+            // Buscar Tratamento
             db.query("SELECT PRO_NRFABRICANTE FROM GRIDE_TRATAMENTO WHERE STATUS = 'PENDING'", [], (errTreat, treatments) => {
                 const treatmentSet = new Set();
                 if (!errTreat && treatments) treatments.forEach(t => treatmentSet.add(safeString(t.PRO_NRFABRICANTE)));
 
-                let sql = `SELECT FIRST ? SKIP ? P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, M.MAR_DESCRI, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE, P.LOCALIZACAO FROM PRODUTOS P LEFT JOIN MARCAS M ON (M.MAR_COD = P.MAR_COD) WHERE P.PRO_ATIVO = 'S'`;
-                const params = [limit * 20, skip]; 
+                // Query Principal em PRODUTOS com LEFT JOIN MARCAS
+                let sql = `
+                    SELECT FIRST ? SKIP ? 
+                    P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, M.MAR_DESCRI, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE, P.LOCALIZACAO 
+                    FROM PRODUTOS P 
+                    LEFT JOIN MARCAS M ON (M.MAR_COD = P.MAR_COD)
+                    WHERE P.PRO_ATIVO = 'S'
+                `;
+                const params = [limit * 20, skip]; // Fetch extra rows to group later
 
                 if (search) { sql += ` AND (P.PRO_DESCRI CONTAINING ? OR P.PRO_NRFABRICANTE CONTAINING ?)`; params.push(search); params.push(search); }
                 if (gr_cod !== null) { sql += ` AND TRIM(P.GR_COD) = ?`; params.push(gr_cod); }
@@ -523,11 +548,18 @@ app.get('/blocks', (req, res) => {
                     products.forEach(p => {
                         const similarId = p.PRO_COD_SIMILAR ? safeString(p.PRO_COD_SIMILAR) : safeString(p.PRO_COD);
                         const sku = safeString(p.PRO_NRFABRICANTE); 
+                        
                         if (!groups.has(similarId)) groups.set(similarId, []);
+                        
                         groups.get(similarId).push({
-                            id: safeString(p.PRO_COD), db_pro_cod: p.PRO_COD, name: safeString(p.PRO_DESCRI), ref: sku, 
-                            brand: p.MAR_DESCRI ? safeString(p.MAR_DESCRI) : 'SEM MARCA', balance: parseFloat(p.PRO_EST_ATUAL || 0), 
-                            location: safeString(p.LOCALIZACAO) || 'GERAL', inTreatment: treatmentSet.has(sku)
+                            id: safeString(p.PRO_COD), 
+                            db_pro_cod: p.PRO_COD, 
+                            name: safeString(p.PRO_DESCRI), 
+                            ref: sku, 
+                            brand: p.MAR_DESCRI ? safeString(p.MAR_DESCRI) : 'SEM MARCA',
+                            balance: parseFloat(p.PRO_EST_ATUAL || 0), 
+                            location: safeString(p.LOCALIZACAO) || 'GERAL', 
+                            inTreatment: treatmentSet.has(sku)
                         });
                     });
                     
@@ -535,8 +567,13 @@ app.get('/blocks', (req, res) => {
                     groups.forEach((items, key) => {
                         const isLocked = lockMap.get(key);
                         blocks.push({
-                            id: key, parentRef: items[0].ref || items[0].name, location: items[0].location, status: isLocked ? 'progress' : 'pending', 
-                            date: 'Hoje', items: items, lockedBy: isLocked
+                            id: key, 
+                            parentRef: items[0].ref || items[0].name, 
+                            location: items[0].location, 
+                            status: isLocked ? 'progress' : 'pending', 
+                            date: 'Hoje', 
+                            items: items, 
+                            lockedBy: isLocked
                         });
                     });
                     res.json(blocks.slice(0, limit));
@@ -546,17 +583,20 @@ app.get('/blocks', (req, res) => {
     });
 });
 
-// 6. Blocos Reservados
+// 6. Blocos Reservados (Pelo Usuário)
 app.get('/reserved-blocks/:userId', (req, res) => {
-    const { userId } = req.params;
+    const { userId } = req.params; // userId aqui é o USU_COD vindo do front
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro DB' });
+        
+        // Query com USU_COD
         db.query('SELECT BLOCK_ID, USU_COD, USER_NAME, RESERVED_AT, ITEMS_JSON FROM GRIDE_RESERVAS WHERE TRIM(USU_COD) = ?', [userId], (err, reservations) => {
             if (err) { db.detach(); return res.json([]); }
             if (reservations.length === 0) { db.detach(); return res.json([]); }
             
             const blockIds = [];
             const progressMap = new Map();
+            
             reservations.forEach(r => {
                 const bId = safeString(r.BLOCK_ID).trim();
                 blockIds.push(bId);
@@ -564,7 +604,13 @@ app.get('/reserved-blocks/:userId', (req, res) => {
                 if (jsonStr) {
                     try {
                         const savedItems = JSON.parse(jsonStr);
-                        if (Array.isArray(savedItems)) savedItems.forEach(item => { progressMap.set(`${bId}-${String(item.ref).trim()}`, item); });
+                        if (Array.isArray(savedItems)) {
+                            savedItems.forEach(item => {
+                                const mappedStatus = FROM_DB_STATUS[item.status] || item.status || 'pending';
+                                item.status = mappedStatus;
+                                progressMap.set(`${bId}-${String(item.ref).trim()}`, item);
+                            });
+                        }
                     } catch (e) {}
                 }
             });
@@ -575,6 +621,7 @@ app.get('/reserved-blocks/:userId', (req, res) => {
                 if(!errTreat && treatments) treatments.forEach(t => treatmentSet.add(safeString(t.PRO_NRFABRICANTE).trim()));
 
                 const sql = `SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, P.MAR_COD, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE, P.LOCALIZACAO FROM PRODUTOS P WHERE P.PRO_ATIVO = 'S' AND (TRIM(P.PRO_COD_SIMILAR) IN (${idsList}) OR (P.PRO_COD_SIMILAR IS NULL AND TRIM(P.PRO_COD) IN (${idsList})))`;
+                
                 db.query(sql, [], (errProd, products) => {
                     db.detach();
                     if (errProd) return res.status(500).json({ error: errProd.message });
@@ -583,12 +630,21 @@ app.get('/reserved-blocks/:userId', (req, res) => {
                         const similarId = p.PRO_COD_SIMILAR ? safeString(p.PRO_COD_SIMILAR).trim() : safeString(p.PRO_COD).trim();
                         const sku = safeString(p.PRO_NRFABRICANTE).trim();
                         const savedProgress = progressMap.get(`${similarId}-${sku}`);
+                        
                         if (!groups.has(similarId)) groups.set(similarId, []);
                         groups.get(similarId).push({
-                            id: safeString(p.PRO_COD).trim(), db_pro_cod: p.PRO_COD, name: safeString(p.PRO_DESCRI), ref: sku, 
-                            brand: `MARCA ${p.MAR_COD}`, balance: parseFloat(p.PRO_EST_ATUAL || 0), location: safeString(p.LOCALIZACAO) || 'GERAL', 
-                            inTreatment: treatmentSet.has(sku), status: savedProgress?.status || 'pending', countedQty: savedProgress?.countedQty || 0, 
-                            divergenceReason: savedProgress?.divergenceReason || '', lastCount: savedProgress?.lastCount || null
+                            id: safeString(p.PRO_COD).trim(), 
+                            db_pro_cod: p.PRO_COD, 
+                            name: safeString(p.PRO_DESCRI), 
+                            ref: sku, 
+                            brand: `MARCA ${p.MAR_COD}`, 
+                            balance: parseFloat(p.PRO_EST_ATUAL || 0), 
+                            location: safeString(p.LOCALIZACAO) || 'GERAL', 
+                            inTreatment: treatmentSet.has(sku),
+                            status: savedProgress?.status || 'pending', 
+                            countedQty: savedProgress?.countedQty || 0, 
+                            divergenceReason: savedProgress?.divergenceReason || '', 
+                            lastCount: savedProgress?.lastCount || null
                         });
                     });
                     const blocks = [];
@@ -605,12 +661,22 @@ app.post('/reserve-block', (req, res) => {
     const { block_id, user_id, user_name } = req.body; 
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro DB' });
+        
         db.query(`SELECT 1 FROM GRIDE_TRATAMENTO WHERE PRO_NRFABRICANTE IN (SELECT PRO_NRFABRICANTE FROM PRODUTOS WHERE PRO_COD = ? OR PRO_COD_SIMILAR = ?) AND STATUS = 'PENDING'`, [block_id, block_id], (errT, treatResult) => {
-             if (!errT && treatResult && treatResult.length > 0) { db.detach(); return res.json({ success: false, message: 'Item em tratamento pendente.' }); }
+             if (!errT && treatResult && treatResult.length > 0) {
+                 db.detach();
+                 return res.json({ success: false, message: 'Item em tratamento pendente.' });
+             }
+
              db.query('SELECT USER_NAME FROM GRIDE_RESERVAS WHERE BLOCK_ID = ?', [block_id], (errR, result) => {
                 if (errR) { db.detach(); return res.status(500).json({ success: false, message: errR.message }); }
-                if (result && result.length > 0) { db.detach(); return res.json({ success: false, message: `Bloco já reservado por ${safeString(result[0].USER_NAME)}` }); }
+                if (result && result.length > 0) { 
+                    db.detach(); 
+                    return res.json({ success: false, message: `Bloco já reservado por ${safeString(result[0].USER_NAME)}` }); 
+                }
+                
                 const proCodVal = isNaN(parseInt(block_id)) ? 0 : parseInt(block_id);
+
                 db.query('INSERT INTO GRIDE_RESERVAS (BLOCK_ID, USU_COD, USER_NAME, PRO_COD, RESERVED_AT, ITEMS_JSON) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, NULL)', [block_id, user_id, user_name, proCodVal], (errIns) => {
                     db.detach();
                     if (errIns) return res.status(500).json({ success: false, message: 'Erro ao reservar: ' + errIns.message });
@@ -624,9 +690,14 @@ app.post('/reserve-block', (req, res) => {
 // 8. Atualizar Progresso
 app.post('/update-reservation-progress', (req, res) => {
     const { block_id, items } = req.body;
-    const dbItems = items.map(item => ({ ...item, status: TO_DB_STATUS[item.status] || item.status }));
+    const dbItems = items.map(item => ({
+        ...item,
+        status: TO_DB_STATUS[item.status] || item.status 
+    }));
+
     const jsonStr = JSON.stringify(dbItems);
     const buffer = Buffer.from(jsonStr, 'utf8');
+    
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro DB' });
         db.query('UPDATE GRIDE_RESERVAS SET ITEMS_JSON = ? WHERE BLOCK_ID = ?', [buffer, block_id], (err) => {
@@ -646,85 +717,241 @@ app.post('/release-block', (req, res) => {
     });
 });
 
-// 10. Finalizar Bloco (LÓGICA CORRIGIDA)
+// 10. Finalizar Bloco
 app.post('/finalize-block', (req, res) => {
     const { block_id, user_id, user_name, items, parent_ref } = req.body; 
+    
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro DB' });
+        
         db.transaction(Firebird.ISOLATION_READ_COMMITTED, async (err, transaction) => {
             if (err) { db.detach(); return res.status(500).json({ error: 'Erro Transação' }); }
+
             try {
                 const batchId = Date.now().toString();
                 const uniqueBlockRef = `${parent_ref || 'BLOCO'}||${batchId}`;
+
                 for (const item of items) {
                     const rows = await new Promise((resolve, reject) => {
-                        transaction.query('SELECT FIRST 1 PRO_COD FROM PRODUTOS WHERE PRO_NRFABRICANTE = ?', [item.ref], (err, res) => { if (err) reject(err); else resolve(res); });
+                        transaction.query('SELECT FIRST 1 PRO_COD FROM PRODUTOS WHERE PRO_NRFABRICANTE = ?', [item.ref], (err, res) => {
+                            if (err) reject(err); else resolve(res);
+                        });
                     });
+
                     let realProCod = 0;
-                    if (rows && rows.length > 0) realProCod = rows[0].PRO_COD; else if (item.db_pro_cod) realProCod = item.db_pro_cod;
-                    
+                    if (rows && rows.length > 0) {
+                        realProCod = rows[0].PRO_COD;
+                    } else if (item.db_pro_cod) {
+                        realProCod = item.db_pro_cod;
+                    }
+
                     const qtdContada = item.countedQty !== undefined ? item.countedQty : 0;
-                    const statusPT = TO_DB_STATUS[item.status] || item.status || 'Contado';
+                    const statusEN = item.status || 'pending';
+                    const statusPT = TO_DB_STATUS[statusEN] || statusEN;
                     const localizacao = (item.lastCount && item.lastCount.location) ? item.lastCount.location : (item.location || 'GERAL');
+                    const motivo = item.divergenceReason || '';
+
+                    const sqlLog = `INSERT INTO GRIDE_INVENTARIO_LOG (
+                        PRO_COD, PRO_NRFABRICANTE, NOME_PRODUTO, USU_COD, USUARIO_NOME, 
+                        QTD_SISTEMA, QTD_CONTADA, LOCALIZACAO, STATUS, DIVERGENCIA_MOTIVO, 
+                        BLOCK_REF, DATA_HORA
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP) RETURNING ID`;
                     
-                    // Insert Log
-                    const sqlLog = `INSERT INTO GRIDE_INVENTARIO_LOG (PRO_COD, PRO_NRFABRICANTE, NOME_PRODUTO, USU_COD, USUARIO_NOME, QTD_SISTEMA, QTD_CONTADA, LOCALIZACAO, STATUS, DIVERGENCIA_MOTIVO, BLOCK_REF, DATA_HORA) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP) RETURNING ID`;
                     const resultLog = await new Promise((resolve, reject) => {
-                        transaction.query(sqlLog, [realProCod, item.ref, item.name, user_id, user_name, item.balance, qtdContada, localizacao, statusPT, item.divergenceReason || '', uniqueBlockRef], (err, res) => { if (err) reject(err); else resolve(res); });
+                        transaction.query(sqlLog, [
+                            realProCod, item.ref, item.name, user_id, user_name,
+                            item.balance, qtdContada, localizacao, statusPT, motivo, uniqueBlockRef
+                        ], (err, res) => {
+                            if (err) reject(err); else resolve(res);
+                        });
                     });
                     
-                    // Update Stock
-                    const sqlUpdate = `UPDATE PRODUTOS SET PRO_EST_ATUAL = ?, PRO_ULTIMA_CONTAGEM = CURRENT_DATE WHERE PRO_COD = ?`;
+                    const logId = resultLog.ID;
+
+                    const sqlUpdate = `UPDATE PRODUTOS SET PRO_EST_ATUAL = ? WHERE PRO_COD = ?`;
                     await new Promise((resolve) => {
-                        transaction.query(sqlUpdate, [qtdContada, realProCod], (err) => resolve());
+                        transaction.query(sqlUpdate, [qtdContada, realProCod], (err) => {
+                            if (err) console.warn("Update stock failed for PRO_COD " + realProCod);
+                            resolve();
+                        });
                     });
 
-                    // Lógica de Tratamento Rigorosa: Só insere se status for erro explícito OU divergência de quantidade
-                    const isExplicitError = item.status === 'not_located' || item.status === 'issue' || item.status === 'divergence_info';
-                    const hasDivergence = item.balance !== qtdContada;
-
-                    if (isExplicitError || (hasDivergence && item.status !== 'not_located')) {
-                        const sqlTreat = `INSERT INTO GRIDE_TRATAMENTO (LOG_ID, PRO_COD, PRO_NRFABRICANTE, NOME_PRODUTO, LOCALIZACAO, TIPO_ERRO, DESCRICAO_ERRO, REPORTADO_POR, STATUS) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')`;
+                    if (statusEN === 'not_located' || statusEN === 'divergence_info' || statusEN === 'issue') {
+                        const sqlTreat = `INSERT INTO GRIDE_TRATAMENTO (
+                            LOG_ID, PRO_COD, PRO_NRFABRICANTE, NOME_PRODUTO, LOCALIZACAO, 
+                            TIPO_ERRO, DESCRICAO_ERRO, REPORTADO_POR, STATUS
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')`;
+                        
                         await new Promise((resolve, reject) => {
-                            transaction.query(sqlTreat, [resultLog.ID, realProCod, item.ref, item.name, localizacao, statusPT, item.divergenceReason || 'Divergência de Qtd', user_name], (err) => { if (err) reject(err); else resolve(); });
+                            transaction.query(sqlTreat, [
+                                logId, realProCod, item.ref, item.name, localizacao, 
+                                statusPT, motivo || 'Erro reportado', user_name
+                            ], (err) => {
+                                if (err) reject(err); else resolve();
+                            });
                         });
                     }
                 }
-                await new Promise((resolve, reject) => transaction.query('DELETE FROM GRIDE_RESERVAS WHERE BLOCK_ID = ?', [block_id], (err) => { if (err) return reject(err); resolve(); }));
-                transaction.commit((err) => { db.detach(); if (err) return res.status(500).json({ error: 'Commit Error' }); res.json({ success: true }); });
+
+                await new Promise((resolve, reject) => {
+                    transaction.query('DELETE FROM GRIDE_RESERVAS WHERE BLOCK_ID = ?', [block_id], (err) => {
+                        if (err) return reject(err);
+                        resolve();
+                    });
+                });
+
+                transaction.commit((err) => {
+                    db.detach();
+                    if (err) return res.status(500).json({ error: 'Commit Error' });
+                    res.json({ success: true });
+                });
+
             } catch (processError) {
-                transaction.rollback(); db.detach(); res.status(500).json({ error: 'Erro Processamento: ' + processError.message });
+                transaction.rollback();
+                db.detach();
+                console.error(processError);
+                return res.status(500).json({ error: 'Erro Processamento em Lote: ' + processError.message });
             }
         });
     });
 });
 
+// 11. Histórico
 app.get('/history', (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 300; 
     const skip = (page - 1) * limit;
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json([]);
-        const sql = `SELECT FIRST ? SKIP ? L.ID, L.BLOCK_REF, L.DATA_HORA, L.USUARIO_NOME, L.QTD_CONTADA, L.LOCALIZACAO, L.PRO_NRFABRICANTE as SKU, L.NOME_PRODUTO, L.STATUS, T.STATUS as TRATAMENTO_STATUS, P.PRO_COD_SIMILAR, P.PRO_DESCRI as PROD_DESC_ATUAL, P.MAR_COD FROM GRIDE_INVENTARIO_LOG L LEFT JOIN GRIDE_TRATAMENTO T ON T.LOG_ID = L.ID LEFT JOIN PRODUTOS P ON P.PRO_COD = L.PRO_COD ORDER BY L.DATA_HORA DESC`;
+        const sql = `
+            SELECT FIRST ? SKIP ? 
+            L.ID, L.BLOCK_REF, L.DATA_HORA, L.USUARIO_NOME, L.QTD_CONTADA, L.LOCALIZACAO, 
+            L.PRO_NRFABRICANTE as SKU, 
+            L.NOME_PRODUTO,
+            L.STATUS, 
+            T.STATUS as TRATAMENTO_STATUS, 
+            P.PRO_COD_SIMILAR, P.PRO_DESCRI as PROD_DESC_ATUAL, P.MAR_COD 
+            FROM GRIDE_INVENTARIO_LOG L 
+            LEFT JOIN GRIDE_TRATAMENTO T ON T.LOG_ID = L.ID 
+            LEFT JOIN PRODUTOS P ON P.PRO_COD = L.PRO_COD 
+            ORDER BY L.DATA_HORA DESC
+        `;
         db.query(sql, [limit, skip], (err, result) => {
             db.detach();
             if (err) return res.json([]);
-            res.json(result.map(r => ({ ...r, STATUS: FROM_DB_STATUS[safeString(r.STATUS)] || 'completed' })));
+            const mapped = result.map(r => ({
+                ...r,
+                STATUS: FROM_DB_STATUS[safeString(r.STATUS)] || 'completed' 
+            }));
+            res.json(mapped);
         });
     });
 });
 
+// 12. Tratamento
 app.get('/treatment-items', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json([]);
         db.query(`SELECT ID, PRO_NRFABRICANTE, NOME_PRODUTO, LOCALIZACAO, TIPO_ERRO, DESCRICAO_ERRO, REPORTADO_POR, REPORTADO_EM, STATUS FROM GRIDE_TRATAMENTO WHERE STATUS = 'PENDING' ORDER BY REPORTADO_EM DESC`, [], (err, result) => {
             db.detach();
-            res.json(result ? result.map(r => ({ id: r.ID, sku: safeString(r.PRO_NRFABRICANTE), name: safeString(r.NOME_PRODUTO), location: safeString(r.LOCALIZACAO), issueType: FROM_DB_STATUS[safeString(r.TIPO_ERRO)] || 'issue', description: safeString(r.DESCRICAO_ERRO), reportedBy: safeString(r.REPORTADO_POR), reportedAt: r.REPORTADO_EM, status: safeString(r.STATUS) })) : []);
+            res.json(result ? result.map(r => ({ 
+                id: r.ID, 
+                sku: safeString(r.PRO_NRFABRICANTE), 
+                name: safeString(r.NOME_PRODUTO), 
+                location: safeString(r.LOCALIZACAO), 
+                issueType: FROM_DB_STATUS[safeString(r.TIPO_ERRO)] || 'issue', 
+                description: safeString(r.DESCRICAO_ERRO), 
+                reportedBy: safeString(r.REPORTADO_POR), 
+                reportedAt: r.REPORTADO_EM, 
+                status: safeString(r.STATUS) 
+            })) : []);
         });
     });
 });
 
-// START
+// 13. Histórico Produto
+app.get('/product-history/:sku', (req, res) => {
+    const { sku } = req.params;
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.status(500).json([]);
+        db.query(`SELECT L.DATA_HORA, L.USUARIO_NOME, L.QTD_SISTEMA, L.QTD_CONTADA, L.STATUS, L.LOCALIZACAO FROM GRIDE_INVENTARIO_LOG L WHERE L.PRO_NRFABRICANTE = ? ORDER BY L.DATA_HORA DESC`, [sku], (err, result) => {
+            db.detach();
+            if (err) return res.json([]);
+            res.json(result.map(r => ({
+                ...r,
+                STATUS: FROM_DB_STATUS[safeString(r.STATUS)] || 'completed'
+            })));
+        });
+    });
+});
+
+// 14. Endereços
+app.get('/addresses', (req, res) => {
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.status(500).json([]);
+        db.query('SELECT * FROM GRIDE_ENDERECOS', [], (err, result) => {
+            db.detach();
+            if (err) return res.json([]);
+            res.json(result.map(r => ({ id: r.ID, code: safeString(r.CODIGO), description: safeString(r.DESCRICAO), type: safeString(r.TIPO) || 'shelf' })));
+        });
+    });
+});
+
+app.post('/save-addresses', (req, res) => {
+    const addresses = req.body; 
+    if(!Array.isArray(addresses)) return res.status(400).json({error: 'Invalid format'});
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.status(500).json({ error: 'Erro DB' });
+        let count = 0; let skipped = 0; const total = addresses.length;
+        const processNext = (idx) => {
+            if(idx >= total) { db.detach(); return res.json({ success: true, count, skipped }); }
+            const addr = addresses[idx];
+            db.query('SELECT ID FROM GRIDE_ENDERECOS WHERE CODIGO = ?', [addr.code], (err, resExist) => {
+                if(!err && resExist.length === 0) {
+                    db.query('INSERT INTO GRIDE_ENDERECOS (CODIGO, DESCRICAO, TIPO) VALUES (?, ?, ?)', [addr.code, addr.description, addr.type], (err) => {
+                        if(!err) count++; else skipped++;
+                        processNext(idx + 1);
+                    });
+                } else { skipped++; processNext(idx + 1); }
+            });
+        };
+        processNext(0);
+    });
+});
+
+// 15. Galpões
+app.get('/warehouses', (req, res) => {
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.status(500).json([]);
+        db.query('SELECT * FROM GRIDE_GALPOES', [], (err, result) => {
+            db.detach();
+            if (err) return res.json([]);
+            res.json(result.map(r => ({ id: r.ID, sigla: safeString(r.SIGLA), descricao: safeString(r.DESCRICAO) })));
+        });
+    });
+});
+
+app.post('/save-warehouse', (req, res) => {
+    const { sigla, descricao } = req.body;
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.status(500).json({ error: 'Erro DB' });
+        db.query('INSERT INTO GRIDE_GALPOES (SIGLA, DESCRICAO) VALUES (?, ?)', [sigla, descricao], (err) => {
+            db.detach();
+            if (err) return res.status(500).json({ success: false, message: err.message });
+            res.json({ success: true });
+        });
+    });
+});
+
+app.post('/delete-warehouse', (req, res) => {
+    const { id } = req.body;
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.status(500).json({ error: 'Erro DB' });
+        db.query('DELETE FROM GRIDE_GALPOES WHERE ID = ?', [id], (err) => { db.detach(); res.json({ success: true }); });
+    });
+});
+
+// START SERVER SEQUENCE
 const startServer = async () => {
     try {
         await initDb();
