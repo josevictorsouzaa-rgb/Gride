@@ -10,12 +10,13 @@ const port = 8000;
 // Configuração do Banco de Dados
 const DB_PATH = 'C:\\Users\\DELL G15\\Desktop\\BD\\DATABASE\\DATABASE.FDB';
 
-// Parâmetros Globais da Meta (Padrões)
+// Parâmetros Globais da Meta (Padrões, atualizados via rota)
 const GLOBAL_SETTINGS = {
     dailyTarget: 150,
     cooldownDays: 30,
     highGiroThreshold: 5,
-    accumulationMode: true
+    accumulationMode: true,
+    highGiroSplit: 40 // Nova propriedade: % destinada ao Giro Alto (Padrão 40%)
 };
 
 // Middleware
@@ -161,8 +162,8 @@ const refreshMetaCache = async () => {
         try {
             console.time('cache-process');
 
-            // Parâmetros
-            const { dailyTarget, cooldownDays, highGiroThreshold, accumulationMode } = GLOBAL_SETTINGS;
+            // Parâmetros Globais (Atualizados)
+            const { dailyTarget, cooldownDays, highGiroThreshold, accumulationMode, highGiroSplit } = GLOBAL_SETTINGS;
             
             // Cálculo de Meta Efetiva
             let effectiveTarget = dailyTarget;
@@ -187,9 +188,15 @@ const refreshMetaCache = async () => {
             const excludedIds = exclusions.map(r => r.PRO_COD).filter(id => id).join(',');
             const exclusionClause = excludedIds ? `AND P2.PRO_COD NOT IN (${excludedIds})` : '';
 
-            // 1. Identificar GIRO ALTO (Lógica Original corrigida)
+            // DIVISÃO DA META (Baseado no highGiroSplit)
+            const highGiroCount = Math.floor(effectiveTarget * (highGiroSplit / 100));
+            const cycleCount = Math.max(0, effectiveTarget - highGiroCount);
+
+            console.log(`>>> [AUTO] Proporção: ${highGiroSplit}% Giro (${highGiroCount}) / ${100-highGiroSplit}% Ciclo (${cycleCount})`);
+
+            // 1. Identificar GIRO ALTO
             const sqlGiroIds = `
-                SELECT FIRST ${Math.floor(effectiveTarget * 0.4)} 
+                SELECT FIRST ${highGiroCount} 
                 MIN(P2.PRO_COD) as REF_ID
                 FROM PEDIDOSITENS PI 
                 JOIN PRODUTOS P2 ON P2.PRO_COD = PI.PRO_COD 
@@ -203,9 +210,12 @@ const refreshMetaCache = async () => {
             const highGiroIds = giroGroups.map(r => Number(r.REF_ID)).filter(n => !isNaN(n));
 
             // 2. Identificar CICLO (Preencher o restante)
-            const neededForCycle = Math.max(0, effectiveTarget - highGiroIds.length);
+            // Se o Giro Alto não preencheu sua cota, o Ciclo absorve o resto?
+            // Neste design, mantemos targets fixos para garantir diversidade, mas o ciclo pode preencher se necessário.
+            const adjustedCycleCount = Math.max(cycleCount, effectiveTarget - highGiroIds.length);
+
             const sqlCycleIds = `
-                SELECT FIRST ${neededForCycle} 
+                SELECT FIRST ${adjustedCycleCount} 
                 MIN(P2.PRO_COD) as REF_ID
                 FROM PRODUTOS P2 
                 LEFT JOIN GRIDE_INVENTARIO_LOG L ON L.PRO_COD = P2.PRO_COD 
@@ -271,14 +281,12 @@ const refreshMetaCache = async () => {
                     
                     for (const p of products) {
                         const blockKey = safeString(p.BLOCK_KEY);
-                        // Se o pai do grupo estava na lista de giro alto, todo o grupo é giro alto
-                        // Simplificação: Se PRO_COD está na lista original de High Giro, marcamos.
-                        // Mas aqui temos todos os irmãos. Vamos verificar se algum ID do grupo (blockKey) foi selecionado como Giro.
-                        // (Lógica refinada: Verificar na hora do SELECT da API ou marcar aqui se este item específico era o trigger)
+                        // A lógica de marcação do tipo de sugestão pode ser baseada se o ID principal do grupo era Giro Alto
+                        // Porém, aqui temos todos os itens. Simplificação: Se PRO_COD está na lista original de High Giro, marcamos.
+                        // Para garantir que o bloco inteiro seja marcado como Giro Alto se um item for, podemos ajustar no select do frontend
+                        // ou fazer uma verificação de grupo aqui. Vamos manter simples por item.
                         
                         const tipoSugestao = highGiroSet.has(p.PRO_COD) ? 'Giro Alto' : 'Ciclo'; 
-                        // Nota: A marcação exata do bloco como "Giro Alto" na UI depende se *algum* item do bloco é giro.
-                        // Vamos salvar item a item e a UI/API agrupa.
 
                         const insertSql = `
                             INSERT INTO GRIDE_SUGESTOES_CACHE 
@@ -333,6 +341,13 @@ const refreshMetaCache = async () => {
 // --- ROTAS ---
 
 app.get('/daily-meta-suggestions', (req, res) => {
+    // Atualizar Configurações Globais se enviadas
+    if (req.query.dailyTarget) GLOBAL_SETTINGS.dailyTarget = parseInt(req.query.dailyTarget);
+    if (req.query.cooldownDays) GLOBAL_SETTINGS.cooldownDays = parseInt(req.query.cooldownDays);
+    if (req.query.highGiroThreshold) GLOBAL_SETTINGS.highGiroThreshold = parseInt(req.query.highGiroThreshold);
+    if (req.query.accumulationMode) GLOBAL_SETTINGS.accumulationMode = req.query.accumulationMode === 'true';
+    if (req.query.highGiroSplit) GLOBAL_SETTINGS.highGiroSplit = parseInt(req.query.highGiroSplit);
+
     // Rota Otimizada: Lê apenas do Cache
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro Conexão' });
@@ -657,10 +672,15 @@ app.post('/reserve-block', (req, res) => {
                 db.query('INSERT INTO GRIDE_RESERVAS (BLOCK_ID, USU_COD, USER_NAME, PRO_COD, RESERVED_AT, ITEMS_JSON) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, NULL)', [block_id, user_id, user_name, proCodVal], (errIns) => {
                     if (errIns) { db.detach(); return res.status(500).json({ success: false, message: 'Erro ao reservar: ' + errIns.message }); }
                     
-                    const logSql = `INSERT INTO GRIDE_INVENTARIO_LOG (PRO_COD, USU_COD, USUARIO_NOME, STATUS, BLOCK_REF, DATA_HORA) VALUES (?, ?, ?, 'RESERVADO', ?, CURRENT_TIMESTAMP)`;
+                    // RASTREABILIDADE: Adiciona "Origem: Meta Diária" ao log e LIMPA O CACHE
+                    const logSql = `INSERT INTO GRIDE_INVENTARIO_LOG (PRO_COD, USU_COD, USUARIO_NOME, STATUS, DIVERGENCIA_MOTIVO, BLOCK_REF, DATA_HORA) VALUES (?, ?, ?, 'RESERVADO', 'Origem: Meta Diária', ?, CURRENT_TIMESTAMP)`;
                     db.query(logSql, [proCodVal, user_id, user_name, block_id], (errLog) => {
-                        db.detach();
-                        res.json({ success: true });
+                        
+                        // REMOÇÃO PÓS-RESERVA DO CACHE (Para sumir da Meta Diária de todos)
+                        db.query('DELETE FROM GRIDE_SUGESTOES_CACHE WHERE BLOCK_ID = ?', [block_id], (errDel) => {
+                            db.detach();
+                            res.json({ success: true });
+                        });
                     });
                 });
             });

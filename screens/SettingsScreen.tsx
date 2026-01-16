@@ -19,6 +19,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
   const [cooldownDays, setCooldownDays] = useState(30);
   const [highGiroThreshold, setHighGiroThreshold] = useState(5);
   const [accumulationMode, setAccumulationMode] = useState(true);
+  const [highGiroSplit, setHighGiroSplit] = useState(40); // Novo Estado
 
   const [history, setHistory] = useState<SettingsHistoryEntry[]>([]);
   
@@ -30,6 +31,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
     setCooldownDays(settings.cooldownDays);
     setHighGiroThreshold(settings.highGiroThreshold);
     setAccumulationMode(settings.accumulationMode);
+    setHighGiroSplit(settings.highGiroSplit || 40);
     
     setHistory(getSettingsHistory());
   }, []);
@@ -61,7 +63,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
       dailyTarget,
       cooldownDays,
       highGiroThreshold,
-      accumulationMode
+      accumulationMode,
+      highGiroSplit
     };
     const updatedHistory = saveSettings(newSettings, currentUser);
     setHistory(updatedHistory);
@@ -187,6 +190,31 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
                 </div>
 
                 <div className="space-y-6">
+                   
+                   {/* NOVO CONTROLE: EQUILÍBRIO DA META */}
+                   <div>
+                      <div className="flex justify-between mb-2">
+                        <label className="text-sm font-bold text-gray-700 dark:text-gray-300">Equilíbrio da Meta</label>
+                        <div className="text-xs font-bold bg-gray-100 dark:bg-white/10 px-2 py-1 rounded">
+                            <span className="text-purple-600 dark:text-purple-400">{highGiroSplit}% Giro</span>
+                            <span className="mx-1 text-gray-400">/</span>
+                            <span className="text-blue-600 dark:text-blue-400">{100 - highGiroSplit}% Ciclo</span>
+                        </div>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="10" 
+                        max="90" 
+                        step="5"
+                        value={highGiroSplit}
+                        onChange={(e) => setHighGiroSplit(Number(e.target.value))}
+                        className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">Define a proporção de itens de alta rotatividade na meta diária.</p>
+                   </div>
+
+                   <hr className="border-gray-100 dark:border-white/5" />
+
                    <div>
                       <div className="flex justify-between mb-2">
                         <label className="text-sm font-bold text-gray-700 dark:text-gray-300">Cooldown (Descanso)</label>
@@ -262,10 +290,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
           </div>
         )}
 
-        {/* User Tab Content Omitted for brevity since no changes requested there, but keeping structure intact */}
+        {/* User Tab Content */}
         {activeTab === 'users' && (
           <div className="space-y-4 animate-fade-in">
-             {/* ... User List logic remains ... */}
              <div className="flex flex-col gap-3">
                {users.map(user => (
                  <div key={user.id} className="bg-white dark:bg-surface-dark p-4 rounded-xl border border-gray-200 dark:border-card-border shadow-sm flex items-center justify-between">

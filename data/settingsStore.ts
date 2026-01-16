@@ -6,6 +6,7 @@ export interface CountingSettings {
   cooldownDays: number;
   highGiroThreshold: number;
   accumulationMode: boolean;
+  highGiroSplit: number; // Nova propriedade: Porcentagem (0-100) para Giro Alto
 }
 
 export interface SettingsHistoryEntry {
@@ -24,7 +25,8 @@ const DEFAULT_SETTINGS: CountingSettings = {
   dailyTarget: 150,
   cooldownDays: 30,
   highGiroThreshold: 5,
-  accumulationMode: true
+  accumulationMode: true,
+  highGiroSplit: 40 // Default 40% Giro Alto, 60% Ciclo
 };
 
 export const getSettings = (): CountingSettings => {
@@ -36,7 +38,8 @@ export const getSettings = (): CountingSettings => {
           dailyTarget: parsed.dailyTarget ?? DEFAULT_SETTINGS.dailyTarget,
           cooldownDays: parsed.cooldownDays ?? DEFAULT_SETTINGS.cooldownDays,
           highGiroThreshold: parsed.highGiroThreshold ?? DEFAULT_SETTINGS.highGiroThreshold,
-          accumulationMode: parsed.accumulationMode ?? DEFAULT_SETTINGS.accumulationMode
+          accumulationMode: parsed.accumulationMode ?? DEFAULT_SETTINGS.accumulationMode,
+          highGiroSplit: parsed.highGiroSplit ?? DEFAULT_SETTINGS.highGiroSplit
         };
     }
     return DEFAULT_SETTINGS;
@@ -71,6 +74,9 @@ export const saveSettings = (newSettings: CountingSettings, user: User | null) =
   }
   if (currentSettings.accumulationMode !== newSettings.accumulationMode) {
     changes.push(`Modo Acumulativo: ${currentSettings.accumulationMode ? 'Ligado' : 'Desligado'} -> ${newSettings.accumulationMode ? 'Ligado' : 'Desligado'}`);
+  }
+  if (currentSettings.highGiroSplit !== newSettings.highGiroSplit) {
+    changes.push(`Equilíbrio Meta (% Giro): ${currentSettings.highGiroSplit}% -> ${newSettings.highGiroSplit}%`);
   }
 
   // Save Settings

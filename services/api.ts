@@ -123,7 +123,8 @@ export const api = {
               dailyTarget: settings.dailyTarget.toString(),
               cooldownDays: settings.cooldownDays.toString(),
               highGiroThreshold: settings.highGiroThreshold.toString(),
-              accumulationMode: settings.accumulationMode ? 'true' : 'false'
+              accumulationMode: settings.accumulationMode ? 'true' : 'false',
+              highGiroSplit: (settings.highGiroSplit || 40).toString()
           });
 
           const response = await fetch(`${API_BASE_URL}/daily-meta-suggestions?${params}`);
