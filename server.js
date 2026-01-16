@@ -660,23 +660,33 @@ app.post('/reserve-block', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro DB' });
         
+        // 1. Verifica se já está em tratamento
         db.query(`SELECT 1 FROM GRIDE_TRATAMENTO WHERE PRO_NRFABRICANTE IN (SELECT PRO_NRFABRICANTE FROM PRODUTOS WHERE PRO_COD = ? OR PRO_COD_SIMILAR = ?) AND STATUS = 'PENDING'`, [block_id, block_id], (errT, treatResult) => {
              if (!errT && treatResult && treatResult.length > 0) { db.detach(); return res.json({ success: false, message: 'Item em tratamento pendente.' }); }
 
+             // 2. Verifica se já está reservado
              db.query('SELECT USER_NAME FROM GRIDE_RESERVAS WHERE BLOCK_ID = ?', [block_id], (errR, result) => {
                 if (errR) { db.detach(); return res.status(500).json({ success: false, message: errR.message }); }
                 if (result && result.length > 0) { db.detach(); return res.json({ success: false, message: `Bloco já reservado por ${safeString(result[0].USER_NAME)}` }); }
                 
                 const proCodVal = isNaN(parseInt(block_id)) ? 0 : parseInt(block_id);
 
+                // 3. Insere a Reserva
                 db.query('INSERT INTO GRIDE_RESERVAS (BLOCK_ID, USU_COD, USER_NAME, PRO_COD, RESERVED_AT, ITEMS_JSON) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, NULL)', [block_id, user_id, user_name, proCodVal], (errIns) => {
                     if (errIns) { db.detach(); return res.status(500).json({ success: false, message: 'Erro ao reservar: ' + errIns.message }); }
                     
-                    // RASTREABILIDADE: Adiciona "Origem: Meta Diária" ao log e LIMPA O CACHE
-                    const logSql = `INSERT INTO GRIDE_INVENTARIO_LOG (PRO_COD, USU_COD, USUARIO_NOME, STATUS, DIVERGENCIA_MOTIVO, BLOCK_REF, DATA_HORA) VALUES (?, ?, ?, 'RESERVADO', 'Origem: Meta Diária', ?, CURRENT_TIMESTAMP)`;
-                    db.query(logSql, [proCodVal, user_id, user_name, block_id], (errLog) => {
+                    // 4. INSERE O LOG (Lastro de Movimentação)
+                    // Usa SELECT para garantir que pegamos o SKU correto do banco para a Timeline funcionar
+                    const logSql = `
+                        INSERT INTO GRIDE_INVENTARIO_LOG (PRO_COD, PRO_NRFABRICANTE, NOME_PRODUTO, USU_COD, USUARIO_NOME, STATUS, DIVERGENCIA_MOTIVO, BLOCK_REF, DATA_HORA)
+                        SELECT FIRST 1 PRO_COD, PRO_NRFABRICANTE, PRO_DESCRI, ?, ?, 'RESERVADO', 'Origem: META_DIARIA', ?, CURRENT_TIMESTAMP
+                        FROM PRODUTOS
+                        WHERE PRO_COD = ? OR PRO_COD_SIMILAR = ?
+                    `;
+                    
+                    db.query(logSql, [user_id, user_name, block_id, proCodVal, block_id], (errLog) => {
                         
-                        // REMOÇÃO PÓS-RESERVA DO CACHE (Para sumir da Meta Diária de todos)
+                        // 5. REMOÇÃO IMEDIATA DO CACHE (Para sumir da Meta Diária de todos)
                         db.query('DELETE FROM GRIDE_SUGESTOES_CACHE WHERE BLOCK_ID = ?', [block_id], (errDel) => {
                             db.detach();
                             res.json({ success: true });
