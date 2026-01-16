@@ -122,6 +122,9 @@ const initDb = () => {
                 // --- TABELA DE CACHE (NOVO) ---
                 await safeExecute(db, `CREATE TABLE GRIDE_SUGESTOES_CACHE (ID INTEGER NOT NULL PRIMARY KEY, BLOCK_ID VARCHAR(50), PRO_COD INTEGER, SKU VARCHAR(50), NOME VARCHAR(200), MARCA VARCHAR(100), SALDO DECIMAL(15,4), LOCALIZACAO VARCHAR(100), CATEGORIA VARCHAR(100), TIPO_SUGESTAO VARCHAR(20), DATA_GERACAO DATE)`, "Tabela Cache Sugestões");
                 
+                // ADD PARENT_SKU (Referencia Visual Mestra)
+                await safeExecute(db, `ALTER TABLE GRIDE_SUGESTOES_CACHE ADD PARENT_SKU VARCHAR(50)`, "Coluna PARENT_SKU em Cache");
+
                 // Generators
                 const gens = ['GEN_GRIDE_ENDERECOS_ID', 'GEN_GRIDE_GALPOES_ID', 'GEN_GRIDE_LOG_ID', 'GEN_GRIDE_TRATAMENTO_ID', 'GEN_GRIDE_CONTAS_FIN_ID', 'GEN_GRIDE_CACHE_ID'];
                 for (const g of gens) await safeExecute(db, `CREATE GENERATOR ${g}`, `Generator ${g}`);
@@ -146,10 +149,11 @@ const refreshMetaCache = async () => {
     console.log(">>> [AUTO] Iniciando atualização do cache de sugestões...");
     
     // 1. Verificar Dia Útil (0 = Domingo, 6 = Sábado)
+    // Permite execução Seg-Sex. Bloqueia Sáb/Dom.
     const today = new Date();
     const dayOfWeek = today.getDay();
     if (dayOfWeek === 0 || dayOfWeek === 6) {
-        console.log(">>> [AUTO] Fim de semana detectado. Cache não será atualizado.");
+        console.log(">>> [AUTO] Fim de semana (Sáb/Dom). Cache não será atualizado.");
         return;
     }
 
@@ -194,10 +198,13 @@ const refreshMetaCache = async () => {
 
             console.log(`>>> [AUTO] Proporção: ${highGiroSplit}% Giro (${highGiroCount}) / ${100-highGiroSplit}% Ciclo (${cycleCount})`);
 
+            // --- SELEÇÃO DE ITENS ---
+
             // 1. Identificar GIRO ALTO
             const sqlGiroIds = `
                 SELECT FIRST ${highGiroCount} 
-                MIN(P2.PRO_COD) as REF_ID
+                MIN(P2.PRO_COD) as REF_ID,
+                COALESCE(P2.PRO_COD_SIMILAR, CAST(P2.PRO_COD AS VARCHAR(20))) as GROUP_ID
                 FROM PEDIDOSITENS PI 
                 JOIN PRODUTOS P2 ON P2.PRO_COD = PI.PRO_COD 
                 LEFT JOIN GRIDE_INVENTARIO_LOG L ON L.PRO_COD = P2.PRO_COD 
@@ -207,45 +214,67 @@ const refreshMetaCache = async () => {
                 AND (MAX(L.DATA_HORA) IS NULL OR MAX(L.DATA_HORA) < DATEADD(-${cooldownDays} DAY TO CURRENT_DATE))
             `;
             const giroGroups = await execute(db, sqlGiroIds);
-            const highGiroIds = giroGroups.map(r => Number(r.REF_ID)).filter(n => !isNaN(n));
+            const highGiroGroupIds = giroGroups.map(r => safeString(r.GROUP_ID)).filter(id => id);
 
-            // 2. Identificar CICLO (Preencher o restante)
-            // Se o Giro Alto não preencheu sua cota, o Ciclo absorve o resto?
-            // Neste design, mantemos targets fixos para garantir diversidade, mas o ciclo pode preencher se necessário.
-            const adjustedCycleCount = Math.max(cycleCount, effectiveTarget - highGiroIds.length);
+            // 2. Identificar CICLO (Respeitando Cooldown)
+            // Tenta preencher o restante da meta com itens que respeitam o cooldown
+            const adjustedCycleCount = Math.max(0, effectiveTarget - highGiroGroupIds.length);
+            
+            // Monta lista para exclusão no ciclo (já selecionados no giro)
+            const selectedSoFar = highGiroGroupIds.length > 0 ? highGiroGroupIds.map(g => `'${g}'`).join(',') : "''";
 
             const sqlCycleIds = `
                 SELECT FIRST ${adjustedCycleCount} 
-                MIN(P2.PRO_COD) as REF_ID
+                MIN(P2.PRO_COD) as REF_ID,
+                COALESCE(P2.PRO_COD_SIMILAR, CAST(P2.PRO_COD AS VARCHAR(20))) as GROUP_ID
                 FROM PRODUTOS P2 
                 LEFT JOIN GRIDE_INVENTARIO_LOG L ON L.PRO_COD = P2.PRO_COD 
                 WHERE P2.PRO_ATIVO = 'S' ${exclusionClause}
+                AND COALESCE(P2.PRO_COD_SIMILAR, CAST(P2.PRO_COD AS VARCHAR(20))) NOT IN (${selectedSoFar})
                 GROUP BY COALESCE(P2.PRO_COD_SIMILAR, CAST(P2.PRO_COD AS VARCHAR(20)))
+                HAVING MAX(L.DATA_HORA) IS NULL OR MAX(L.DATA_HORA) < DATEADD(-${cooldownDays} DAY TO CURRENT_DATE)
                 ORDER BY MAX(L.DATA_HORA) ASC NULLS FIRST
             `;
             const cycleGroups = await execute(db, sqlCycleIds);
-            const cycleIds = cycleGroups.map(r => Number(r.REF_ID)).filter(n => !isNaN(n));
+            const cycleGroupIds = cycleGroups.map(r => safeString(r.GROUP_ID)).filter(id => id);
 
-            // IDs Principais Selecionados
-            const finalIds = [...new Set([...highGiroIds, ...cycleIds])].map(id => Number(id)).filter(id => id > 0);
+            // 3. LÓGICA DE FALLBACK (Preenchimento Garantido)
+            // Se a soma de Giro + Ciclo não atingiu a meta (devido a filtros de cooldown estritos),
+            // buscamos os itens mais antigos ABSOLUTOS para completar a carga.
+            let allGroupIds = [...new Set([...highGiroGroupIds, ...cycleGroupIds])];
+            
+            if (allGroupIds.length < effectiveTarget) {
+                const shortfall = effectiveTarget - allGroupIds.length;
+                console.log(`>>> [AUTO] Meta não atingida (${allGroupIds.length}/${effectiveTarget}). Iniciando Fallback para ${shortfall} itens.`);
+                
+                const selectedSoFarFallback = allGroupIds.length > 0 ? allGroupIds.map(g => `'${g}'`).join(',') : "''";
 
-            if (finalIds.length === 0) {
-                console.log(">>> [AUTO] Nenhum item elegível para meta hoje.");
+                const sqlFallback = `
+                    SELECT FIRST ${shortfall} 
+                    MIN(P2.PRO_COD) as REF_ID,
+                    COALESCE(P2.PRO_COD_SIMILAR, CAST(P2.PRO_COD AS VARCHAR(20))) as GROUP_ID
+                    FROM PRODUTOS P2 
+                    LEFT JOIN GRIDE_INVENTARIO_LOG L ON L.PRO_COD = P2.PRO_COD 
+                    WHERE P2.PRO_ATIVO = 'S' ${exclusionClause}
+                    AND COALESCE(P2.PRO_COD_SIMILAR, CAST(P2.PRO_COD AS VARCHAR(20))) NOT IN (${selectedSoFarFallback})
+                    GROUP BY COALESCE(P2.PRO_COD_SIMILAR, CAST(P2.PRO_COD AS VARCHAR(20)))
+                    ORDER BY MAX(L.DATA_HORA) ASC NULLS FIRST
+                `;
+                
+                const fallbackGroups = await execute(db, sqlFallback);
+                const fallbackIds = fallbackGroups.map(r => safeString(r.GROUP_ID)).filter(id => id);
+                allGroupIds = [...allGroupIds, ...fallbackIds];
+            }
+
+            // Lista Final de Grupos
+            if (allGroupIds.length === 0) {
+                console.log(">>> [AUTO] Nenhum grupo elegível encontrado (Estoque Vazio?).");
                 db.detach();
                 return;
             }
 
-            // 3. Expansão para BLOCO COMPLETO (Siblings) - Otimizado em 2 Etapas
-            const finalIdsStr = finalIds.join(',');
-            
-            // Etapa A: Buscar Grupos
-            const sqlGetGroups = `SELECT DISTINCT COALESCE(PRO_COD_SIMILAR, CAST(PRO_COD AS VARCHAR(20))) as GRP FROM PRODUTOS WHERE PRO_COD IN (${finalIdsStr})`;
-            const groupResult = await execute(db, sqlGetGroups);
-            const uniqueGroups = [...new Set(groupResult.map(r => safeString(r.GRP)))].filter(g => g);
-            
-            if (uniqueGroups.length === 0) { db.detach(); return; }
-            
-            const groupIdsStr = uniqueGroups.map(g => `'${g}'`).join(',');
+            // 4. Expansão para BLOCO COMPLETO (Siblings)
+            const groupIdsStr = allGroupIds.map(g => `'${g}'`).join(',');
 
             // Etapa B: Buscar Todos os Itens dos Grupos
             const sqlDetails = `
@@ -260,7 +289,17 @@ const refreshMetaCache = async () => {
             `;
             const products = await execute(db, sqlDetails);
 
-            // 4. Transação de Atualização do Cache
+            // Processamento em Memória para Determinar PARENT_SKU (Mestre)
+            const groupedProducts = new Map();
+            products.forEach(p => {
+                const bKey = safeString(p.BLOCK_KEY);
+                if (!groupedProducts.has(bKey)) {
+                    groupedProducts.set(bKey, []);
+                }
+                groupedProducts.get(bKey).push(p);
+            });
+
+            // 5. Transação de Atualização do Cache (Limpeza Atômica)
             db.transaction(Firebird.ISOLATION_READ_COMMITTED, async (err, transaction) => {
                 if (err) {
                     console.error(">>> [AUTO ERROR] Erro ao iniciar transação:", err);
@@ -269,48 +308,51 @@ const refreshMetaCache = async () => {
                 }
 
                 try {
-                    // Limpar Cache Antigo
+                    // Limpar Cache Antigo (ATÔMICO)
                     await new Promise((resolve, reject) => {
                         transaction.query('DELETE FROM GRIDE_SUGESTOES_CACHE', (err) => {
                             if (err) reject(err); else resolve();
                         });
                     });
 
-                    // Inserir Novos Itens
-                    const highGiroSet = new Set(highGiroIds);
+                    const highGiroSet = new Set(highGiroGroupIds);
                     
-                    for (const p of products) {
-                        const blockKey = safeString(p.BLOCK_KEY);
-                        // A lógica de marcação do tipo de sugestão pode ser baseada se o ID principal do grupo era Giro Alto
-                        // Porém, aqui temos todos os itens. Simplificação: Se PRO_COD está na lista original de High Giro, marcamos.
-                        // Para garantir que o bloco inteiro seja marcado como Giro Alto se um item for, podemos ajustar no select do frontend
-                        // ou fazer uma verificação de grupo aqui. Vamos manter simples por item.
+                    // Iterar pelos grupos montados
+                    for (const [blockId, items] of groupedProducts) {
                         
-                        const tipoSugestao = highGiroSet.has(p.PRO_COD) ? 'Giro Alto' : 'Ciclo'; 
-
-                        const insertSql = `
-                            INSERT INTO GRIDE_SUGESTOES_CACHE 
-                            (BLOCK_ID, PRO_COD, SKU, NOME, MARCA, SALDO, LOCALIZACAO, CATEGORIA, TIPO_SUGESTAO, DATA_GERACAO) 
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_DATE)
-                        `;
+                        let masterItem = items.find(i => String(i.PRO_COD) === blockId);
+                        if (!masterItem) masterItem = items[0];
                         
-                        const params = [
-                            blockKey,
-                            p.PRO_COD,
-                            safeString(p.PRO_NRFABRICANTE),
-                            safeString(p.PRO_DESCRI).substring(0, 200),
-                            safeString(p.MAR_DESCRI).substring(0, 100) || 'SEM MARCA',
-                            p.PRO_EST_ATUAL || 0,
-                            safeString(p.PRO_PRATELEIRA) || 'GERAL',
-                            safeString(p.GR_COD), // Usando GR_COD como categoria macro
-                            tipoSugestao
-                        ];
+                        const parentSku = safeString(masterItem.PRO_NRFABRICANTE);
+                        const tipoSugestao = highGiroSet.has(blockId) ? 'Giro Alto' : 'Ciclo';
 
-                        await new Promise((resolve, reject) => {
-                            transaction.query(insertSql, params, (err) => {
-                                if (err) reject(err); else resolve();
+                        // Inserir itens do grupo
+                        for (const p of items) {
+                            const insertSql = `
+                                INSERT INTO GRIDE_SUGESTOES_CACHE 
+                                (BLOCK_ID, PRO_COD, SKU, NOME, MARCA, SALDO, LOCALIZACAO, CATEGORIA, TIPO_SUGESTAO, DATA_GERACAO, PARENT_SKU) 
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_DATE, ?)
+                            `;
+                            
+                            const params = [
+                                blockId, // ID Padronizado do Grupo
+                                p.PRO_COD,
+                                safeString(p.PRO_NRFABRICANTE),
+                                safeString(p.PRO_DESCRI).substring(0, 200),
+                                safeString(p.MAR_DESCRI).substring(0, 100) || 'SEM MARCA',
+                                p.PRO_EST_ATUAL || 0,
+                                safeString(p.PRO_PRATELEIRA) || 'GERAL',
+                                safeString(p.GR_COD), 
+                                tipoSugestao,
+                                parentSku // Referência Mestra Persistida
+                            ];
+
+                            await new Promise((resolve, reject) => {
+                                transaction.query(insertSql, params, (err) => {
+                                    if (err) reject(err); else resolve();
+                                });
                             });
-                        });
+                        }
                     }
 
                     transaction.commit((err) => {
@@ -318,7 +360,7 @@ const refreshMetaCache = async () => {
                             console.error(">>> [AUTO ERROR] Erro no Commit:", err);
                             transaction.rollback();
                         } else {
-                            console.log(`>>> [AUTO] Cache atualizado com sucesso! ${products.length} itens inseridos.`);
+                            console.log(`>>> [AUTO] Cache atualizado com sucesso! ${products.length} itens inseridos em ${groupedProducts.size} blocos.`);
                         }
                         db.detach();
                         console.timeEnd('cache-process');
@@ -353,7 +395,7 @@ app.get('/daily-meta-suggestions', (req, res) => {
         if (err) return res.status(500).json({ error: 'Erro Conexão' });
 
         const sql = `
-            SELECT BLOCK_ID, PRO_COD, SKU, NOME, MARCA, SALDO, LOCALIZACAO, TIPO_SUGESTAO 
+            SELECT BLOCK_ID, PRO_COD, SKU, NOME, MARCA, SALDO, LOCALIZACAO, TIPO_SUGESTAO, PARENT_SKU 
             FROM GRIDE_SUGESTOES_CACHE 
             WHERE DATA_GERACAO = CURRENT_DATE 
             ORDER BY BLOCK_ID, LOCALIZACAO
@@ -372,6 +414,7 @@ app.get('/daily-meta-suggestions', (req, res) => {
                 if (!groups.has(bId)) {
                     groups.set(bId, {
                         id: bId,
+                        parentRef: safeString(r.PARENT_SKU) || safeString(r.SKU), // Usa o Mestre persistido
                         items: [],
                         isGiro: false
                     });
@@ -398,7 +441,7 @@ app.get('/daily-meta-suggestions', (req, res) => {
             groups.forEach((group, key) => {
                 blocks.push({
                     id: key,
-                    parentRef: group.items[0].ref || group.items[0].name,
+                    parentRef: group.parentRef, // Já definido corretamente na criação do grupo
                     location: group.items[0].location,
                     status: 'pending',
                     date: todayFormatted,
@@ -671,12 +714,12 @@ app.post('/reserve-block', (req, res) => {
                 
                 const proCodVal = isNaN(parseInt(block_id)) ? 0 : parseInt(block_id);
 
-                // 3. Insere a Reserva
+                // 3. Insere a Reserva (BLOCK_ID é o padronizado)
                 db.query('INSERT INTO GRIDE_RESERVAS (BLOCK_ID, USU_COD, USER_NAME, PRO_COD, RESERVED_AT, ITEMS_JSON) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, NULL)', [block_id, user_id, user_name, proCodVal], (errIns) => {
                     if (errIns) { db.detach(); return res.status(500).json({ success: false, message: 'Erro ao reservar: ' + errIns.message }); }
                     
                     // 4. INSERE O LOG (Lastro de Movimentação)
-                    // Usa SELECT para garantir que pegamos o SKU correto do banco para a Timeline funcionar
+                    // Importante: O BLOCK_REF deve ser o block_id (ID do grupo)
                     const logSql = `
                         INSERT INTO GRIDE_INVENTARIO_LOG (PRO_COD, PRO_NRFABRICANTE, NOME_PRODUTO, USU_COD, USUARIO_NOME, STATUS, DIVERGENCIA_MOTIVO, BLOCK_REF, DATA_HORA)
                         SELECT FIRST 1 PRO_COD, PRO_NRFABRICANTE, PRO_DESCRI, ?, ?, 'RESERVADO', 'Origem: META_DIARIA', ?, CURRENT_TIMESTAMP
