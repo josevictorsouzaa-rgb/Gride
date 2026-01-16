@@ -146,14 +146,14 @@ const initDb = () => {
 
 // --- FUNÇÃO DE PROCESSAMENTO AUTOMÁTICO (CACHE) ---
 const refreshMetaCache = async () => {
-    console.log(">>> [AUTO] Iniciando atualização do cache de sugestões...");
+    console.log(">>> [AUTO] Iniciando ciclo de renovação da meta...");
     
-    // 1. Verificar Dia Útil (0 = Domingo, 6 = Sábado)
-    // Permite execução Seg-Sex. Bloqueia Sáb/Dom.
+    // 1. Verificar Dia Útil
+    // Bloqueia apenas Sábado (6) e Domingo (0). Sexta-feira (5) executa normalmente.
     const today = new Date();
     const dayOfWeek = today.getDay();
     if (dayOfWeek === 0 || dayOfWeek === 6) {
-        console.log(">>> [AUTO] Fim de semana (Sáb/Dom). Cache não será atualizado.");
+        console.log(">>> [AUTO] Fim de semana detectado. O sistema não renovará a meta hoje.");
         return;
     }
 
@@ -164,26 +164,33 @@ const refreshMetaCache = async () => {
         }
 
         try {
+            // *** PASSO CRÍTICO: LIMPEZA GARANTIDA ANTES DE TUDO ***
+            // Executa fora da transação de inserção para garantir que o cache velho suma.
+            console.log(">>> [AUTO] Limpando cache do dia anterior...");
+            await execute(db, 'DELETE FROM GRIDE_SUGESTOES_CACHE');
+            console.log(">>> [AUTO] Cache limpo.");
+
             console.time('cache-process');
 
-            // Parâmetros Globais (Atualizados)
+            // Parâmetros Globais
             const { dailyTarget, cooldownDays, highGiroThreshold, accumulationMode, highGiroSplit } = GLOBAL_SETTINGS;
             
-            // Cálculo de Meta Efetiva
+            // 2. Cálculo de Meta Efetiva (Acúmulo Real)
             let effectiveTarget = dailyTarget;
+            
             if (accumulationMode) {
-                // Verifica contagens dos últimos 3 dias
+                // Busca o que foi feito nos últimos 3 dias
                 const pendingSql = `SELECT COUNT(*) as COUNTED FROM GRIDE_INVENTARIO_LOG WHERE DATA_HORA >= DATEADD(-3 DAY TO CURRENT_DATE) AND DATA_HORA < CURRENT_DATE AND (STATUS = 'Contado' OR STATUS = 'Divergência')`;
                 const logsResult = await execute(db, pendingSql);
                 const countedLast3Days = logsResult[0].COUNTED || 0;
                 
-                // Meta esperada 3 dias
+                // Meta esperada 3 dias vs Realizado
                 const expected3Days = dailyTarget * 3;
                 const deficit = Math.max(0, expected3Days - countedLast3Days);
                 
-                // Limita o acréscimo a 50% da meta diária para não sobrecarregar
-                effectiveTarget += Math.min(deficit, Math.floor(dailyTarget * 0.5));
-                console.log(`>>> [AUTO] Meta Base: ${dailyTarget}, Déficit: ${deficit}, Meta Efetiva: ${effectiveTarget}`);
+                // Soma direta: Meta do Dia + Todo o Déficit (Sem travas)
+                effectiveTarget = dailyTarget + deficit;
+                console.log(`>>> [AUTO] Meta Base: ${dailyTarget} | Déficit Acumulado: ${deficit} | ALVO FINAL: ${effectiveTarget}`);
             }
 
             // Cláusula de Exclusão (Reservados ou em Tratamento)
@@ -192,15 +199,15 @@ const refreshMetaCache = async () => {
             const excludedIds = exclusions.map(r => r.PRO_COD).filter(id => id).join(',');
             const exclusionClause = excludedIds ? `AND P2.PRO_COD NOT IN (${excludedIds})` : '';
 
-            // DIVISÃO DA META (Baseado no highGiroSplit)
+            // DIVISÃO DA META
             const highGiroCount = Math.floor(effectiveTarget * (highGiroSplit / 100));
+            
+            // O Ciclo tenta pegar o resto, mas se não achar (por cooldown), o Fallback entra depois.
             const cycleCount = Math.max(0, effectiveTarget - highGiroCount);
-
-            console.log(`>>> [AUTO] Proporção: ${highGiroSplit}% Giro (${highGiroCount}) / ${100-highGiroSplit}% Ciclo (${cycleCount})`);
 
             // --- SELEÇÃO DE ITENS ---
 
-            // 1. Identificar GIRO ALTO
+            // ETAPA A: GIRO ALTO (Respeita Cooldown)
             const sqlGiroIds = `
                 SELECT FIRST ${highGiroCount} 
                 MIN(P2.PRO_COD) as REF_ID,
@@ -216,11 +223,8 @@ const refreshMetaCache = async () => {
             const giroGroups = await execute(db, sqlGiroIds);
             const highGiroGroupIds = giroGroups.map(r => safeString(r.GROUP_ID)).filter(id => id);
 
-            // 2. Identificar CICLO (Respeitando Cooldown)
-            // Tenta preencher o restante da meta com itens que respeitam o cooldown
+            // ETAPA B: CICLO (Respeita Cooldown)
             const adjustedCycleCount = Math.max(0, effectiveTarget - highGiroGroupIds.length);
-            
-            // Monta lista para exclusão no ciclo (já selecionados no giro)
             const selectedSoFar = highGiroGroupIds.length > 0 ? highGiroGroupIds.map(g => `'${g}'`).join(',') : "''";
 
             const sqlCycleIds = `
@@ -238,17 +242,18 @@ const refreshMetaCache = async () => {
             const cycleGroups = await execute(db, sqlCycleIds);
             const cycleGroupIds = cycleGroups.map(r => safeString(r.GROUP_ID)).filter(id => id);
 
-            // 3. LÓGICA DE FALLBACK (Preenchimento Garantido)
-            // Se a soma de Giro + Ciclo não atingiu a meta (devido a filtros de cooldown estritos),
-            // buscamos os itens mais antigos ABSOLUTOS para completar a carga.
+            // ETAPA C: FALLBACK DE EMERGÊNCIA (Ignora Cooldown se necessário)
+            // Se Giro + Ciclo não atingiram a effectiveTarget (ex: tudo contado recentemente),
+            // pegamos os itens mais antigos do banco para garantir que o usuário tenha trabalho.
             let allGroupIds = [...new Set([...highGiroGroupIds, ...cycleGroupIds])];
             
             if (allGroupIds.length < effectiveTarget) {
                 const shortfall = effectiveTarget - allGroupIds.length;
-                console.log(`>>> [AUTO] Meta não atingida (${allGroupIds.length}/${effectiveTarget}). Iniciando Fallback para ${shortfall} itens.`);
+                console.log(`>>> [AUTO] Alvo não atingido (${allGroupIds.length}/${effectiveTarget}). Ativando Fallback para ${shortfall} blocos.`);
                 
                 const selectedSoFarFallback = allGroupIds.length > 0 ? allGroupIds.map(g => `'${g}'`).join(',') : "''";
 
+                // Query Fallback: Ordena puramente pela data mais antiga, ignorando filtro de dias
                 const sqlFallback = `
                     SELECT FIRST ${shortfall} 
                     MIN(P2.PRO_COD) as REF_ID,
@@ -266,17 +271,15 @@ const refreshMetaCache = async () => {
                 allGroupIds = [...allGroupIds, ...fallbackIds];
             }
 
-            // Lista Final de Grupos
             if (allGroupIds.length === 0) {
-                console.log(">>> [AUTO] Nenhum grupo elegível encontrado (Estoque Vazio?).");
+                console.log(">>> [AUTO] ERRO CRÍTICO: Nenhum item disponível no estoque.");
                 db.detach();
                 return;
             }
 
-            // 4. Expansão para BLOCO COMPLETO (Siblings)
+            // 3. Buscar Detalhes dos Itens Selecionados
             const groupIdsStr = allGroupIds.map(g => `'${g}'`).join(',');
 
-            // Etapa B: Buscar Todos os Itens dos Grupos
             const sqlDetails = `
                 SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, M.MAR_DESCRI, 
                        COALESCE(P.PRO_COD_SIMILAR, CAST(P.PRO_COD AS VARCHAR(20))) as BLOCK_KEY, 
@@ -289,7 +292,7 @@ const refreshMetaCache = async () => {
             `;
             const products = await execute(db, sqlDetails);
 
-            // Processamento em Memória para Determinar PARENT_SKU (Mestre)
+            // Agrupamento em Memória
             const groupedProducts = new Map();
             products.forEach(p => {
                 const bKey = safeString(p.BLOCK_KEY);
@@ -299,7 +302,7 @@ const refreshMetaCache = async () => {
                 groupedProducts.get(bKey).push(p);
             });
 
-            // 5. Transação de Atualização do Cache (Limpeza Atômica)
+            // 4. Inserção no Cache (Transação Apenas para Insert)
             db.transaction(Firebird.ISOLATION_READ_COMMITTED, async (err, transaction) => {
                 if (err) {
                     console.error(">>> [AUTO ERROR] Erro ao iniciar transação:", err);
@@ -308,25 +311,16 @@ const refreshMetaCache = async () => {
                 }
 
                 try {
-                    // Limpar Cache Antigo (ATÔMICO)
-                    await new Promise((resolve, reject) => {
-                        transaction.query('DELETE FROM GRIDE_SUGESTOES_CACHE', (err) => {
-                            if (err) reject(err); else resolve();
-                        });
-                    });
-
                     const highGiroSet = new Set(highGiroGroupIds);
                     
-                    // Iterar pelos grupos montados
                     for (const [blockId, items] of groupedProducts) {
-                        
+                        // Define Mestre
                         let masterItem = items.find(i => String(i.PRO_COD) === blockId);
                         if (!masterItem) masterItem = items[0];
                         
                         const parentSku = safeString(masterItem.PRO_NRFABRICANTE);
                         const tipoSugestao = highGiroSet.has(blockId) ? 'Giro Alto' : 'Ciclo';
 
-                        // Inserir itens do grupo
                         for (const p of items) {
                             const insertSql = `
                                 INSERT INTO GRIDE_SUGESTOES_CACHE 
@@ -335,7 +329,7 @@ const refreshMetaCache = async () => {
                             `;
                             
                             const params = [
-                                blockId, // ID Padronizado do Grupo
+                                blockId,
                                 p.PRO_COD,
                                 safeString(p.PRO_NRFABRICANTE),
                                 safeString(p.PRO_DESCRI).substring(0, 200),
@@ -344,7 +338,7 @@ const refreshMetaCache = async () => {
                                 safeString(p.PRO_PRATELEIRA) || 'GERAL',
                                 safeString(p.GR_COD), 
                                 tipoSugestao,
-                                parentSku // Referência Mestra Persistida
+                                parentSku
                             ];
 
                             await new Promise((resolve, reject) => {
@@ -360,21 +354,21 @@ const refreshMetaCache = async () => {
                             console.error(">>> [AUTO ERROR] Erro no Commit:", err);
                             transaction.rollback();
                         } else {
-                            console.log(`>>> [AUTO] Cache atualizado com sucesso! ${products.length} itens inseridos em ${groupedProducts.size} blocos.`);
+                            console.log(`>>> [AUTO] Sucesso! ${groupedProducts.size} blocos gerados.`);
                         }
                         db.detach();
                         console.timeEnd('cache-process');
                     });
 
                 } catch (txErr) {
-                    console.error(">>> [AUTO ERROR] Rollback devido a erro:", txErr);
+                    console.error(">>> [AUTO ERROR] Rollback:", txErr);
                     transaction.rollback();
                     db.detach();
                 }
             });
 
         } catch (procErr) {
-            console.error(">>> [AUTO ERROR] Erro no processo:", procErr);
+            console.error(">>> [AUTO ERROR] Erro Geral:", procErr);
             db.detach();
         }
     });
