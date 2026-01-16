@@ -164,7 +164,7 @@ const refreshMetaCache = async () => {
         }
 
         try {
-            // *** PASSO CRÍTICO: LIMPEZA GARANTIDA ANTES DE TUDO ***
+            // *** LIMPEZA PRÉVIA OBRIGATÓRIA ***
             // Executa fora da transação de inserção para garantir que o cache velho suma.
             console.log(">>> [AUTO] Limpando cache do dia anterior...");
             await execute(db, 'DELETE FROM GRIDE_SUGESTOES_CACHE');
@@ -188,9 +188,9 @@ const refreshMetaCache = async () => {
                 const expected3Days = dailyTarget * 3;
                 const deficit = Math.max(0, expected3Days - countedLast3Days);
                 
-                // Soma direta: Meta do Dia + Todo o Déficit (Sem travas)
-                effectiveTarget = dailyTarget + deficit;
-                console.log(`>>> [AUTO] Meta Base: ${dailyTarget} | Déficit Acumulado: ${deficit} | ALVO FINAL: ${effectiveTarget}`);
+                // ACÚMULO TOTAL DO DÉFICIT SEM TRAVAS (Correção)
+                effectiveTarget += deficit;
+                console.log(`>>> [AUTO] Meta Base: ${dailyTarget}, Déficit: ${deficit}, Meta Efetiva: ${effectiveTarget}`);
             }
 
             // Cláusula de Exclusão (Reservados ou em Tratamento)
@@ -201,8 +201,6 @@ const refreshMetaCache = async () => {
 
             // DIVISÃO DA META
             const highGiroCount = Math.floor(effectiveTarget * (highGiroSplit / 100));
-            
-            // O Ciclo tenta pegar o resto, mas se não achar (por cooldown), o Fallback entra depois.
             const cycleCount = Math.max(0, effectiveTarget - highGiroCount);
 
             // --- SELEÇÃO DE ITENS ---
@@ -243,8 +241,6 @@ const refreshMetaCache = async () => {
             const cycleGroupIds = cycleGroups.map(r => safeString(r.GROUP_ID)).filter(id => id);
 
             // ETAPA C: FALLBACK DE EMERGÊNCIA (Ignora Cooldown se necessário)
-            // Se Giro + Ciclo não atingiram a effectiveTarget (ex: tudo contado recentemente),
-            // pegamos os itens mais antigos do banco para garantir que o usuário tenha trabalho.
             let allGroupIds = [...new Set([...highGiroGroupIds, ...cycleGroupIds])];
             
             if (allGroupIds.length < effectiveTarget) {
@@ -253,7 +249,6 @@ const refreshMetaCache = async () => {
                 
                 const selectedSoFarFallback = allGroupIds.length > 0 ? allGroupIds.map(g => `'${g}'`).join(',') : "''";
 
-                // Query Fallback: Ordena puramente pela data mais antiga, ignorando filtro de dias
                 const sqlFallback = `
                     SELECT FIRST ${shortfall} 
                     MIN(P2.PRO_COD) as REF_ID,

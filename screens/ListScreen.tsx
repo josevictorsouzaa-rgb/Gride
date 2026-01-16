@@ -36,7 +36,7 @@ const getDaysSince = (dateStr?: string): number => {
   return 0;
 };
 
-// Helper for Relative Time (AddedAt) - CORRIGIDO: COMPARAÇÃO PURA DE DATAS
+// Helper for Relative Time (AddedAt) - CORRIGIDO: COMPARAÇÃO PURA DE DATAS (DIA CIVIL)
 const getRelativeTime = (isoString?: string) => {
     if (!isoString) return 'Entrou hoje';
     
@@ -44,15 +44,15 @@ const getRelativeTime = (isoString?: string) => {
     const itemDate = new Date(isoString);
     const now = new Date();
     
-    // Zera horas, minutos, segundos e milissegundos para comparar apenas o dia civil
-    const dateZero = new Date(itemDate.getFullYear(), itemDate.getMonth(), itemDate.getDate());
-    const nowZero = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    // Zera horas, minutos, segundos e milissegundos para comparar estritamente o dia do calendário
+    itemDate.setHours(0, 0, 0, 0);
+    now.setHours(0, 0, 0, 0);
     
     // Diferença em milissegundos
-    const diffTime = nowZero.getTime() - dateZero.getTime();
+    const diffTime = now.getTime() - itemDate.getTime();
     
-    // Converte para dias
-    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+    // Converte para dias inteiros
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
 
     if (diffDays === 0) return 'Entrou hoje';
     if (diffDays === 1) return 'Entrou ontem';
