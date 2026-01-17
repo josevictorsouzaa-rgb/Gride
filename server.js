@@ -508,13 +508,144 @@ app.get('/history', (req, res) => {
     });
 });
 
-// --- ROTAS ADICIONAIS PARA FUNCIONALIDADES EXTRAS ---
-app.get('/treatment-items', (req, res) => { res.json([]); });
-app.get('/addresses', (req, res) => { res.json([]); });
-app.get('/warehouses', (req, res) => { res.json([]); });
-app.post('/save-addresses', (req, res) => { res.json({success:true, count:0, skipped:0}); });
-app.post('/save-warehouse', (req, res) => { res.json({success:true}); });
-app.post('/delete-warehouse', (req, res) => { res.json({success:true}); });
+// --- ROTA TRATAMENTO (Divergências) ---
+app.get('/treatment-items', (req, res) => { 
+    Firebird.attach(options, (err, db) => {
+        if(err) return res.json([]);
+        const sql = `SELECT * FROM GRIDE_TRATAMENTO WHERE STATUS = 'PENDING' ORDER BY REPORTADO_EM DESC`;
+        db.query(sql, [], (err, rows) => {
+            db.detach();
+            if(err || !rows) return res.json([]);
+            
+            const formatted = rows.map(r => ({
+                id: r.ID,
+                sku: safeString(r.PRO_NRFABRICANTE),
+                name: safeString(r.NOME_PRODUTO),
+                location: safeString(r.LOCALIZACAO),
+                issueType: r.TIPO_ERRO === 'Não Localizado' ? 'not_located' : 'divergence_info',
+                description: safeString(r.DESCRICAO_ERRO),
+                reportedBy: safeString(r.REPORTADO_POR),
+                reportedAt: r.REPORTADO_EM,
+                status: 'PENDING'
+            }));
+            res.json(formatted);
+        });
+    });
+});
+
+// --- ROTAS DE ENDEREÇAMENTO (RESTAURADAS) ---
+
+// 1. Listar Endereços
+app.get('/addresses', (req, res) => {
+    Firebird.attach(options, (err, db) => {
+        if(err) return res.json([]);
+        db.query('SELECT ID, CODIGO, DESCRICAO, TIPO FROM GRIDE_ENDERECOS ORDER BY CODIGO', [], (err, rows) => {
+            db.detach();
+            if(err) return res.json([]);
+            const addrs = rows.map(r => ({
+                id: r.ID,
+                code: safeString(r.CODIGO),
+                description: safeString(r.DESCRICAO),
+                type: safeString(r.TIPO) || 'shelf'
+            }));
+            res.json(addrs);
+        });
+    });
+});
+
+// 2. Salvar Lote de Endereços
+app.post('/save-addresses', (req, res) => {
+    const addresses = req.body; // Array of { code, description, type }
+    if (!Array.isArray(addresses)) return res.json({success:false});
+
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.json({success:false});
+        
+        db.transaction(Firebird.ISOLATION_READ_COMMITTED, async (err, transaction) => {
+            if (err) { db.detach(); return res.json({success:false}); }
+            
+            let count = 0;
+            let skipped = 0;
+
+            try {
+                for (const addr of addresses) {
+                    // Check exists
+                    const exists = await new Promise((resolve, reject) => {
+                        transaction.query('SELECT ID FROM GRIDE_ENDERECOS WHERE CODIGO = ?', [addr.code], (err, rows) => {
+                            if (err) reject(err);
+                            else resolve(rows.length > 0);
+                        });
+                    });
+
+                    if (!exists) {
+                        await new Promise((resolve, reject) => {
+                            transaction.query(
+                                'INSERT INTO GRIDE_ENDERECOS (CODIGO, DESCRICAO, TIPO) VALUES (?, ?, ?)',
+                                [addr.code, addr.description, addr.type],
+                                (err) => err ? reject(err) : resolve()
+                            );
+                        });
+                        count++;
+                    } else {
+                        skipped++;
+                    }
+                }
+
+                transaction.commit((err) => {
+                    db.detach();
+                    if(err) res.json({success:false});
+                    else res.json({success:true, count, skipped});
+                });
+            } catch(e) {
+                transaction.rollback();
+                db.detach();
+                res.json({success:false});
+            }
+        });
+    });
+});
+
+// 3. Listar Galpões
+app.get('/warehouses', (req, res) => {
+    Firebird.attach(options, (err, db) => {
+        if(err) return res.json([]);
+        db.query('SELECT ID, SIGLA, DESCRICAO FROM GRIDE_GALPOES', [], (err, rows) => {
+            db.detach();
+            if(err) return res.json([]);
+            const wars = rows.map(r => ({
+                id: r.ID,
+                sigla: safeString(r.SIGLA),
+                descricao: safeString(r.DESCRICAO)
+            }));
+            res.json(wars);
+        });
+    });
+});
+
+// 4. Salvar Galpão
+app.post('/save-warehouse', (req, res) => {
+    const { sigla, descricao } = req.body;
+    Firebird.attach(options, (err, db) => {
+        if(err) return res.json({success:false});
+        db.query('INSERT INTO GRIDE_GALPOES (SIGLA, DESCRICAO) VALUES (?, ?)', [sigla, descricao], (err) => {
+            db.detach();
+            res.json({success: !err, message: err ? err.message : null});
+        });
+    });
+});
+
+// 5. Deletar Galpão
+app.post('/delete-warehouse', (req, res) => {
+    const { id } = req.body;
+    Firebird.attach(options, (err, db) => {
+        if(err) return res.json({success:false});
+        db.query('DELETE FROM GRIDE_GALPOES WHERE ID = ?', [id], (err) => {
+            db.detach();
+            res.json({success: !err});
+        });
+    });
+});
+
 app.post('/update-count', (req, res) => { res.json({success:true}); });
 
 const startServer = async () => {
