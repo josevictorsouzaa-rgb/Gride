@@ -26,16 +26,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const isAdmin = currentUser?.isAdmin;
 
-  // Definição da ordem focada em Cobertura de Estoque
+  // Definição da ordem exata solicitada com propriedades de espaçamento
   const navItems = [
-    { id: 'dashboard', label: 'Visão Geral', icon: 'pie_chart' }, // Mudou de Hub para Visão Geral
-    { id: 'list', label: 'Explorar Estoque', icon: 'map' }, // Mudou de Meta para Explorar
-    { id: 'reserved', label: 'Minhas Tarefas', icon: 'assignment_turned_in' }, // Foco em Tarefa
+    { id: 'dashboard', label: 'Hub de Controle', icon: 'grid_view' },
     ...(isAdmin ? [{ id: 'analytics', label: 'Indicadores', icon: 'insights' }] : []),
+    { id: 'list', label: 'Meta Diária', icon: 'checklist' },
+    { id: 'reserved', label: 'Meus Reservados', icon: 'assignment' },
     { id: 'history', label: 'Histórico', icon: 'history' },
     
     // Grupo Tratamento (Separado)
-    ...(isAdmin ? [{ id: 'treatment', label: 'Tratamento', icon: 'build_circle', spacer: true }] : []),
+    ...(isAdmin ? [{ id: 'treatment', label: 'Tratamento', icon: 'admin_panel_settings', spacer: true }] : []),
     
     // Grupo Endereçamento (Separado)
     ...(isAdmin ? [{ id: 'address_manager', label: 'Endereçamento', icon: 'qr_code_2', spacer: true }] : []),
@@ -69,7 +69,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       <nav className="flex-1 px-4 py-2 space-y-1 overflow-y-auto no-scrollbar">
-        <p className="px-2 text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 mt-2">Navegação</p>
+        <p className="px-2 text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 mt-2">Menu Principal</p>
         
         {navItems.map((item) => {
           const isActive = currentScreen === item.id;
