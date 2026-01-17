@@ -32,11 +32,13 @@ export interface ApiCategory {
   label: string;
   icon: string;
   count: number;
+  mappedCount: number;
   subcategories: { 
     id: string; 
     db_id: number;
     name: string; 
     count: number; 
+    mappedCount: number;
     icon: string; 
   }[];
 }
@@ -51,6 +53,8 @@ export interface MetaStatus {
     dailyTarget: number;
     countedToday: number;
     accumulatedPending: number;
+    totalStock: number;
+    mappedStock: number;
 }
 
 const getApiBaseUrl = () => {
@@ -137,13 +141,13 @@ export const api = {
   },
 
   // NOVA ROTA: Get Meta Status (Counts)
-  getMetaStatus: async (dailyTarget: number, accumulationMode: boolean): Promise<MetaStatus> => {
+  getMetaStatus: async (dailyTarget: number = 150, accumulationMode: boolean = true): Promise<MetaStatus> => {
       try {
           const response = await fetch(`${API_BASE_URL}/meta-status?target=${dailyTarget}&accumulate=${accumulationMode}`);
           if (!response.ok) throw new Error('Erro ao buscar status da meta');
           return await response.json();
       } catch (error) {
-          return { dailyTarget, countedToday: 0, accumulatedPending: 0 };
+          return { dailyTarget, countedToday: 0, accumulatedPending: 0, totalStock: 0, mappedStock: 0 };
       }
   },
 
