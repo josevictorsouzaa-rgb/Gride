@@ -11,12 +11,12 @@ interface ListScreenProps {
   segmentFilter: string | null;
   onReserveBlock: (id: number) => void;
   onClearFilter: () => void;
-  mode?: 'daily_meta' | 'browse'; 
+  mode?: 'browse'; 
   page?: number;
   onPageChange?: (newPage: number) => void;
 }
 
-// Helper for Relative Time (AddedAt) - CORRIGIDO: COMPARAÇÃO PURA DE DATAS (DIA CIVIL)
+// Helper for Relative Time (AddedAt)
 const getRelativeTime = (isoString?: string) => {
     if (!isoString) return 'Hoje';
     const itemDate = new Date(isoString);
@@ -95,24 +95,18 @@ export const ListScreen: React.FC<ListScreenProps> = ({
       {/* Header */}
       <div className="sticky top-0 z-20 bg-background-light dark:bg-background-dark/95 md:bg-transparent backdrop-blur-md md:backdrop-blur-none border-b border-gray-200 dark:border-card-border md:border-b-0">
         <div className="flex items-center p-4 justify-between gap-3">
-          {mode === 'browse' ? (
-            <button 
-              onClick={() => {
-                setSearchText('');
-                onClearFilter();
-              }}
-              className="flex size-10 shrink-0 items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-surface-dark cursor-pointer transition-colors"
-            >
-               <Icon name="arrow_back" size={24} className="text-gray-700 dark:text-white" />
-            </button>
-          ) : (
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-               <Icon name="view_list" size={24} />
-            </div>
-          )}
+          <button 
+            onClick={() => {
+              setSearchText('');
+              onClearFilter();
+            }}
+            className="flex size-10 shrink-0 items-center justify-center rounded-full hover:bg-gray-100 dark:hover:bg-surface-dark cursor-pointer transition-colors"
+          >
+              <Icon name="arrow_back" size={24} className="text-gray-700 dark:text-white" />
+          </button>
           
           <div className="flex-1 md:text-left text-center pr-2 md:pr-0">
-            <h2 className="text-lg font-bold leading-tight">{segmentFilter || 'Itens'}</h2>
+            <h2 className="text-lg font-bold leading-tight">{segmentFilter || 'Explorar Itens'}</h2>
             <p className="text-xs text-gray-500 dark:text-gray-400">
                {filteredBlocks.length} blocos listados
             </p>

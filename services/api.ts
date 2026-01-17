@@ -117,16 +117,11 @@ export const api = {
     } catch (error) { return []; }
   },
 
-  // NOVA ROTA: Get Daily Suggestions based on Settings (MANTIDA MAS COM CONTEXTO DIFERENTE)
-  getDailyMeta: async (settings: CountingSettings): Promise<Block[]> => {
-      return []; // Meta Diária Desativada - Retorna Vazio
-  },
-
-  // NOVA ROTA: Get Meta Status (Counts)
-  getMetaStatus: async (dailyTarget: number, accumulationMode: boolean): Promise<MetaStatus> => {
+  // NOVA ROTA: Get Stock Coverage Status
+  getMetaStatus: async (): Promise<MetaStatus> => {
       try {
           const response = await fetch(`${API_BASE_URL}/meta-status`);
-          if (!response.ok) throw new Error('Erro ao buscar status da meta');
+          if (!response.ok) throw new Error('Erro ao buscar status');
           return await response.json();
       } catch (error) {
           return { totalStock: 0, mappedStock: 0 };
@@ -249,7 +244,6 @@ export const api = {
       return { success: true };
   },
 
-  // NOVA FUNÇÃO: ATUALIZAR CONTAGEM EXISTENTE (AUDITADA)
   updateCount: async (data: { logId: number, sku: string, newQty: number, oldQty: number, user_name: string, user_id: string }): Promise<{ success: boolean }> => {
       try {
           const response = await fetch(`${API_BASE_URL}/update-count`, {

@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Icon } from './Icon';
 import { Screen } from '../types';
@@ -13,7 +14,7 @@ interface BottomNavProps {
 export const BottomNav: React.FC<BottomNavProps> = ({ currentScreen, onNavigate, onScanClick, isAdmin, reservedCount = 0 }) => {
   const navItems = [
     { id: 'dashboard', label: 'Hub', icon: 'grid_view' },
-    { id: 'list', label: 'Meta', icon: 'checklist' },
+    { id: 'list', label: 'Explorar', icon: 'checklist' },
     { id: 'scan', label: '', icon: 'qr_code_scanner', isFab: true },
     { id: 'history', label: 'Histórico', icon: 'history' },
     // Both Admin and Normal users now see 'Reserved' here. 

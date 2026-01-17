@@ -220,8 +220,6 @@ app.get('/categories', (req, res) => {
                             mappedResult.forEach(r => mappedMap.set(`${String(r.GR_COD).trim()}-${String(r.SG_COD).trim()}`, r.MAPPED));
                         }
 
-                        const groupStats = new Map(); // GR_COD -> { total: 0, mapped: 0 }
-
                         const tree = groups.map(g => {
                             const groupId = String(g.GR_COD).trim();
                             
@@ -279,7 +277,7 @@ app.get('/daily-stats/:userId', (req, res) => {
     });
 });
 
-// NOVA ROTA: STATUS GLOBAL DE COBERTURA
+// STATUS GLOBAL DE COBERTURA
 app.get('/meta-status', (req, res) => {
     Firebird.attach(options, async (err, db) => {
         if (err) return res.status(500).json({ totalStock: 0, mappedStock: 0 });
@@ -290,7 +288,6 @@ app.get('/meta-status', (req, res) => {
             const totalStock = resTotal[0].TOTAL;
 
             // 2. Total Itens Mapeados (Logados com sucesso)
-            // Considera itens que já passaram pelo inventário (Contado ou Divergência)
             const sqlMapped = `SELECT COUNT(DISTINCT PRO_COD) as MAPPED FROM GRIDE_INVENTARIO_LOG WHERE STATUS IN ('Contado', 'Divergência')`;
             const resMapped = await execute(db, sqlMapped);
             const mappedStock = resMapped[0].MAPPED;

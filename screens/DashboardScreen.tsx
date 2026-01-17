@@ -44,8 +44,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     window.addEventListener('resize', checkDesktop);
     
     const loadStatus = async () => {
-        const settings = getSettings();
-        const status = await api.getMetaStatus(settings.dailyTarget, settings.accumulationMode);
+        const status = await api.getMetaStatus();
         setMetaStatus(status);
     };
     loadStatus();
