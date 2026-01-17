@@ -204,7 +204,7 @@ const App: React.FC = () => {
         if (cleanCode.startsWith('LOC-')) {
             const rawLocation = cleanCode.replace('LOC-', ''); 
             const [results] = await Promise.all([
-                api.getBlocks(1, 100, '', undefined, undefined, false, rawLocation),
+                api.getBlocks(1, 100, '', undefined, undefined, rawLocation),
                 minDelay
             ]);
             
