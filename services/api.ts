@@ -53,14 +53,9 @@ export interface MetaStatus {
     mappedStock: number;
 }
 
-const getApiBaseUrl = () => {
-  if (typeof window !== 'undefined') {
-    return `http://${window.location.hostname}:8000`;
-  }
-  return 'http://localhost:8000';
-};
-
-const API_BASE_URL = getApiBaseUrl();
+// Alterado para usar Proxy do Vite via '/api'
+// Isso resolve problemas de CORS e Mixed Content (HTTPS frontend -> HTTP backend)
+const API_BASE_URL = '/api';
 
 export const api = {
   
@@ -87,7 +82,7 @@ export const api = {
       return { success: true, user: data.user };
     } catch (error) {
       if (usuario_id === '9999') return { success: true, user: { id: '9999', name: 'Gestor (Offline)', role: 'Gerente', avatar: '', isAdmin: true } };
-      return { success: false, error: 'Servidor offline.' };
+      return { success: false, error: 'Servidor offline ou inacessível.' };
     }
   },
 
