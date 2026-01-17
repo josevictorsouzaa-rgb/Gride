@@ -394,7 +394,15 @@ app.get('/reserved-blocks/:userId', (req, res) => {
             
             const blocks = rows.map(r => {
                 let items = [];
-                try { items = JSON.parse(blobToString(r.ITEMS_JSON)); } catch(e){}
+                try { 
+                    const jsonStr = blobToString(r.ITEMS_JSON);
+                    if (jsonStr) {
+                        const parsed = JSON.parse(jsonStr);
+                        if (Array.isArray(parsed)) items = parsed;
+                    }
+                } catch(e){
+                    console.error("JSON Parse error:", e);
+                }
                 return {
                     id: safeString(r.BLOCK_ID),
                     parentRef: items[0]?.ref || 'Reserva',
