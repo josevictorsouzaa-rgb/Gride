@@ -1,4 +1,3 @@
-
 import { User, WMSAddress, WarehouseLayout, Block, TreatmentItem } from '../types';
 import { getIconByTerm, GROUP_ICONS } from '../data/categories';
 import { CountingSettings } from '../data/settingsStore';
@@ -32,11 +31,13 @@ export interface ApiCategory {
   label: string;
   icon: string;
   count: number;
+  mappedCount: number;
   subcategories: { 
     id: string; 
     db_id: number;
     name: string; 
     count: number; 
+    mappedCount: number;
     icon: string; 
   }[];
 }
@@ -48,9 +49,8 @@ export interface Warehouse {
 }
 
 export interface MetaStatus {
-    dailyTarget: number;
-    countedToday: number;
-    accumulatedPending: number;
+    totalStock: number;
+    mappedStock: number;
 }
 
 const getApiBaseUrl = () => {
@@ -137,13 +137,13 @@ export const api = {
   },
 
   // NOVA ROTA: Get Meta Status (Counts)
-  getMetaStatus: async (dailyTarget: number, accumulationMode: boolean): Promise<MetaStatus> => {
+  getMetaStatus: async (): Promise<MetaStatus> => {
       try {
-          const response = await fetch(`${API_BASE_URL}/meta-status?target=${dailyTarget}&accumulate=${accumulationMode}`);
+          const response = await fetch(`${API_BASE_URL}/meta-status`);
           if (!response.ok) throw new Error('Erro ao buscar status da meta');
           return await response.json();
       } catch (error) {
-          return { dailyTarget, countedToday: 0, accumulatedPending: 0 };
+          return { totalStock: 0, mappedStock: 0 };
       }
   },
 
