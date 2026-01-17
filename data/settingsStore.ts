@@ -2,8 +2,11 @@
 import { User } from '../types';
 
 export interface CountingSettings {
-  // Configurações futuras podem vir aqui
-  dummy?: boolean; 
+  dailyTarget: number;
+  cooldownDays: number;
+  highGiroThreshold: number;
+  accumulationMode: boolean;
+  highGiroSplit: number; // Nova propriedade: Porcentagem (0-100) para Giro Alto
 }
 
 export interface SettingsHistoryEntry {
@@ -19,7 +22,11 @@ const STORAGE_KEY_SETTINGS = 'li_app_settings_v2';
 const STORAGE_KEY_HISTORY = 'li_app_settings_history_v1';
 
 const DEFAULT_SETTINGS: CountingSettings = {
-  dummy: true
+  dailyTarget: 150,
+  cooldownDays: 30,
+  highGiroThreshold: 5,
+  accumulationMode: true,
+  highGiroSplit: 40 // Default 40% Giro Alto, 60% Ciclo
 };
 
 export const getSettings = (): CountingSettings => {
@@ -28,7 +35,11 @@ export const getSettings = (): CountingSettings => {
     if (stored) {
         const parsed = JSON.parse(stored);
         return { 
-          dummy: true
+          dailyTarget: parsed.dailyTarget ?? DEFAULT_SETTINGS.dailyTarget,
+          cooldownDays: parsed.cooldownDays ?? DEFAULT_SETTINGS.cooldownDays,
+          highGiroThreshold: parsed.highGiroThreshold ?? DEFAULT_SETTINGS.highGiroThreshold,
+          accumulationMode: parsed.accumulationMode ?? DEFAULT_SETTINGS.accumulationMode,
+          highGiroSplit: parsed.highGiroSplit ?? DEFAULT_SETTINGS.highGiroSplit
         };
     }
     return DEFAULT_SETTINGS;
@@ -47,11 +58,26 @@ export const getSettingsHistory = (): SettingsHistoryEntry[] => {
 };
 
 export const saveSettings = (newSettings: CountingSettings, user: User | null) => {
+  const currentSettings = getSettings();
   const history = getSettingsHistory();
   const changes: string[] = [];
 
-  // Detect Changes - Simplified as there are no meta settings
-  changes.push('Configurações atualizadas');
+  // Detect Changes
+  if (currentSettings.dailyTarget !== newSettings.dailyTarget) {
+    changes.push(`Meta Diária: ${currentSettings.dailyTarget} -> ${newSettings.dailyTarget}`);
+  }
+  if (currentSettings.cooldownDays !== newSettings.cooldownDays) {
+    changes.push(`Cooldown (Dias): ${currentSettings.cooldownDays} -> ${newSettings.cooldownDays}`);
+  }
+  if (currentSettings.highGiroThreshold !== newSettings.highGiroThreshold) {
+    changes.push(`Giro Alto (Saídas): ${currentSettings.highGiroThreshold} -> ${newSettings.highGiroThreshold}`);
+  }
+  if (currentSettings.accumulationMode !== newSettings.accumulationMode) {
+    changes.push(`Modo Acumulativo: ${currentSettings.accumulationMode ? 'Ligado' : 'Desligado'} -> ${newSettings.accumulationMode ? 'Ligado' : 'Desligado'}`);
+  }
+  if (currentSettings.highGiroSplit !== newSettings.highGiroSplit) {
+    changes.push(`Equilíbrio Meta (% Giro): ${currentSettings.highGiroSplit}% -> ${newSettings.highGiroSplit}%`);
+  }
 
   // Save Settings
   localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(newSettings));
