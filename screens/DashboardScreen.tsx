@@ -28,14 +28,13 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   categories,
   treatmentCount = 0
 }) => {
-  // Use AutoPartsLoader when categories are not yet loaded
   if (!categories || !Array.isArray(categories) || categories.length === 0) { 
-      return <AutoPartsLoader message="Carregando Categorias..." fullScreen={false} />;
+      return <AutoPartsLoader message="Carregando Estoque..." fullScreen={false} />;
   }
 
   const [showAllCategories, setShowAllCategories] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
-  const [metaStatus, setMetaStatus] = useState<MetaStatus>({ dailyTarget: 150, countedToday: 0, accumulatedPending: 0 });
+  const [metaStatus, setMetaStatus] = useState<MetaStatus>({ totalStock: 0, mappedStock: 0 });
 
   useEffect(() => {
     const checkDesktop = () => {
@@ -44,7 +43,6 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     checkDesktop();
     window.addEventListener('resize', checkDesktop);
     
-    // Load Meta Status
     const loadStatus = async () => {
         const settings = getSettings();
         const status = await api.getMetaStatus(settings.dailyTarget, settings.accumulationMode);
@@ -59,26 +57,14 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     ? (categories || []) 
     : (categories || []).slice(0, 6);
 
-  const { dailyTarget, countedToday, accumulatedPending } = metaStatus;
+  const { totalStock, mappedStock } = metaStatus;
   
-  // Se houver acumulado, a meta visual do dia aumenta? 
-  // O prompt pede para "saldo restante deve ser somado à meta de hoje" (visualmente ou logicamente?)
-  // Visualmente no gráfico: Fatia Verde (Contado), Fatia Vermelha (Pendente Atrasado), Fatia Cinza (Restante Hoje)
+  const remaining = Math.max(0, totalStock - mappedStock);
+  const coveragePercent = totalStock > 0 ? ((mappedStock / totalStock) * 100).toFixed(1) : '0';
   
-  // Total Visual do Gráfico = Target + Accumulated
-  const effectiveTarget = dailyTarget + accumulatedPending;
-  const progressPercent = effectiveTarget > 0 ? Math.min(100, Math.round((countedToday / effectiveTarget) * 100)) : 0;
-  
-  const remainingToday = Math.max(0, dailyTarget - (countedToday - Math.max(0, countedToday - accumulatedPending))); 
-  // Simplified logic for chart data:
-  // 1. Counted Today (Green)
-  // 2. Accumulated Pending (Red) - Only shows what is NOT yet counted of the accumulated pile? 
-  //    Actually, accumulation adds to the TO-DO list.
-  
-  const goalData = [
-    { name: 'Contado', value: countedToday, color: '#137fec' }, // Blue/Green
-    { name: 'Acumulado', value: accumulatedPending, color: '#ef4444' }, // Red (Debt)
-    { name: 'Restante Dia', value: Math.max(0, dailyTarget - Math.max(0, countedToday - accumulatedPending)), color: '#33415520' } // Gray
+  const coverageData = [
+    { name: 'Mapeado', value: mappedStock, color: '#137fec' }, // Blue
+    { name: 'Não Mapeado', value: remaining, color: '#33415520' } // Gray
   ];
 
   return (
@@ -123,38 +109,35 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
       <main className="flex flex-col p-4 md:px-8 md:pb-8 gap-6 md:grid md:grid-cols-3">
         
-        {/* KPI: Daily Goal Card (UPDATED) */}
+        {/* KPI: STOCK COVERAGE CARD (REPLACED DAILY META) */}
         <div 
-            onClick={() => onNavigate('list')}
-            className="md:col-span-1 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border p-5 relative overflow-hidden group hover:border-primary/50 transition-all duration-300 cursor-pointer hover:shadow-md"
+            className="md:col-span-1 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border p-5 relative overflow-hidden group hover:border-primary/50 transition-all duration-300 cursor-default"
         >
            <div className="flex justify-between items-start mb-4 relative z-10">
               <div className="flex flex-col">
                  <h3 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                     {accumulatedPending > 0 ? 'Meta + Acumulado' : 'Meta Diária'}
+                     Cobertura do Estoque
                  </h3>
                  <div className="flex items-baseline gap-2 mt-1">
-                    <p className="text-3xl font-extrabold text-gray-900 dark:text-white">{countedToday}</p>
-                    <span className="text-lg text-gray-400 font-medium">/ {effectiveTarget}</span>
+                    <p className="text-3xl font-extrabold text-gray-900 dark:text-white">{mappedStock}</p>
+                    <span className="text-lg text-gray-400 font-medium">/ {totalStock}</span>
                  </div>
-                 {accumulatedPending > 0 && (
-                     <span className="text-[10px] font-bold text-red-500 bg-red-100 dark:bg-red-900/20 px-2 py-0.5 rounded-full w-fit mt-1">
-                         +{accumulatedPending} Pendentes Anteriores
-                     </span>
-                 )}
+                 <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/20 px-2 py-0.5 rounded-full w-fit mt-1">
+                     Itens Mapeados
+                 </span>
               </div>
               <div className="size-16">
                  <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
-                        data={goalData}
+                        data={coverageData}
                         innerRadius={20}
                         outerRadius={30}
                         paddingAngle={5}
                         dataKey="value"
                         stroke="none"
                       >
-                        {goalData.map((entry, index) => (
+                        {coverageData.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
                       </Pie>
@@ -165,11 +148,11 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
            
            <div className="relative z-10">
               <div className="flex justify-between text-xs font-semibold mb-1">
-                 <span className="text-gray-600 dark:text-gray-300">Progresso Real</span>
-                 <span className="text-primary">{progressPercent}%</span>
+                 <span className="text-gray-600 dark:text-gray-300">Total Auditado</span>
+                 <span className="text-primary">{coveragePercent}%</span>
               </div>
               <div className="h-2 w-full bg-gray-100 dark:bg-white/10 rounded-full overflow-hidden">
-                 <div className="h-full bg-primary rounded-full transition-all duration-1000 ease-out" style={{ width: `${progressPercent}%` }} />
+                 <div className="h-full bg-primary rounded-full transition-all duration-1000 ease-out" style={{ width: `${coveragePercent}%` }} />
               </div>
            </div>
         </div>
@@ -192,33 +175,25 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           </div>
         )}
 
-        {/* KPI: Total Year */}
-        <div className="md:col-span-1 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border p-5 relative overflow-hidden group hover:border-green-400/50 transition-colors duration-300">
-             <div className="flex justify-between items-start mb-2 relative z-10">
-                <div className="p-2 rounded-lg bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400">
-                   <Icon name="bar_chart" />
-                </div>
-             </div>
-             <h3 className="text-2xl font-bold text-gray-900 dark:text-white mt-2">24.5k</h3>
-             <p className="text-xs text-gray-500 font-medium">Itens contados este ano</p>
-        </div>
-
         {/* Categories Section */}
         <div className="md:col-span-3">
            <div className="flex items-center justify-between mb-4 px-1">
-              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Categorias</h2>
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white">Grupos de Produtos</h2>
               {!isDesktop && (
                 <button 
                   onClick={() => setShowAllCategories(!showAllCategories)}
                   className="text-xs font-bold text-primary hover:text-primary-dark transition-colors"
                 >
-                  {showAllCategories ? 'Ver menos' : 'Ver todas'}
+                  {showAllCategories ? 'Ver menos' : 'Ver todos'}
                 </button>
               )}
            </div>
            
            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-              {displayedCategories.map((cat, idx) => (
+              {displayedCategories.map((cat, idx) => {
+                const percent = cat.count > 0 ? (cat.mappedCount / cat.count) * 100 : 0;
+                
+                return (
                 <button
                   key={cat.id || idx}
                   onClick={() => onCategorySelect(cat.label, cat.db_id)}
@@ -230,11 +205,23 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
                    <span className="text-xs font-bold text-gray-700 dark:text-gray-300 text-center uppercase tracking-tight group-hover:text-primary transition-colors line-clamp-1">
                       {cat.label}
                    </span>
-                   <span className="text-xs text-gray-400 mt-1 font-medium bg-gray-100 dark:bg-white/5 px-2 py-0.5 rounded-full">
-                      {cat.count} itens
-                   </span>
+                   
+                   {/* Coverage Badge */}
+                   <div className="mt-2 w-full">
+                       <div className="flex justify-between text-[9px] text-gray-400 font-medium mb-0.5">
+                           <span>{cat.mappedCount}</span>
+                           <span>{cat.count}</span>
+                       </div>
+                       <div className="h-1.5 w-full bg-gray-100 dark:bg-white/5 rounded-full overflow-hidden">
+                           <div 
+                             className="h-full bg-primary/70 rounded-full" 
+                             style={{ width: `${percent}%` }}
+                           />
+                       </div>
+                   </div>
                 </button>
-              ))}
+                );
+              })}
            </div>
         </div>
 

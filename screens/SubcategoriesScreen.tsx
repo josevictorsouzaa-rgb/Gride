@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Icon } from '../components/Icon';
 import { ApiCategory } from '../services/api';
@@ -15,11 +16,8 @@ export const SubcategoriesScreen: React.FC<SubcategoriesScreenProps> = ({
   onBack, 
   onSelectSegment 
 }) => {
-  // Trava de segurança solicitada
   if (!categories || !Array.isArray(categories)) return null;
 
-
-  // Find the category object in our passed props
   const categoryData = categories.find(c => c.label === categoryLabel);
   const items = categoryData ? categoryData.subcategories : [];
 
@@ -53,7 +51,10 @@ export const SubcategoriesScreen: React.FC<SubcategoriesScreenProps> = ({
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3">
-            {items.map((sub, idx) => (
+            {items.map((sub, idx) => {
+              const percent = sub.count > 0 ? Math.round((sub.mappedCount / sub.count) * 100) : 0;
+              
+              return (
               <button 
                 key={sub.id || idx}
                 onClick={() => onSelectSegment(sub.name, sub.db_id)}
@@ -62,13 +63,25 @@ export const SubcategoriesScreen: React.FC<SubcategoriesScreenProps> = ({
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 group-hover:bg-primary/10 group-hover:text-primary transition-colors">
                   <Icon name={sub.icon} size={24} />
                 </div>
-                <div className="flex flex-col items-start ml-4 flex-1">
-                   <h3 className="text-base font-semibold text-gray-900 dark:text-white">{sub.name}</h3>
-                   <p className="text-xs text-gray-500 dark:text-gray-400">{sub.count} itens cadastrados</p>
+                <div className="flex flex-col items-start ml-4 flex-1 pr-2">
+                   <div className="flex justify-between w-full">
+                       <h3 className="text-base font-semibold text-gray-900 dark:text-white">{sub.name}</h3>
+                       <span className="text-xs font-bold text-gray-400">{percent}%</span>
+                   </div>
+                   
+                   <div className="w-full mt-1.5 flex items-center gap-2">
+                       <div className="flex-1 h-1.5 bg-gray-100 dark:bg-white/5 rounded-full overflow-hidden">
+                           <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${percent}%` }} />
+                       </div>
+                       <p className="text-[10px] text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                           {sub.mappedCount}/{sub.count}
+                       </p>
+                   </div>
                 </div>
                 <Icon name="chevron_right" className="text-gray-300 dark:text-gray-600 group-hover:text-primary" size={24} />
               </button>
-            ))}
+              );
+            })}
           </div>
         )}
       </main>

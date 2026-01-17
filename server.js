@@ -10,15 +10,6 @@ const port = 8000;
 // Configuração do Banco de Dados
 const DB_PATH = 'C:\\Users\\DELL G15\\Desktop\\BD\\DATABASE\\DATABASE.FDB';
 
-// Parâmetros Globais da Meta (Padrões, atualizados via rota)
-const GLOBAL_SETTINGS = {
-    dailyTarget: 150,
-    cooldownDays: 30,
-    highGiroThreshold: 5,
-    accumulationMode: true,
-    highGiroSplit: 40 // Nova propriedade: % destinada ao Giro Alto (Padrão 40%)
-};
-
 // Middleware
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
@@ -119,14 +110,8 @@ const initDb = () => {
                 await safeExecute(db, `CREATE TABLE GRIDE_CONTAS_FINALIZADAS (ID INTEGER NOT NULL PRIMARY KEY, SKU VARCHAR(50), PRO_COD INTEGER, QTD_FINAL DECIMAL(15,4), DATA_HORA TIMESTAMP DEFAULT CURRENT_TIMESTAMP, USUARIO_NOME VARCHAR(100), STATUS VARCHAR(20), LOG_ORIGEM_ID INTEGER)`, "Tabela Contas Finalizadas");
                 await safeExecute(db, `CREATE TABLE GRIDE_TRATAMENTO (ID INTEGER NOT NULL PRIMARY KEY, LOG_ID INTEGER, PRO_COD INTEGER, PRO_NRFABRICANTE VARCHAR(50), NOME_PRODUTO VARCHAR(200), LOCALIZACAO VARCHAR(100), TIPO_ERRO VARCHAR(50), DESCRICAO_ERRO VARCHAR(255), REPORTADO_POR VARCHAR(100), REPORTADO_EM TIMESTAMP DEFAULT CURRENT_TIMESTAMP, STATUS VARCHAR(20) DEFAULT 'PENDING', RESOLVIDO_POR VARCHAR(20), RESOLVIDO_EM TIMESTAMP, RESOLUCAO_NOTA VARCHAR(255))`, "Tabela Tratamento");
 
-                // --- TABELA DE CACHE (NOVO) ---
-                await safeExecute(db, `CREATE TABLE GRIDE_SUGESTOES_CACHE (ID INTEGER NOT NULL PRIMARY KEY, BLOCK_ID VARCHAR(50), PRO_COD INTEGER, SKU VARCHAR(50), NOME VARCHAR(200), MARCA VARCHAR(100), SALDO DECIMAL(15,4), LOCALIZACAO VARCHAR(100), CATEGORIA VARCHAR(100), TIPO_SUGESTAO VARCHAR(20), DATA_GERACAO DATE)`, "Tabela Cache Sugestões");
-                
-                // ADD PARENT_SKU (Referencia Visual Mestra)
-                await safeExecute(db, `ALTER TABLE GRIDE_SUGESTOES_CACHE ADD PARENT_SKU VARCHAR(50)`, "Coluna PARENT_SKU em Cache");
-
                 // Generators
-                const gens = ['GEN_GRIDE_ENDERECOS_ID', 'GEN_GRIDE_GALPOES_ID', 'GEN_GRIDE_LOG_ID', 'GEN_GRIDE_TRATAMENTO_ID', 'GEN_GRIDE_CONTAS_FIN_ID', 'GEN_GRIDE_CACHE_ID'];
+                const gens = ['GEN_GRIDE_ENDERECOS_ID', 'GEN_GRIDE_GALPOES_ID', 'GEN_GRIDE_LOG_ID', 'GEN_GRIDE_TRATAMENTO_ID', 'GEN_GRIDE_CONTAS_FIN_ID'];
                 for (const g of gens) await safeExecute(db, `CREATE GENERATOR ${g}`, `Generator ${g}`);
 
                 // Triggers
@@ -135,7 +120,6 @@ const initDb = () => {
                 await safeExecute(db, `CREATE TRIGGER TR_GRIDE_LOG FOR GRIDE_INVENTARIO_LOG ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_LOG_ID, 1); END`, "Trigger Logs");
                 await safeExecute(db, `CREATE TRIGGER TR_GRIDE_TRATAMENTO FOR GRIDE_TRATAMENTO ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_TRATAMENTO_ID, 1); END`, "Trigger Tratamento");
                 await safeExecute(db, `CREATE TRIGGER TR_GRIDE_CONTAS_FIN FOR GRIDE_CONTAS_FINALIZADAS ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_CONTAS_FIN_ID, 1); END`, "Trigger Contas Finalizadas");
-                await safeExecute(db, `CREATE TRIGGER TR_GRIDE_CACHE FOR GRIDE_SUGESTOES_CACHE ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_CACHE_ID, 1); END`, "Trigger Cache");
 
                 console.log(">>> [INIT] Banco de dados padronizado.");
             } catch (e) { console.error(">>> [INIT ERROR]", e); } 
@@ -144,306 +128,7 @@ const initDb = () => {
     });
 };
 
-// --- FUNÇÃO DE PROCESSAMENTO AUTOMÁTICO (CACHE) ---
-const refreshMetaCache = async () => {
-    console.log(">>> [AUTO] Iniciando ciclo de renovação da meta...");
-    
-    // 1. Verificar Dia Útil
-    // Bloqueia apenas Sábado (6) e Domingo (0). Sexta-feira (5) executa normalmente.
-    const today = new Date();
-    const dayOfWeek = today.getDay();
-    if (dayOfWeek === 0 || dayOfWeek === 6) {
-        console.log(">>> [AUTO] Fim de semana detectado. O sistema não renovará a meta hoje.");
-        return;
-    }
-
-    Firebird.attach(options, async (err, db) => {
-        if (err) {
-            console.error(">>> [AUTO ERROR] Falha conexão DB:", err.message);
-            return;
-        }
-
-        try {
-            // *** LIMPEZA PRÉVIA OBRIGATÓRIA ***
-            // Executa fora da transação de inserção para garantir que o cache velho suma.
-            console.log(">>> [AUTO] Limpando cache do dia anterior...");
-            await execute(db, 'DELETE FROM GRIDE_SUGESTOES_CACHE');
-            console.log(">>> [AUTO] Cache limpo.");
-
-            console.time('cache-process');
-
-            // Parâmetros Globais
-            const { dailyTarget, cooldownDays, highGiroThreshold, accumulationMode, highGiroSplit } = GLOBAL_SETTINGS;
-            
-            // 2. Cálculo de Meta Efetiva (Acúmulo Real)
-            let effectiveTarget = dailyTarget;
-            
-            if (accumulationMode) {
-                // Busca o que foi feito nos últimos 3 dias
-                const pendingSql = `SELECT COUNT(*) as COUNTED FROM GRIDE_INVENTARIO_LOG WHERE DATA_HORA >= DATEADD(-3 DAY TO CURRENT_DATE) AND DATA_HORA < CURRENT_DATE AND (STATUS = 'Contado' OR STATUS = 'Divergência')`;
-                const logsResult = await execute(db, pendingSql);
-                const countedLast3Days = logsResult[0].COUNTED || 0;
-                
-                // Meta esperada 3 dias vs Realizado
-                const expected3Days = dailyTarget * 3;
-                const deficit = Math.max(0, expected3Days - countedLast3Days);
-                
-                // ACÚMULO TOTAL DO DÉFICIT SEM TRAVAS (Correção)
-                effectiveTarget += deficit;
-                console.log(`>>> [AUTO] Meta Base: ${dailyTarget}, Déficit: ${deficit}, Meta Efetiva: ${effectiveTarget}`);
-            }
-
-            // Cláusula de Exclusão (Reservados ou em Tratamento)
-            const exclusionSql = `SELECT PRO_COD FROM GRIDE_RESERVAS UNION SELECT PRO_COD FROM GRIDE_TRATAMENTO WHERE STATUS = 'PENDING'`;
-            const exclusions = await execute(db, exclusionSql);
-            const excludedIds = exclusions.map(r => r.PRO_COD).filter(id => id).join(',');
-            const exclusionClause = excludedIds ? `AND P2.PRO_COD NOT IN (${excludedIds})` : '';
-
-            // DIVISÃO DA META
-            const highGiroCount = Math.floor(effectiveTarget * (highGiroSplit / 100));
-            const cycleCount = Math.max(0, effectiveTarget - highGiroCount);
-
-            // --- SELEÇÃO DE ITENS ---
-
-            // ETAPA A: GIRO ALTO (Respeita Cooldown)
-            const sqlGiroIds = `
-                SELECT FIRST ${highGiroCount} 
-                MIN(P2.PRO_COD) as REF_ID,
-                COALESCE(P2.PRO_COD_SIMILAR, CAST(P2.PRO_COD AS VARCHAR(20))) as GROUP_ID
-                FROM PEDIDOSITENS PI 
-                JOIN PRODUTOS P2 ON P2.PRO_COD = PI.PRO_COD 
-                LEFT JOIN GRIDE_INVENTARIO_LOG L ON L.PRO_COD = P2.PRO_COD 
-                WHERE 1=1 ${exclusionClause} 
-                GROUP BY COALESCE(P2.PRO_COD_SIMILAR, CAST(P2.PRO_COD AS VARCHAR(20)))
-                HAVING COUNT(*) >= ${highGiroThreshold} 
-                AND (MAX(L.DATA_HORA) IS NULL OR MAX(L.DATA_HORA) < DATEADD(-${cooldownDays} DAY TO CURRENT_DATE))
-            `;
-            const giroGroups = await execute(db, sqlGiroIds);
-            const highGiroGroupIds = giroGroups.map(r => safeString(r.GROUP_ID)).filter(id => id);
-
-            // ETAPA B: CICLO (Respeita Cooldown)
-            const adjustedCycleCount = Math.max(0, effectiveTarget - highGiroGroupIds.length);
-            const selectedSoFar = highGiroGroupIds.length > 0 ? highGiroGroupIds.map(g => `'${g}'`).join(',') : "''";
-
-            const sqlCycleIds = `
-                SELECT FIRST ${adjustedCycleCount} 
-                MIN(P2.PRO_COD) as REF_ID,
-                COALESCE(P2.PRO_COD_SIMILAR, CAST(P2.PRO_COD AS VARCHAR(20))) as GROUP_ID
-                FROM PRODUTOS P2 
-                LEFT JOIN GRIDE_INVENTARIO_LOG L ON L.PRO_COD = P2.PRO_COD 
-                WHERE P2.PRO_ATIVO = 'S' ${exclusionClause}
-                AND COALESCE(P2.PRO_COD_SIMILAR, CAST(P2.PRO_COD AS VARCHAR(20))) NOT IN (${selectedSoFar})
-                GROUP BY COALESCE(P2.PRO_COD_SIMILAR, CAST(P2.PRO_COD AS VARCHAR(20)))
-                HAVING MAX(L.DATA_HORA) IS NULL OR MAX(L.DATA_HORA) < DATEADD(-${cooldownDays} DAY TO CURRENT_DATE)
-                ORDER BY MAX(L.DATA_HORA) ASC NULLS FIRST
-            `;
-            const cycleGroups = await execute(db, sqlCycleIds);
-            const cycleGroupIds = cycleGroups.map(r => safeString(r.GROUP_ID)).filter(id => id);
-
-            // ETAPA C: FALLBACK DE EMERGÊNCIA (Ignora Cooldown se necessário)
-            let allGroupIds = [...new Set([...highGiroGroupIds, ...cycleGroupIds])];
-            
-            if (allGroupIds.length < effectiveTarget) {
-                const shortfall = effectiveTarget - allGroupIds.length;
-                console.log(`>>> [AUTO] Alvo não atingido (${allGroupIds.length}/${effectiveTarget}). Ativando Fallback para ${shortfall} blocos.`);
-                
-                const selectedSoFarFallback = allGroupIds.length > 0 ? allGroupIds.map(g => `'${g}'`).join(',') : "''";
-
-                const sqlFallback = `
-                    SELECT FIRST ${shortfall} 
-                    MIN(P2.PRO_COD) as REF_ID,
-                    COALESCE(P2.PRO_COD_SIMILAR, CAST(P2.PRO_COD AS VARCHAR(20))) as GROUP_ID
-                    FROM PRODUTOS P2 
-                    LEFT JOIN GRIDE_INVENTARIO_LOG L ON L.PRO_COD = P2.PRO_COD 
-                    WHERE P2.PRO_ATIVO = 'S' ${exclusionClause}
-                    AND COALESCE(P2.PRO_COD_SIMILAR, CAST(P2.PRO_COD AS VARCHAR(20))) NOT IN (${selectedSoFarFallback})
-                    GROUP BY COALESCE(P2.PRO_COD_SIMILAR, CAST(P2.PRO_COD AS VARCHAR(20)))
-                    ORDER BY MAX(L.DATA_HORA) ASC NULLS FIRST
-                `;
-                
-                const fallbackGroups = await execute(db, sqlFallback);
-                const fallbackIds = fallbackGroups.map(r => safeString(r.GROUP_ID)).filter(id => id);
-                allGroupIds = [...allGroupIds, ...fallbackIds];
-            }
-
-            if (allGroupIds.length === 0) {
-                console.log(">>> [AUTO] ERRO CRÍTICO: Nenhum item disponível no estoque.");
-                db.detach();
-                return;
-            }
-
-            // 3. Buscar Detalhes dos Itens Selecionados
-            const groupIdsStr = allGroupIds.map(g => `'${g}'`).join(',');
-
-            const sqlDetails = `
-                SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, M.MAR_DESCRI, 
-                       COALESCE(P.PRO_COD_SIMILAR, CAST(P.PRO_COD AS VARCHAR(20))) as BLOCK_KEY, 
-                       P.PRO_NRFABRICANTE, P.PRO_PRATELEIRA 
-                FROM PRODUTOS P 
-                LEFT JOIN MARCAS M ON (M.MAR_COD = P.MAR_COD) 
-                WHERE (P.PRO_COD_SIMILAR IN (${groupIdsStr})) 
-                   OR (P.PRO_COD_SIMILAR IS NULL AND CAST(P.PRO_COD AS VARCHAR(20)) IN (${groupIdsStr}))
-                ORDER BY P.PRO_PRATELEIRA
-            `;
-            const products = await execute(db, sqlDetails);
-
-            // Agrupamento em Memória
-            const groupedProducts = new Map();
-            products.forEach(p => {
-                const bKey = safeString(p.BLOCK_KEY);
-                if (!groupedProducts.has(bKey)) {
-                    groupedProducts.set(bKey, []);
-                }
-                groupedProducts.get(bKey).push(p);
-            });
-
-            // 4. Inserção no Cache (Transação Apenas para Insert)
-            db.transaction(Firebird.ISOLATION_READ_COMMITTED, async (err, transaction) => {
-                if (err) {
-                    console.error(">>> [AUTO ERROR] Erro ao iniciar transação:", err);
-                    db.detach();
-                    return;
-                }
-
-                try {
-                    const highGiroSet = new Set(highGiroGroupIds);
-                    
-                    for (const [blockId, items] of groupedProducts) {
-                        // Define Mestre
-                        let masterItem = items.find(i => String(i.PRO_COD) === blockId);
-                        if (!masterItem) masterItem = items[0];
-                        
-                        const parentSku = safeString(masterItem.PRO_NRFABRICANTE);
-                        const tipoSugestao = highGiroSet.has(blockId) ? 'Giro Alto' : 'Ciclo';
-
-                        for (const p of items) {
-                            const insertSql = `
-                                INSERT INTO GRIDE_SUGESTOES_CACHE 
-                                (BLOCK_ID, PRO_COD, SKU, NOME, MARCA, SALDO, LOCALIZACAO, CATEGORIA, TIPO_SUGESTAO, DATA_GERACAO, PARENT_SKU) 
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_DATE, ?)
-                            `;
-                            
-                            const params = [
-                                blockId,
-                                p.PRO_COD,
-                                safeString(p.PRO_NRFABRICANTE),
-                                safeString(p.PRO_DESCRI).substring(0, 200),
-                                safeString(p.MAR_DESCRI).substring(0, 100) || 'SEM MARCA',
-                                p.PRO_EST_ATUAL || 0,
-                                safeString(p.PRO_PRATELEIRA) || 'GERAL',
-                                safeString(p.GR_COD), 
-                                tipoSugestao,
-                                parentSku
-                            ];
-
-                            await new Promise((resolve, reject) => {
-                                transaction.query(insertSql, params, (err) => {
-                                    if (err) reject(err); else resolve();
-                                });
-                            });
-                        }
-                    }
-
-                    transaction.commit((err) => {
-                        if (err) {
-                            console.error(">>> [AUTO ERROR] Erro no Commit:", err);
-                            transaction.rollback();
-                        } else {
-                            console.log(`>>> [AUTO] Sucesso! ${groupedProducts.size} blocos gerados.`);
-                        }
-                        db.detach();
-                        console.timeEnd('cache-process');
-                    });
-
-                } catch (txErr) {
-                    console.error(">>> [AUTO ERROR] Rollback:", txErr);
-                    transaction.rollback();
-                    db.detach();
-                }
-            });
-
-        } catch (procErr) {
-            console.error(">>> [AUTO ERROR] Erro Geral:", procErr);
-            db.detach();
-        }
-    });
-};
-
 // --- ROTAS ---
-
-app.get('/daily-meta-suggestions', (req, res) => {
-    // Atualizar Configurações Globais se enviadas
-    if (req.query.dailyTarget) GLOBAL_SETTINGS.dailyTarget = parseInt(req.query.dailyTarget);
-    if (req.query.cooldownDays) GLOBAL_SETTINGS.cooldownDays = parseInt(req.query.cooldownDays);
-    if (req.query.highGiroThreshold) GLOBAL_SETTINGS.highGiroThreshold = parseInt(req.query.highGiroThreshold);
-    if (req.query.accumulationMode) GLOBAL_SETTINGS.accumulationMode = req.query.accumulationMode === 'true';
-    if (req.query.highGiroSplit) GLOBAL_SETTINGS.highGiroSplit = parseInt(req.query.highGiroSplit);
-
-    // Rota Otimizada: Lê apenas do Cache
-    Firebird.attach(options, (err, db) => {
-        if (err) return res.status(500).json({ error: 'Erro Conexão' });
-
-        const sql = `
-            SELECT BLOCK_ID, PRO_COD, SKU, NOME, MARCA, SALDO, LOCALIZACAO, TIPO_SUGESTAO, PARENT_SKU 
-            FROM GRIDE_SUGESTOES_CACHE 
-            WHERE DATA_GERACAO = CURRENT_DATE 
-            ORDER BY BLOCK_ID, LOCALIZACAO
-        `;
-
-        db.query(sql, [], (err, result) => {
-            db.detach();
-            if (err) return res.status(500).json({ error: err.message });
-
-            // Agrupamento para formato do Frontend
-            const groups = new Map();
-            const todayFormatted = new Date().toLocaleDateString('pt-BR');
-
-            result.forEach(r => {
-                const bId = safeString(r.BLOCK_ID);
-                if (!groups.has(bId)) {
-                    groups.set(bId, {
-                        id: bId,
-                        parentRef: safeString(r.PARENT_SKU) || safeString(r.SKU), // Usa o Mestre persistido
-                        items: [],
-                        isGiro: false
-                    });
-                }
-                const group = groups.get(bId);
-                
-                group.items.push({
-                    id: String(r.PRO_COD),
-                    db_pro_cod: r.PRO_COD,
-                    name: safeString(r.NOME),
-                    ref: safeString(r.SKU),
-                    brand: safeString(r.MARCA),
-                    balance: parseFloat(r.SALDO),
-                    location: safeString(r.LOCALIZACAO),
-                    inTreatment: false
-                });
-
-                if (safeString(r.TIPO_SUGESTAO) === 'Giro Alto') {
-                    group.isGiro = true;
-                }
-            });
-
-            const blocks = [];
-            groups.forEach((group, key) => {
-                blocks.push({
-                    id: key,
-                    parentRef: group.parentRef, // Já definido corretamente na criação do grupo
-                    location: group.items[0].location,
-                    status: 'pending',
-                    date: todayFormatted,
-                    subcategory: group.isGiro ? 'Giro Alto' : 'Ciclo',
-                    items: group.items,
-                    addedAt: new Date().toISOString()
-                });
-            });
-
-            res.json(blocks);
-        });
-    });
-});
 
 app.get('/user-name/:id', (req, res) => {
     const { id } = req.params;
@@ -496,36 +181,82 @@ app.get('/users', (req, res) => {
 app.get('/categories', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json([]);
+        
+        // 1. Grupos e Subgrupos
         db.query('SELECT GR_COD, GR_DESCRI FROM GRUPOPRODUTOS', [], (errGroups, groups) => {
             if (errGroups) { db.detach(); return res.json([]); }
+            
             db.query('SELECT GR_COD, SG_COD, SG_DESCRI FROM SUBGRUPOPRODUTOS', [], (errSub, subgroups) => {
                 if (errSub) { db.detach(); return res.json([]); }
-                const sqlCounts = `SELECT GR_COD, SG_COD, COUNT(*) as TOTAL FROM PRODUTOS WHERE PRO_ATIVO = 'S' GROUP BY GR_COD, SG_COD`;
-                db.query(sqlCounts, [], (errCount, counts) => {
-                    db.detach();
-                    const countMap = new Map();
-                    const groupCountMap = new Map();
-                    if (!errCount && counts) {
-                        counts.forEach(row => {
-                            const gr = String(row.GR_COD).trim();
-                            const sg = String(row.SG_COD).trim();
-                            const total = row.TOTAL;
-                            countMap.set(`${gr}-${sg}`, total);
-                            groupCountMap.set(gr, (groupCountMap.get(gr) || 0) + total);
+                
+                // 2. Total de Itens Ativos por Grupo/Subgrupo
+                const sqlTotal = `
+                    SELECT GR_COD, SG_COD, COUNT(*) as TOTAL 
+                    FROM PRODUTOS 
+                    WHERE PRO_ATIVO = 'S' 
+                    GROUP BY GR_COD, SG_COD
+                `;
+                
+                // 3. Total de Itens Já Mapeados (Com log de contagem ou divergencia)
+                const sqlMapped = `
+                    SELECT P.GR_COD, P.SG_COD, COUNT(DISTINCT L.PRO_COD) as MAPPED
+                    FROM GRIDE_INVENTARIO_LOG L
+                    JOIN PRODUTOS P ON P.PRO_COD = L.PRO_COD
+                    WHERE (L.STATUS = 'Contado' OR L.STATUS = 'Divergência')
+                    GROUP BY P.GR_COD, P.SG_COD
+                `;
+
+                db.query(sqlTotal, [], (errTotal, totalResult) => {
+                    if (errTotal) { db.detach(); return res.json([]); }
+                    
+                    db.query(sqlMapped, [], (errMapped, mappedResult) => {
+                        db.detach();
+                        
+                        const totalMap = new Map(); // "GR-SG" -> count
+                        const mappedMap = new Map(); // "GR-SG" -> count
+                        
+                        totalResult.forEach(r => totalMap.set(`${String(r.GR_COD).trim()}-${String(r.SG_COD).trim()}`, r.TOTAL));
+                        if (!errMapped && mappedResult) {
+                            mappedResult.forEach(r => mappedMap.set(`${String(r.GR_COD).trim()}-${String(r.SG_COD).trim()}`, r.MAPPED));
+                        }
+
+                        const groupStats = new Map(); // GR_COD -> { total: 0, mapped: 0 }
+
+                        const tree = groups.map(g => {
+                            const groupId = String(g.GR_COD).trim();
+                            
+                            const subs = subgroups.filter(s => String(s.GR_COD).trim() === groupId).map(s => {
+                                const subId = String(s.SG_COD).trim();
+                                const key = `${groupId}-${subId}`;
+                                const total = totalMap.get(key) || 0;
+                                const mapped = mappedMap.get(key) || 0;
+                                
+                                return { 
+                                    id: subId, 
+                                    db_id: s.SG_COD, 
+                                    name: safeString(s.SG_DESCRI), 
+                                    count: total, // Total items
+                                    mappedCount: mapped, // Counted items
+                                    icon: 'circle' 
+                                };
+                            });
+
+                            const gTotal = subs.reduce((acc, s) => acc + s.count, 0);
+                            const gMapped = subs.reduce((acc, s) => acc + s.mappedCount, 0);
+
+                            return { 
+                                id: groupId, 
+                                db_id: g.GR_COD, 
+                                label: safeString(g.GR_DESCRI), 
+                                icon: 'inventory_2', 
+                                count: gTotal, 
+                                mappedCount: gMapped,
+                                subcategories: subs 
+                            };
                         });
-                    }
-                    const tree = groups.map(g => {
-                        const groupId = String(g.GR_COD).trim();
-                        const subs = subgroups.filter(s => String(s.GR_COD).trim() === groupId).map(s => ({ 
-                            id: String(s.SG_COD).trim(), 
-                            db_id: s.SG_COD, 
-                            name: safeString(s.SG_DESCRI), 
-                            count: countMap.get(`${groupId}-${String(s.SG_COD).trim()}`) || 0, 
-                            icon: 'circle' 
-                        }));
-                        return { id: groupId, db_id: g.GR_COD, label: safeString(g.GR_DESCRI), icon: 'inventory_2', count: groupCountMap.get(groupId) || 0, subcategories: subs };
+                        
+                        res.json(tree);
                     });
-                    res.json(tree);
                 });
             });
         });
@@ -548,29 +279,27 @@ app.get('/daily-stats/:userId', (req, res) => {
     });
 });
 
+// NOVA ROTA: STATUS GLOBAL DE COBERTURA
 app.get('/meta-status', (req, res) => {
-    const dailyTarget = parseInt(req.query.target) || 150;
-    const accumulate = req.query.accumulate === 'true';
     Firebird.attach(options, async (err, db) => {
-        if (err) return res.status(500).json({ dailyTarget, countedToday: 0, accumulatedPending: 0 });
+        if (err) return res.status(500).json({ totalStock: 0, mappedStock: 0 });
         try {
-            const sqlToday = `SELECT COUNT(*) as TOTAL FROM GRIDE_INVENTARIO_LOG WHERE CAST(DATA_HORA AS DATE) = CAST('NOW' AS DATE) AND (STATUS = 'Contado' OR STATUS = 'Divergência')`;
-            const todayRes = await execute(db, sqlToday);
-            const countedToday = todayRes[0].TOTAL;
-            let accumulatedPending = 0;
-            if (accumulate) {
-                const sqlPast = `SELECT COUNT(*) as TOTAL FROM GRIDE_INVENTARIO_LOG WHERE DATA_HORA >= DATEADD(-3 DAY TO CAST('NOW' AS DATE)) AND DATA_HORA < CAST('NOW' AS DATE) AND (STATUS = 'Contado' OR STATUS = 'Divergência')`;
-                const pastRes = await execute(db, sqlPast);
-                const pastCount = pastRes[0].TOTAL;
-                const pastTarget = dailyTarget * 3; 
-                accumulatedPending = Math.max(0, pastTarget - pastCount);
-                accumulatedPending = Math.min(accumulatedPending, Math.floor(dailyTarget * 0.5));
-            }
+            // 1. Total Produtos Ativos
+            const sqlTotal = `SELECT COUNT(*) as TOTAL FROM PRODUTOS WHERE PRO_ATIVO = 'S'`;
+            const resTotal = await execute(db, sqlTotal);
+            const totalStock = resTotal[0].TOTAL;
+
+            // 2. Total Itens Mapeados (Logados com sucesso)
+            // Considera itens que já passaram pelo inventário (Contado ou Divergência)
+            const sqlMapped = `SELECT COUNT(DISTINCT PRO_COD) as MAPPED FROM GRIDE_INVENTARIO_LOG WHERE STATUS IN ('Contado', 'Divergência')`;
+            const resMapped = await execute(db, sqlMapped);
+            const mappedStock = resMapped[0].MAPPED;
+
             db.detach();
-            res.json({ dailyTarget, countedToday, accumulatedPending });
+            res.json({ totalStock, mappedStock });
         } catch (e) {
             db.detach();
-            res.json({ dailyTarget, countedToday: 0, accumulatedPending: 0 });
+            res.json({ totalStock: 0, mappedStock: 0 });
         }
     });
 });
@@ -708,21 +437,16 @@ app.post('/reserve-block', (req, res) => {
                     if (errIns) { db.detach(); return res.status(500).json({ success: false, message: 'Erro ao reservar: ' + errIns.message }); }
                     
                     // 4. INSERE O LOG (Lastro de Movimentação)
-                    // Importante: O BLOCK_REF deve ser o block_id (ID do grupo)
                     const logSql = `
                         INSERT INTO GRIDE_INVENTARIO_LOG (PRO_COD, PRO_NRFABRICANTE, NOME_PRODUTO, USU_COD, USUARIO_NOME, STATUS, DIVERGENCIA_MOTIVO, BLOCK_REF, DATA_HORA)
-                        SELECT FIRST 1 PRO_COD, PRO_NRFABRICANTE, PRO_DESCRI, ?, ?, 'RESERVADO', 'Origem: META_DIARIA', ?, CURRENT_TIMESTAMP
+                        SELECT FIRST 1 PRO_COD, PRO_NRFABRICANTE, PRO_DESCRI, ?, ?, 'RESERVADO', 'Origem: MANUAL', ?, CURRENT_TIMESTAMP
                         FROM PRODUTOS
                         WHERE PRO_COD = ? OR PRO_COD_SIMILAR = ?
                     `;
                     
                     db.query(logSql, [user_id, user_name, block_id, proCodVal, block_id], (errLog) => {
-                        
-                        // 5. REMOÇÃO IMEDIATA DO CACHE (Para sumir da Meta Diária de todos)
-                        db.query('DELETE FROM GRIDE_SUGESTOES_CACHE WHERE BLOCK_ID = ?', [block_id], (errDel) => {
-                            db.detach();
-                            res.json({ success: true });
-                        });
+                        db.detach();
+                        res.json({ success: true });
                     });
                 });
             });
@@ -786,6 +510,7 @@ app.post('/finalize-block', (req, res) => {
                     const localizacao = (item.lastCount && item.lastCount.location) ? item.lastCount.location : (item.location || 'GERAL');
                     const motivo = item.divergenceReason || '';
 
+                    // 1. INSERE LOG
                     const sqlLog = `INSERT INTO GRIDE_INVENTARIO_LOG (PRO_COD, PRO_NRFABRICANTE, NOME_PRODUTO, USU_COD, USUARIO_NOME, QTD_SISTEMA, QTD_CONTADA, LOCALIZACAO, STATUS, DIVERGENCIA_MOTIVO, BLOCK_REF, DATA_HORA) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP) RETURNING ID`;
                     
                     const resultLog = await new Promise((resolve, reject) => {
@@ -799,8 +524,15 @@ app.post('/finalize-block', (req, res) => {
                         await new Promise((resolve, reject) => { transaction.query(sqlFinal, [item.ref, realProCod, qtdContada, user_name, logId], (err) => { if(err) reject(err); else resolve(); }); });
                     }
 
+                    // 2. ATUALIZA ESTOQUE
                     const sqlUpdate = `UPDATE PRODUTOS SET PRO_EST_ATUAL = ? WHERE PRO_COD = ?`;
                     await new Promise((resolve) => { transaction.query(sqlUpdate, [qtdContada, realProCod], (err) => resolve()); });
+
+                    // 3. VÍNCULO PERMANENTE DE ENDEREÇO (SOLICITADO)
+                    if (localizacao && localizacao !== 'GERAL' && localizacao !== '?' && !localizacao.includes('LOC-?-?-?')) {
+                        const sqlUpdateLoc = `UPDATE PRODUTOS SET PRO_PRATELEIRA = ? WHERE PRO_COD = ?`;
+                        await new Promise((resolve) => { transaction.query(sqlUpdateLoc, [localizacao, realProCod], (err) => resolve()); });
+                    }
 
                     if (statusEN === 'not_located' || statusEN === 'divergence_info' || statusEN === 'issue') {
                         const sqlTreat = `INSERT INTO GRIDE_TRATAMENTO (LOG_ID, PRO_COD, PRO_NRFABRICANTE, NOME_PRODUTO, LOCALIZACAO, TIPO_ERRO, DESCRICAO_ERRO, REPORTADO_POR, STATUS) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')`;
@@ -956,13 +688,6 @@ app.post('/delete-warehouse', (req, res) => {
 const startServer = async () => {
     try {
         await initDb();
-        
-        // Inicializa a Meta (Primeira Execução)
-        refreshMetaCache();
-        
-        // Agendamento: A cada 1 Hora
-        setInterval(refreshMetaCache, 60 * 60 * 1000);
-
         app.listen(port, '0.0.0.0', () => {
             console.log(`Servidor GRIDE Firebird rodando em http://localhost:${port}`);
         });

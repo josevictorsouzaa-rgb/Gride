@@ -31,12 +31,14 @@ export interface ApiCategory {
   db_id: number;
   label: string;
   icon: string;
-  count: number;
+  count: number; // Total items
+  mappedCount: number; // Counted items
   subcategories: { 
     id: string; 
     db_id: number;
     name: string; 
     count: number; 
+    mappedCount: number;
     icon: string; 
   }[];
 }
@@ -48,9 +50,8 @@ export interface Warehouse {
 }
 
 export interface MetaStatus {
-    dailyTarget: number;
-    countedToday: number;
-    accumulatedPending: number;
+    totalStock: number;
+    mappedStock: number;
 }
 
 const getApiBaseUrl = () => {
@@ -116,34 +117,19 @@ export const api = {
     } catch (error) { return []; }
   },
 
-  // NOVA ROTA: Get Daily Suggestions based on Settings
+  // NOVA ROTA: Get Daily Suggestions based on Settings (MANTIDA MAS COM CONTEXTO DIFERENTE)
   getDailyMeta: async (settings: CountingSettings): Promise<Block[]> => {
-      try {
-          const params = new URLSearchParams({
-              dailyTarget: settings.dailyTarget.toString(),
-              cooldownDays: settings.cooldownDays.toString(),
-              highGiroThreshold: settings.highGiroThreshold.toString(),
-              accumulationMode: settings.accumulationMode ? 'true' : 'false',
-              highGiroSplit: (settings.highGiroSplit || 40).toString()
-          });
-
-          const response = await fetch(`${API_BASE_URL}/daily-meta-suggestions?${params}`);
-          if (!response.ok) throw new Error('Erro ao buscar meta diária');
-          return await response.json();
-      } catch (error) {
-          console.error(error);
-          return [];
-      }
+      return []; // Meta Diária Desativada - Retorna Vazio
   },
 
   // NOVA ROTA: Get Meta Status (Counts)
   getMetaStatus: async (dailyTarget: number, accumulationMode: boolean): Promise<MetaStatus> => {
       try {
-          const response = await fetch(`${API_BASE_URL}/meta-status?target=${dailyTarget}&accumulate=${accumulationMode}`);
+          const response = await fetch(`${API_BASE_URL}/meta-status`);
           if (!response.ok) throw new Error('Erro ao buscar status da meta');
           return await response.json();
       } catch (error) {
-          return { dailyTarget, countedToday: 0, accumulatedPending: 0 };
+          return { totalStock: 0, mappedStock: 0 };
       }
   },
 
