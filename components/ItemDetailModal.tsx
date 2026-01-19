@@ -13,13 +13,67 @@ interface ItemDetailModalProps {
 }
 
 const formatHistoryEntry = (entry: any) => {
+    let actionLabel = entry.STATUS;
+    let icon = 'info';
+    let color = 'text-gray-500';
+    let dotColor = 'bg-gray-300 dark:bg-gray-600';
+
+    switch (entry.STATUS) {
+        case 'RESERVADO':
+            actionLabel = 'Reserva do Item';
+            icon = 'lock';
+            color = 'text-blue-600 dark:text-blue-400';
+            dotColor = 'bg-blue-500';
+            break;
+        case 'DEVOLVIDO':
+            actionLabel = 'Devolução do Item';
+            icon = 'keyboard_return';
+            color = 'text-red-500 dark:text-red-400';
+            dotColor = 'bg-red-500';
+            break;
+        case 'Contado':
+        case 'counted':
+            actionLabel = 'Conclusão da Contagem';
+            icon = 'check_circle';
+            color = 'text-green-600 dark:text-green-400';
+            dotColor = 'bg-green-500';
+            break;
+        case 'Não Localizado':
+        case 'not_located':
+            actionLabel = 'Não Localizado';
+            icon = 'search_off';
+            color = 'text-gray-500 dark:text-gray-400';
+            dotColor = 'bg-gray-400';
+            break;
+        case 'Divergência':
+        case 'divergence_info':
+            actionLabel = 'Apontamento de Divergência';
+            icon = 'warning';
+            color = 'text-orange-600 dark:text-orange-400';
+            dotColor = 'bg-orange-500';
+            break;
+        case 'EDIÇÃO':
+        case 'edited':
+            actionLabel = 'Edição de Saldo';
+            icon = 'edit_note';
+            color = 'text-purple-600 dark:text-purple-400';
+            dotColor = 'bg-purple-500';
+            break;
+        default:
+            actionLabel = entry.STATUS || 'Evento';
+    }
+
     return {
         date: new Date(entry.DATA_HORA).toLocaleDateString('pt-BR') + ' ' + new Date(entry.DATA_HORA).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'}),
         user: entry.USUARIO_NOME,
-        action: entry.STATUS === 'counted' ? 'Contagem' : (entry.STATUS === 'not_located' ? 'Não Localizado' : (entry.STATUS === 'EDIÇÃO' ? 'Edição' : entry.STATUS)),
+        action: actionLabel,
+        icon: icon,
+        color: color,
+        dotColor: dotColor,
         oldValue: entry.QTD_SISTEMA,
         newValue: entry.QTD_CONTADA,
-        location: entry.LOCALIZACAO
+        location: entry.LOCALIZACAO,
+        reason: entry.DIVERGENCIA_MOTIVO
     };
 };
 
@@ -39,9 +93,9 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
   }, [isOpen]);
 
   useEffect(() => {
-      if (isOpen && item && item.ref) {
+      if (isOpen && item && (item.ref || item.sku)) {
           setLoadingHistory(true);
-          api.getProductHistory(item.ref).then(data => {
+          api.getProductHistory(item.ref || item.sku).then(data => {
               const formatted = data.map(formatHistoryEntry);
               setHistory(formatted);
               setLoadingHistory(false);
@@ -161,45 +215,53 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
                      </div>
                  ) : (
                      history.map((h, idx) => {
-                         const isEdit = h.action === 'Edição';
-                         const isCount = h.action === 'Contagem';
-                         const isReserve = h.action === 'RESERVADO';
-                         
-                         let dotColor = 'bg-gray-300 dark:bg-gray-600';
-                         if (isCount) dotColor = 'bg-green-500';
-                         if (isEdit) dotColor = 'bg-orange-500';
-                         if (isReserve) dotColor = 'bg-blue-500';
+                         const showDetails = h.action === 'Conclusão da Contagem' || h.action === 'Edição de Saldo' || h.action === 'Apontamento de Divergência';
 
                          return (
                              <div key={idx} className="relative pl-6 pb-6 last:pb-0 group">
                                  {/* Dot */}
-                                 <div className={`absolute top-1 left-[0.15rem] size-3.5 rounded-full border-2 border-white dark:border-surface-dark ${dotColor} z-10`} />
+                                 <div className={`absolute top-1 left-[0.15rem] size-3.5 rounded-full border-2 border-white dark:border-surface-dark ${h.dotColor} z-10`} />
                                  
-                                 <div className="flex flex-col bg-gray-50 dark:bg-white/5 p-3 rounded-xl border border-gray-100 dark:border-white/5 hover:border-gray-300 dark:hover:border-gray-500 transition-colors">
+                                 <div className="flex flex-col bg-gray-50 dark:bg-white/5 p-3 rounded-xl border border-gray-100 dark:border-white/5 hover:border-gray-300 dark:hover:border-gray-500 transition-colors shadow-sm">
                                      <div className="flex justify-between items-start mb-1">
-                                         <span className={`text-xs font-bold uppercase tracking-wide ${isEdit ? 'text-orange-600' : (isCount ? 'text-green-600' : 'text-gray-600 dark:text-gray-300')}`}>
+                                         <span className={`text-xs font-bold uppercase tracking-wide flex items-center gap-1 ${h.color}`}>
+                                             <Icon name={h.icon} size={14} />
                                              {h.action}
                                          </span>
                                          <span className="text-[10px] text-gray-400 font-mono">{h.date}</span>
                                      </div>
                                      
-                                     <div className="text-sm text-gray-800 dark:text-gray-200 font-medium">
+                                     <div className="text-sm text-gray-800 dark:text-gray-200 font-medium ml-0.5">
                                          {h.user || 'Sistema'}
                                      </div>
 
-                                     {(isCount || isEdit) && (
-                                         <div className="mt-2 text-xs bg-white dark:bg-black/20 p-2 rounded-lg border border-gray-200 dark:border-white/5 flex justify-between">
-                                             <span className="text-gray-500">Valor:</span>
-                                             <span className="font-mono font-bold">
-                                                 {h.oldValue !== undefined ? <span className="line-through text-gray-400 mr-2">{h.oldValue}</span> : ''}
-                                                 {h.newValue} un
-                                             </span>
+                                     {showDetails && (
+                                         <div className="mt-2 text-xs bg-white dark:bg-black/20 p-2 rounded-lg border border-gray-200 dark:border-white/5 flex flex-col gap-1">
+                                             <div className="flex justify-between">
+                                                <span className="text-gray-500">Contagem:</span>
+                                                <span className="font-mono font-bold">
+                                                    {h.newValue} un
+                                                </span>
+                                             </div>
+                                             {h.oldValue != null && h.oldValue !== h.newValue && (
+                                                 <div className="flex justify-between text-[10px]">
+                                                    <span className="text-gray-400">Anterior (Sist):</span>
+                                                    <span className="font-mono text-gray-400 line-through">
+                                                        {h.oldValue}
+                                                    </span>
+                                                 </div>
+                                             )}
+                                             {h.reason && (
+                                                 <div className="pt-1 mt-1 border-t border-dashed border-gray-200 dark:border-white/10 text-orange-600 dark:text-orange-400 italic">
+                                                     "{h.reason}"
+                                                 </div>
+                                             )}
                                          </div>
                                      )}
                                      
-                                     {h.location && (
-                                         <div className="mt-1 text-[10px] text-gray-400 flex items-center gap-1">
-                                             <Icon name="place" size={10} /> {h.location}
+                                     {h.location && h.location !== 'GERAL' && (
+                                         <div className="mt-2 text-[10px] text-gray-400 flex items-center gap-1">
+                                             <Icon name="place" size={12} /> {h.location}
                                          </div>
                                      )}
                                  </div>
