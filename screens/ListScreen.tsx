@@ -224,6 +224,11 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                     labelColor = "text-green-200";
                 }
 
+                // Identifica quem concluiu (pega do primeiro item que tiver lastCount)
+                const completedByUser = isFullyCounted 
+                    ? (block.items.find((i: any) => i.lastCount)?.lastCount?.user || 'Sistema')
+                    : null;
+
                 return (
                     <div 
                         key={block.id} 
@@ -250,26 +255,26 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                                     </div>
                                 </div>
 
-                                {/* LADO DIREITO DO HEADER: Avatar (Azul) ou Check (Verde) */}
+                                {/* LADO DIREITO DO HEADER: Avatar (Azul ou Verde) */}
                                 {(isReservedByOther || isFullyCounted) && (
                                     <div className="flex flex-col items-end shrink-0 pl-2">
                                         <div className="flex items-center gap-2">
                                             <div className="text-right">
                                                 <span className={`block text-[9px] font-bold uppercase ${labelColor}`}>
-                                                    {isReservedByOther ? 'Reservado por' : 'Status'}
+                                                    {isReservedByOther ? 'Reservado por' : 'Concluído por'}
                                                 </span>
                                                 <span className={`block text-xs font-bold ${headerTextMain} max-w-[80px] truncate`}>
                                                     {isReservedByOther 
                                                         ? (block.lockedBy?.userName?.split(' ')[0] || 'Usuário') 
-                                                        : 'Finalizado'}
+                                                        : (completedByUser?.split(' ')[0] || 'Sistema')}
                                                 </span>
                                             </div>
                                             
-                                            {/* Circulo com Avatar ou Check */}
+                                            {/* Circulo com Avatar */}
                                             <div className="size-9 rounded-full bg-white/20 border border-white/30 flex items-center justify-center text-white font-bold text-xs shadow-sm">
                                                 {isReservedByOther 
                                                     ? getInitials(block.lockedBy?.userName || '') 
-                                                    : <Icon name="check" size={18} /> 
+                                                    : getInitials(completedByUser || '') 
                                                 }
                                             </div>
                                         </div>
@@ -291,7 +296,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                                             <span className="text-sm font-bold truncate text-gray-800 dark:text-gray-100">
                                                 {item.name}
                                             </span>
-                                            {/* Oculta check se reservado por outro, mas mostra se for o dono ou concluido */}
+                                            {/* Oculta check se reservado por outro, mas mostra se for concluido */}
                                             {(!isReservedByOther || isFullyCounted) && item.isCounted && <Icon name="check" size={16} className="text-green-500" />}
                                         </div>
                                         
