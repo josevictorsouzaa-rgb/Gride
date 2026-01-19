@@ -26,10 +26,6 @@ const getTimeAgo = (dateStr: string) => {
     return `${Math.floor(diffInSeconds / 31536000)} ano(s) atrás`;
 };
 
-const getInitials = (name: string) => {
-    return name ? name.substring(0, 2).toUpperCase() : '??';
-};
-
 export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNavigate, onReserve }) => {
   const [historyBlocks, setHistoryBlocks] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -43,53 +39,43 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
 
       data.forEach((entry: any) => {
           const rawRef = entry.BLOCK_REF || '';
-          let logicalKey = rawRef.includes('||') ? rawRef.split('||')[0] : '';
-          if (!logicalKey) {
-                logicalKey = entry.PRO_COD_SIMILAR ? String(entry.PRO_COD_SIMILAR) : entry.SKU;
-          }
+          // Tenta extrair a referencia do pai. Se tiver || (timestamp), pega a primeira parte.
+          // Se não, usa PRO_COD_SIMILAR ou SKU como fallback para agrupamento visual.
+          let parentRef = rawRef.includes('||') ? rawRef.split('||')[0] : rawRef;
+          if (!parentRef) parentRef = entry.PRO_COD_SIMILAR ? String(entry.PRO_COD_SIMILAR) : entry.SKU;
 
-          if (!blockGroups.has(logicalKey)) {
-              blockGroups.set(logicalKey, {
-                  id: logicalKey,
-                  parentRef: logicalKey,
-                  currentBatchId: rawRef, 
-                  name: entry.PROD_DESC_ATUAL || entry.NOME_PRODUTO, 
+          // Chave única do bloco no histórico (pode ser o ID gerado na finalização)
+          const uniqueBlockId = rawRef || `${parentRef}-${entry.DATA_HORA}`;
+
+          if (!blockGroups.has(uniqueBlockId)) {
+              blockGroups.set(uniqueBlockId, {
+                  id: uniqueBlockId,
+                  parentRef: parentRef,
                   location: entry.LOCALIZACAO || 'GERAL',
                   latestDate: entry.DATA_HORA, 
                   user: entry.USUARIO_NOME,
-                  status: 'concluido',
-                  itemsMap: new Map()
+                  items: []
               });
           }
 
-          const group = blockGroups.get(logicalKey);
-
-          if (rawRef === group.currentBatchId) {
-              if (!group.itemsMap.has(entry.SKU)) {
-                  const isLocked = entry.TRATAMENTO_STATUS === 'PENDING';
-                  const hasDivergence = entry.STATUS === 'divergence_info' || entry.STATUS === 'not_located';
-                  
-                  if (hasDivergence) group.status = 'divergencia';
-
-                  group.itemsMap.set(entry.SKU, {
-                      id: entry.ID, // Log ID
-                      name: entry.NOME_PRODUTO,
-                      ref: entry.SKU,
-                      brand: entry.MAR_COD ? `MARCA ${entry.MAR_COD}` : 'GENÉRICO',
-                      qty: entry.QTD_CONTADA,
-                      countedBy: entry.USUARIO_NOME,
-                      countedAt: entry.DATA_HORA,
-                      location: entry.LOCALIZACAO || 'GERAL',
-                      isLocked: isLocked,
-                      status: entry.STATUS
-                  });
-              }
-          } 
+          const group = blockGroups.get(uniqueBlockId);
+          
+          group.items.push({
+              id: entry.ID, // Log ID crucial para edição
+              name: entry.NOME_PRODUTO,
+              ref: entry.SKU,
+              brand: entry.MAR_COD ? `MARCA ${entry.MAR_COD}` : 'GENÉRICO',
+              qty: entry.QTD_CONTADA,
+              countedBy: entry.USUARIO_NOME,
+              countedAt: entry.DATA_HORA,
+              location: entry.LOCALIZACAO || 'GERAL',
+              status: entry.STATUS,
+              isEdited: entry.STATUS === 'EDIÇÃO'
+          });
       });
 
       const blocks = Array.from(blockGroups.values()).map((g: any) => ({
           ...g,
-          items: Array.from(g.itemsMap.values()),
           timeAgo: getTimeAgo(g.latestDate)
       }));
 
@@ -101,8 +87,8 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
     fetchHistory();
   }, []);
 
-  const [expandedBlocks, setExpandedBlocks] = useState<string[]>([]); 
   const [selectedItem, setSelectedItem] = useState<any | null>(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
 
   const [searchText, setSearchText] = useState('');
   const [showFilterModal, setShowFilterModal] = useState(false);
@@ -125,11 +111,10 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
       const searchLower = searchText.toLowerCase();
       const matchesText = 
         searchText === '' ||
-        block.name.toLowerCase().includes(searchLower) ||
         block.parentRef.toLowerCase().includes(searchLower) ||
         block.items.some((item: any) => 
           item.ref.toLowerCase().includes(searchLower) ||
-          item.location.toLowerCase().includes(searchLower) ||
+          item.name.toLowerCase().includes(searchLower) ||
           item.countedBy.toLowerCase().includes(searchLower)
         );
 
@@ -149,16 +134,10 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
 
   const hasActiveFilters = activeFilters.startDate || activeFilters.endDate || activeFilters.users.length > 0;
 
-  const toggleBlock = (id: string) => {
-    setExpandedBlocks(prev => 
-      prev.includes(id) ? prev.filter(blockId => blockId !== id) : [...prev, id]
-    );
-  };
-
   // EDIT LOGIC
   const handleEditCount = async (e: React.MouseEvent, item: any) => {
       e.stopPropagation();
-      if (!currentUser) return;
+      if (!currentUser) return alert("Faça login para editar.");
 
       const newQtyStr = prompt(`Editar contagem para ${item.name}?\nQuantidade atual: ${item.qty}`, item.qty);
       if (newQtyStr === null) return;
@@ -177,10 +156,15 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
 
       if (res.success) {
           alert("Contagem atualizada e registrada com sucesso!");
-          fetchHistory(); // Refresh to show new edit log or updated value
+          fetchHistory(); // Refresh to show updated value
       } else {
           alert("Erro ao atualizar contagem.");
       }
+  };
+
+  const handleOpenDetails = (item: any) => {
+      setSelectedItem(item);
+      setShowDetailModal(true);
   };
 
   if (loading) {
@@ -192,7 +176,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
       {/* Header */}
       <header className="sticky top-0 z-10 bg-background-light/95 dark:bg-background-dark/95 md:bg-transparent backdrop-blur-sm md:backdrop-blur-none p-4 pb-2 border-b border-transparent">
         <div className="flex items-center justify-between">
-          <button className="flex size-10 shrink-0 items-center justify-center rounded-full active:bg-black/5 dark:active:bg-white/10 transition-colors">
+          <button onClick={() => onNavigate('dashboard')} className="flex size-10 shrink-0 items-center justify-center rounded-full active:bg-black/5 dark:active:bg-white/10 transition-colors">
             <Icon name="arrow_back" size={24} />
           </button>
           <h2 className="text-lg font-bold leading-tight flex-1 text-center md:text-left md:ml-4">Histórico de Contagens</h2>
@@ -237,153 +221,119 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
 
       <div className="px-4 pt-2 pb-2 flex items-center justify-between">
          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-           {filteredBlocks.length > 0 ? `${filteredBlocks.length} registros` : 'Nenhum resultado'}
+           {filteredBlocks.length > 0 ? `${filteredBlocks.length} blocos registrados` : 'Nenhum resultado'}
          </p>
       </div>
 
       {/* Blocks List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 px-4 pb-28 md:pb-0">
+      <div className="flex flex-col gap-6 px-4 pb-28 md:pb-0">
         {filteredBlocks.length === 0 ? (
-          <div className="col-span-full flex flex-col items-center justify-center py-12 text-gray-400 opacity-60">
+          <div className="flex flex-col items-center justify-center py-12 text-gray-400 opacity-60">
              <Icon name="manage_search" size={64} className="mb-2" />
              <p className="text-sm font-medium">Nenhum histórico encontrado.</p>
           </div>
         ) : (
-          filteredBlocks.map((block) => {
-           const isExpanded = expandedBlocks.includes(block.id);
-           const visibleItems = isExpanded ? block.items : block.items.slice(0, 3);
-           const hiddenCount = block.items.length - 3;
-           
-           const formattedDate = new Date(block.latestDate).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(',', '');
-
-           return (
-             <div key={block.id} className="flex flex-col shadow-lg shadow-black/20 h-full group bg-[#182335] dark:bg-surface-dark rounded-xl border border-white/5 overflow-hidden transition-all hover:border-white/10">
-                {/* CARD HEADER */}
-                <div className="p-4 border-b border-white/5 bg-[#182335] dark:bg-surface-dark relative">
-                    <div className="flex justify-between items-start">
-                        <div className="flex-1 pr-2">
-                            <div className="bg-primary/10 border border-primary/20 text-primary px-2 py-1 rounded font-black inline-block mb-2 text-sm">
-                                {block.parentRef}
-                            </div>
+          filteredBlocks.map((block) => (
+             <div key={block.id} className="flex flex-col animate-fade-in">
+                {/* Header do Bloco (Estilo Reservados) */}
+                <div className="flex items-center justify-between mb-2 px-1">
+                    <div className="flex items-center gap-2">
+                        <div className="bg-[#e11d48] text-white text-xs font-bold px-3 py-1 rounded-md uppercase tracking-wider shadow-sm">
+                            REF PAI: {block.parentRef}
                         </div>
-                        <div className="flex items-center gap-3">
-                            <div className="flex flex-col items-end">
-                                <span className="text-sm font-bold text-white leading-none tracking-tight mb-1">
-                                    {formattedDate}
-                                </span>
-                                <div className="flex items-center gap-1 text-[10px] text-gray-400">
-                                    <Icon name="schedule" size={10} />
-                                    {block.timeAgo}
-                                </div>
-                            </div>
-                        </div>
+                        <span className="text-[10px] text-gray-400">{block.timeAgo}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                        <Icon name="place" size={14} />
+                        {block.location}
                     </div>
                 </div>
 
-                {/* CARD BODY */}
-                <div className="flex-col divide-y divide-gray-700 dark:divide-white/5">
-                      {visibleItems.map((item: any) => {
+                {/* Itens List */}
+                <div className="flex flex-col gap-3">
+                    {block.items.map((item: any, idx: number) => {
                         const isIssue = item.status === 'not_located' || item.status === 'divergence_info';
-                        // EDIT PERMISSION CHECK: Must match current user name
-                        const canEdit = currentUser && currentUser.name === item.countedBy;
+                        const isEdited = item.isEdited;
+                        const isCounted = !isIssue;
 
                         return (
                         <div 
-                          key={item.id} 
-                          onClick={() => setSelectedItem(item)}
-                          className="p-4 hover:bg-white/5 transition-colors cursor-pointer relative group/item"
+                            key={item.id}
+                            onClick={() => handleOpenDetails(item)}
+                            className={`relative rounded-xl p-4 border shadow-sm transition-all overflow-hidden bg-white dark:bg-[#1e293b] border-gray-200 dark:border-[#334155]`}
                         >
-                            <h4 className="text-sm font-bold text-white mb-3 line-clamp-1">{item.name}</h4>
-                            
-                            <div className="flex items-center justify-between mb-4">
-                                <div className="flex items-center gap-2">
-                                    <span className="px-2 py-1 rounded text-[12px] font-bold bg-slate-700 text-white border border-slate-600 font-mono tracking-wide shadow-sm">
-                                        {item.ref}
-                                    </span>
-                                    <span className="text-[10px] text-gray-400 font-bold uppercase border-l border-gray-600 pl-2">
-                                        {item.brand}
-                                    </span>
+                            <div className="flex items-start gap-4">
+                                <div className={`size-12 rounded-lg flex items-center justify-center shrink-0 border ${
+                                    isIssue
+                                      ? 'bg-red-100 dark:bg-red-900/40 text-red-600 border-red-200 dark:border-red-800'
+                                      : 'bg-green-100 dark:bg-green-900/40 text-green-600 border-green-200 dark:border-green-800'
+                                }`}>
+                                    <Icon name={isIssue ? "warning" : "check"} size={24} />
                                 </div>
                                 
-                                <div className="flex flex-col items-end">
-                                    {item.isLocked ? (
-                                        <span className="text-[9px] font-bold text-orange-400 flex items-center gap-1 bg-orange-900/20 px-2 py-0.5 rounded border border-orange-900/30">
-                                            <Icon name="priority_high" size={10} />
-                                            AGUARDANDO REGULARIZAÇÃO
+                                <div className="flex-1 min-w-0">
+                                    <h3 className="text-base font-extrabold text-gray-900 dark:text-white leading-tight">
+                                        {item.name}
+                                    </h3>
+                                    <div className="flex flex-wrap items-center gap-2 mt-1">
+                                        <span className="text-xs font-mono text-gray-500 dark:text-[#94a3b8]">
+                                            SKU: {item.ref}
                                         </span>
-                                    ) : (
-                                        <div className="flex items-center gap-2">
-                                            <span className={`text-xl font-black ${isIssue ? 'text-orange-500' : 'text-green-500'} tracking-tight`}>
-                                                {item.qty} <span className="text-xs font-normal text-gray-500">un</span>
-                                            </span>
-                                            {/* EDIT BUTTON */}
-                                            {canEdit && (
-                                                <button 
-                                                    onClick={(e) => handleEditCount(e, item)}
-                                                    className="size-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white opacity-0 group-hover/item:opacity-100 transition-opacity"
-                                                    title="Editar Contagem"
-                                                >
-                                                    <Icon name="edit" size={16} />
-                                                </button>
-                                            )}
-                                        </div>
-                                    )}
+                                        <span className="size-1 rounded-full bg-gray-300 dark:bg-gray-600"></span>
+                                        <span className="text-xs font-bold text-gray-500 dark:text-[#94a3b8] uppercase">
+                                            {item.brand}
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
 
-                            <div className="pt-3 border-t border-gray-700/50 flex justify-between items-center text-[10px]">
-                                <div className="flex items-center gap-2">
-                                    <div className="size-5 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-[8px] shadow-sm ring-1 ring-white/10">
-                                        {getInitials(item.countedBy)}
-                                    </div>
-                                    <span className="text-gray-300 font-medium">{item.countedBy.split(' ')[0]}</span>
+                            <div className="my-3 border-t border-dashed border-gray-200 dark:border-[#334155]" />
+                            
+                            <div className="flex items-center gap-2 mb-4">
+                                <Icon name="history" size={16} className="text-gray-400" />
+                                <p className="text-xs text-gray-500 dark:text-gray-400">
+                                    Contado por <strong className="text-gray-700 dark:text-gray-300">{item.countedBy}</strong>
+                                </p>
+                            </div>
+
+                            <div className="flex items-end justify-between gap-4">
+                                <div className="flex flex-col">
+                                    <span className="text-[10px] font-bold uppercase text-gray-400 tracking-wider">Localização</span>
+                                    <span className="text-sm font-bold text-gray-800 dark:text-white">{item.location}</span>
                                 </div>
 
-                                <div className="flex items-center gap-1 bg-gray-800 text-gray-300 px-2 py-1 rounded-md border border-gray-700 font-mono tracking-tighter">
-                                    <Icon name="place" size={12} className="text-gray-500" />
-                                    <span>{item.location}</span>
+                                <div className="flex flex-col items-end">
+                                    <span className="text-[10px] font-bold text-green-600 uppercase mb-0.5">Qtd Contada</span>
+                                    <div className="flex items-center gap-2 px-3 py-1.5 bg-green-100 dark:bg-green-900/40 rounded-lg border border-green-200 dark:border-green-800">
+                                        <span className="font-bold text-green-800 dark:text-green-300 text-sm">
+                                            {item.qty} un
+                                        </span>
+                                        {/* BOTÃO EDITAR INDIVIDUAL */}
+                                        <button 
+                                            onClick={(e) => handleEditCount(e, item)}
+                                            className="size-6 rounded bg-green-200 dark:bg-green-800 flex items-center justify-center text-green-800 dark:text-green-100 hover:bg-green-300 transition-colors"
+                                            title="Editar Quantidade"
+                                        >
+                                            <Icon name="edit" size={14} />
+                                        </button>
+                                    </div>
+                                    {isEdited && <span className="text-[9px] text-orange-500 font-bold mt-1">Editado</span>}
                                 </div>
                             </div>
                         </div>
                         );
-                      })}
+                    })}
                 </div>
 
-                <div className="mt-auto">
-                    {(!isExpanded && hiddenCount > 0) && (
-                        <button 
-                            onClick={() => toggleBlock(block.id)}
-                            className="w-full py-3 text-xs font-bold text-blue-400 hover:text-blue-300 hover:bg-white/5 transition-colors flex items-center justify-center gap-1 bg-[#131b29]"
-                        >
-                            Ver mais {hiddenCount} itens
-                            <Icon name="expand_more" size={16} />
-                        </button>
-                    )}
-                    {(isExpanded && block.items.length > 3) && (
-                        <button 
-                            onClick={() => toggleBlock(block.id)}
-                            className="w-full py-3 text-xs font-bold text-blue-400 hover:text-blue-300 hover:bg-white/5 transition-colors flex items-center justify-center gap-1 bg-[#131b29]"
-                        >
-                            Mostrar menos
-                            <Icon name="expand_less" size={16} />
-                        </button>
-                    )}
-                    
-                    <div className="p-2 bg-[#0f172a] border-t border-gray-800 flex items-center justify-center">
-                        <span className="text-[9px] font-bold text-gray-600 flex items-center gap-1.5 uppercase tracking-wider">
-                            <Icon name="verified" size={12} className="text-gray-600" />
-                            Registro Auditável
-                        </span>
-                    </div>
-                </div>
+                <div className="my-6 border-b border-gray-200 dark:border-white/5 w-full" />
              </div>
-           );
-        }))}
+          ))
+        )}
       </div>
 
       <ItemDetailModal 
-        isOpen={!!selectedItem} 
-        onClose={() => setSelectedItem(null)} 
+        isOpen={showDetailModal} 
+        onClose={() => setShowDetailModal(false)} 
         item={selectedItem}
       />
       

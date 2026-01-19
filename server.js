@@ -742,7 +742,18 @@ app.post('/delete-warehouse', (req, res) => {
     });
 });
 
-app.post('/update-count', (req, res) => { res.json({success:true}); });
+app.post('/update-count', (req, res) => {
+    const { logId, newQty, user_name } = req.body;
+    Firebird.attach(options, (err, db) => {
+        if(err) return res.json({success:false});
+        // UPDATE REAL DO LOG
+        const sql = `UPDATE GRIDE_INVENTARIO_LOG SET QTD_CONTADA = ?, STATUS = 'EDIÇÃO', DIVERGENCIA_MOTIVO = ? WHERE ID = ?`;
+        db.query(sql, [newQty, `Editado por ${user_name}`, logId], (err) => {
+            db.detach();
+            res.json({success: !err});
+        });
+    });
+});
 
 const startServer = async () => {
     try {
