@@ -149,7 +149,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
               onClick={() => setActiveTab('progress')}
               className={`flex-1 py-2 text-[10px] sm:text-xs font-bold rounded-lg transition-colors border flex flex-col items-center justify-center ${
                   activeTab === 'progress' 
-                  ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-900/30 text-orange-700 dark:text-orange-300 shadow-sm' 
+                  ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-900/30 text-amber-700 dark:text-amber-300 shadow-sm' 
                   : 'bg-transparent border-transparent text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5'
               }`}
             >
@@ -227,13 +227,13 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                                 isFullyCounted 
                                 ? 'bg-green-50/50 dark:bg-green-900/5 border-green-100 dark:border-green-900/20 opacity-80' 
                                 : isReservedByOther 
-                                    ? 'bg-orange-50/30 dark:bg-orange-900/5 border-orange-100 dark:border-orange-900/20'
+                                    ? 'bg-white dark:bg-surface-dark border-amber-300 dark:border-amber-700 shadow-md ring-1 ring-amber-100 dark:ring-amber-900/30' // Profissional & Delimitado
                                     : 'bg-white dark:bg-surface-dark border-gray-200 dark:border-card-border'
                             }`
                         }`}
                     >
                         {/* Header do Bloco */}
-                        <div className="p-3 flex justify-between items-center border-b border-gray-100 dark:border-white/5">
+                        <div className={`p-3 flex justify-between items-center border-b ${isReservedByOther ? 'border-amber-100 dark:border-amber-800/50' : 'border-gray-100 dark:border-white/5'}`}>
                             <div className="flex items-center gap-2">
                                 <span className={`text-xs font-bold px-2 py-1 rounded ${
                                     isFullyCounted 
@@ -252,14 +252,14 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                             )}
                         </div>
 
-                        {/* STATUS RESERVADO (Apenas na aba Progress) */}
+                        {/* STATUS RESERVADO (Apenas na aba Progress) - VISUAL PROFISSIONAL */}
                         {isReservedByOther && (
-                            <div className="bg-orange-100 dark:bg-orange-900/30 px-3 py-2 flex items-center justify-center gap-2 border-b border-orange-200 dark:border-orange-900/30">
-                                <div className="p-1 bg-white dark:bg-black/20 rounded-full">
-                                    <Icon name="person" size={14} className="text-orange-600 dark:text-orange-400" />
+                            <div className="bg-amber-50 dark:bg-amber-900/20 px-3 py-2 flex items-center gap-2 border-b border-amber-100 dark:border-amber-800/50">
+                                <div className="flex items-center justify-center size-5 rounded bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-100 shadow-sm">
+                                    <Icon name="lock" size={12} />
                                 </div>
-                                <span className="text-xs font-bold text-orange-700 dark:text-orange-300 uppercase tracking-wide">
-                                    Em uso por: {block.lockedBy?.userName || 'Usuário'}
+                                <span className="text-xs font-bold text-amber-800 dark:text-amber-200 uppercase tracking-wide">
+                                    Reservado por: <span className="text-black dark:text-white ml-1">{block.lockedBy?.userName || 'Usuário'}</span>
                                 </span>
                             </div>
                         )}
@@ -338,14 +338,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                                 </div>
                             )}
                             
-                            {/* SE ESTIVER EM PROGRESSO, MOSTRAR APENAS VISUALIZAÇÃO */}
-                            {isReservedByOther && (
-                                <div className="p-2 bg-orange-50/50 dark:bg-orange-900/10 border-t border-orange-100 dark:border-orange-900/20 text-center">
-                                    <p className="text-[10px] text-orange-600 dark:text-orange-400 font-bold uppercase tracking-wider">
-                                        Visualização Apenas
-                                    </p>
-                                </div>
-                            )}
+                            {/* REMOVIDO: Rodapé 'Visualização Apenas' */}
                         </div>
                     </div>
                 );
