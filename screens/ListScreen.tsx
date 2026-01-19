@@ -217,52 +217,50 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                 
                 const isExiting = exitingIds.includes(block.id);
 
+                // Definição de Cores da Borda Lateral
+                let borderLeftColor = 'border-l-gray-300 dark:border-l-gray-600';
+                if (isFullyCounted) borderLeftColor = 'border-l-green-500';
+                if (isReservedByOther) borderLeftColor = 'border-l-amber-500';
+
                 return (
                     <div 
                         key={block.id} 
-                        className={`rounded-xl border shadow-sm overflow-hidden transition-all duration-500 ease-in-out transform ${
+                        className={`relative rounded-lg shadow-md bg-white dark:bg-[#1e2329] overflow-hidden transition-all duration-500 ease-in-out transform border border-gray-200 dark:border-gray-700/50 border-l-4 ${borderLeftColor} ${
                             isExiting 
                             ? 'opacity-0 translate-x-full max-h-0 mb-0 border-none' // Animação de Saída
-                            : `opacity-100 translate-x-0 max-h-[1000px] ${ // Estado Normal
-                                isFullyCounted 
-                                ? 'bg-green-50/50 dark:bg-green-900/5 border-green-100 dark:border-green-900/20 opacity-80' 
-                                : isReservedByOther 
-                                    ? 'bg-white dark:bg-surface-dark border-amber-300 dark:border-amber-700 shadow-md ring-1 ring-amber-100 dark:ring-amber-900/30' // Profissional & Delimitado
-                                    : 'bg-white dark:bg-surface-dark border-gray-200 dark:border-card-border'
-                            }`
+                            : `opacity-100 translate-x-0 max-h-[1000px]`
                         }`}
                     >
                         {/* Header do Bloco */}
-                        <div className={`p-3 flex justify-between items-center border-b ${isReservedByOther ? 'border-amber-100 dark:border-amber-800/50' : 'border-gray-100 dark:border-white/5'}`}>
-                            <div className="flex items-center gap-2">
-                                <span className={`text-xs font-bold px-2 py-1 rounded ${
-                                    isFullyCounted 
-                                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' 
-                                    : 'bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-300'
-                                }`}>
-                                    {block.parentRef}
-                                </span>
-                                <span className="text-xs text-gray-500 flex items-center gap-1">
-                                    <Icon name="place" size={12} /> {block.location}
+                        <div className="p-3 flex justify-between items-start border-b border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-white/5">
+                            <div className="flex flex-col gap-1">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider">Ref. Pai</span>
+                                    <span className="text-sm font-bold text-gray-900 dark:text-white bg-white dark:bg-black/30 px-2 py-0.5 rounded border border-gray-200 dark:border-white/10">
+                                        {block.parentRef}
+                                    </span>
+                                </div>
+                                <span className="text-xs text-gray-500 flex items-center gap-1 mt-1">
+                                    <Icon name="place" size={14} className="text-gray-400" /> {block.location}
                                 </span>
                             </div>
                             
                             {isFullyCounted && (
-                                <Icon name="check_circle" className="text-green-500" size={20} />
+                                <Icon name="check_circle" className="text-green-500" size={24} />
+                            )}
+
+                            {/* RESERVADO POR - INTEGRADO AO HEADER */}
+                            {isReservedByOther && (
+                                <div className="flex flex-col items-end">
+                                    <span className="text-[9px] font-bold text-amber-600 dark:text-amber-500 uppercase tracking-wide flex items-center gap-1">
+                                        <Icon name="lock" size={10} fill /> Reservado
+                                    </span>
+                                    <span className="text-xs font-bold text-gray-700 dark:text-gray-200">
+                                        {block.lockedBy?.userName || 'Usuário'}
+                                    </span>
+                                </div>
                             )}
                         </div>
-
-                        {/* STATUS RESERVADO (Apenas na aba Progress) - VISUAL PROFISSIONAL */}
-                        {isReservedByOther && (
-                            <div className="bg-amber-50 dark:bg-amber-900/20 px-3 py-2 flex items-center gap-2 border-b border-amber-100 dark:border-amber-800/50">
-                                <div className="flex items-center justify-center size-5 rounded bg-amber-200 dark:bg-amber-800 text-amber-800 dark:text-amber-100 shadow-sm">
-                                    <Icon name="lock" size={12} />
-                                </div>
-                                <span className="text-xs font-bold text-amber-800 dark:text-amber-200 uppercase tracking-wide">
-                                    Reservado por: <span className="text-black dark:text-white ml-1">{block.lockedBy?.userName || 'Usuário'}</span>
-                                </span>
-                            </div>
-                        )}
 
                         {/* Itens */}
                         <div className="divide-y divide-gray-100 dark:divide-white/5">
@@ -270,31 +268,44 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                                 <div 
                                     key={idx}
                                     onClick={() => setSelectedItem(item)}
-                                    className="p-3 flex justify-between items-center hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer"
+                                    className="p-3 flex justify-between items-center hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer transition-colors"
                                 >
-                                    <div className="flex-1 min-w-0 pr-2">
-                                        <div className="flex items-center gap-2 mb-0.5">
-                                            <span className="text-sm font-bold truncate text-gray-800 dark:text-gray-200">
+                                    <div className="flex-1 min-w-0 pr-3">
+                                        <div className="flex items-center gap-2 mb-1.5">
+                                            <span className="text-sm font-bold truncate text-gray-800 dark:text-gray-100">
                                                 {item.name}
                                             </span>
-                                            {item.isCounted && <Icon name="check" size={14} className="text-green-500" />}
+                                            {item.isCounted && <Icon name="check" size={16} className="text-green-500" />}
                                         </div>
-                                        <div className="flex gap-2 text-[10px] text-gray-500">
-                                            <span className="bg-gray-100 dark:bg-white/10 px-1.5 rounded">{item.ref}</span>
-                                            <span>{item.brand}</span>
-                                            
-                                            {/* Detalhes de Estoque ou Contagem */}
-                                            {item.lastCount ? (
-                                                <div className="ml-auto text-right">
-                                                    <span className="block text-xs font-bold text-green-600 dark:text-green-400">{item.lastCount.qty} un</span>
-                                                    <span className="block text-[9px] text-gray-400">
-                                                        Por {item.lastCount.user.split(' ')[0]} em {new Date(item.lastCount.date).toLocaleDateString()}
-                                                    </span>
+                                        
+                                        {/* HIGH CONTRAST INFO */}
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[11px] font-mono font-bold bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-200 px-1.5 py-0.5 rounded border border-gray-200 dark:border-white/10">
+                                                {item.ref}
+                                            </span>
+                                            <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-tight">
+                                                {item.brand}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    {/* Detalhes de Estoque ou Contagem */}
+                                    <div className="shrink-0 text-right">
+                                        {item.lastCount ? (
+                                            <>
+                                                <span className="block text-sm font-black text-green-600 dark:text-green-400">{item.lastCount.qty} un</span>
+                                                <span className="block text-[9px] text-gray-400">
+                                                    {new Date(item.lastCount.date).toLocaleDateString(undefined, {day:'2-digit', month:'2-digit'})}
+                                                </span>
+                                            </>
+                                        ) : (
+                                            !isReservedByOther && (
+                                                <div className="flex flex-col items-end">
+                                                    <span className="text-[9px] text-gray-400 font-bold uppercase">Saldo</span>
+                                                    <span className="font-bold text-gray-700 dark:text-gray-300">{item.balance}</span>
                                                 </div>
-                                            ) : (
-                                                !isReservedByOther && <span className="ml-auto font-medium text-xs">Est: {item.balance}</span>
-                                            )}
-                                        </div>
+                                            )
+                                        )}
                                     </div>
                                 </div>
                             ))}
@@ -305,7 +316,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                             {(hiddenCount > 0) && (
                                 <button 
                                     onClick={(e) => toggleBlock(block.id, e)}
-                                    className="w-full py-3 text-xs font-bold text-gray-500 hover:text-primary hover:bg-gray-50 dark:hover:bg-white/5 transition-colors border-t border-gray-100 dark:border-white/5 flex items-center justify-center gap-1"
+                                    className="w-full py-2 text-xs font-bold text-gray-500 hover:text-primary hover:bg-gray-50 dark:hover:bg-white/5 transition-colors border-t border-gray-100 dark:border-white/5 flex items-center justify-center gap-1"
                                 >
                                     {isExpanded ? (
                                         <>
@@ -323,22 +334,20 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                             
                             {/* BOTÃO DE RESERVA (Apenas se NÃO estiver em progresso por outro) */}
                             {!isReservedByOther && (
-                                <div className="p-2 bg-gray-50 dark:bg-white/5 border-t border-gray-100 dark:border-white/5">
+                                <div className="p-3 bg-gray-50 dark:bg-white/5 border-t border-gray-100 dark:border-white/5">
                                     <button 
                                         onClick={(e) => handleReserve(block.id, e)}
-                                        className={`w-full py-3 rounded-lg text-sm font-bold shadow-md hover:scale-[1.01] active:scale-[0.99] transition-all flex items-center justify-center gap-2 ${
+                                        className={`w-full py-3 rounded-lg text-sm font-bold shadow-sm hover:shadow-md hover:scale-[1.01] active:scale-[0.99] transition-all flex items-center justify-center gap-2 ${
                                             isFullyCounted 
                                             ? 'bg-white dark:bg-surface-dark border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5' 
                                             : 'bg-gray-900 dark:bg-white text-white dark:text-black'
                                         }`}
                                     >
-                                        <Icon name={isFullyCounted ? "refresh" : "lock"} size={16} />
+                                        <Icon name={isFullyCounted ? "refresh" : "lock"} size={18} />
                                         {isFullyCounted ? "Recontar / Validar" : "Reservar Bloco"}
                                     </button>
                                 </div>
                             )}
-                            
-                            {/* REMOVIDO: Rodapé 'Visualização Apenas' */}
                         </div>
                     </div>
                 );
