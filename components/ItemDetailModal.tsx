@@ -105,17 +105,16 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
       }
   }, [isOpen, item]);
 
-  // Generate mock financial data based on item (deterministic)
   const financialData = useMemo(() => {
       if (!item) return null;
-      const seed = item.name ? item.name.length : 10;
-      const cost = item.costPrice || (seed * 12.5) + 20;
-      const price = item.salesPrice || cost * 1.6;
-      const stock = item.balance || item.qty || item.countedQty || 10;
-      const totalValue = cost * stock;
-      const abc = item.abcCategory || (totalValue > 5000 ? 'A' : totalValue > 1000 ? 'B' : 'C');
       
-      return { cost, price, totalValue, abc, stock };
+      const cost = item.costPrice || 0;
+      const price = item.salesPrice || 0;
+      const stock = item.balance || item.qty || item.countedQty || 0;
+      // "VALOR DE ESTOQUE DEVE PUXAR A QUANTIDADE DE ESTOQUE ATUAL, VEZES O CUSTO DE VENDA"
+      const totalValue = price * stock;
+      
+      return { cost, price, totalValue, stock };
   }, [item]);
 
   if (!isOpen || !item || !financialData) return null;
@@ -135,13 +134,6 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
              <div>
                 <div className="flex items-center gap-2">
                     <h2 className="text-xl font-bold text-gray-900 dark:text-white leading-tight line-clamp-1">{item.name}</h2>
-                    <span className={`px-2 py-0.5 rounded text-xs font-bold ${
-                        financialData.abc === 'A' ? 'bg-green-100 text-green-700' :
-                        financialData.abc === 'B' ? 'bg-yellow-100 text-yellow-700' :
-                        'bg-red-100 text-red-700'
-                    }`}>
-                        Curva {financialData.abc}
-                    </span>
                 </div>
                 <div className="flex items-center gap-2 mt-1">
                    <span className="px-2 py-0.5 bg-gray-200 dark:bg-white/10 rounded text-xs font-bold text-gray-600 dark:text-gray-300">
@@ -184,11 +176,6 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
               <div className="text-center flex-1">
                  <p className="text-xs text-gray-500 uppercase font-bold">Loc. Principal</p>
                  <p className="text-sm font-bold text-gray-900 dark:text-white mt-1">{item.loc || item.location || '---'}</p>
-              </div>
-              <div className="h-10 w-px bg-gray-300 dark:bg-gray-600" />
-               <div className="text-center flex-1">
-                 <p className="text-xs text-gray-500 uppercase font-bold">Giro (Dias)</p>
-                 <p className="text-sm font-bold text-gray-900 dark:text-white mt-1">45 dias</p>
               </div>
            </div>
 

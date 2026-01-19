@@ -407,7 +407,8 @@ app.get('/blocks', (req, res) => {
                     let fetchSql = `
                         SELECT 
                         P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, 
-                        M.MAR_DESCRI, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE, P.PRO_PRATELEIRA 
+                        M.MAR_DESCRI, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE, P.PRO_PRATELEIRA,
+                        P.PRO_PRECOULTCOMPRA, P.PRO_PRECOVENDA 
                         FROM PRODUTOS P 
                         LEFT JOIN MARCAS M ON (M.MAR_COD = P.MAR_COD) 
                         WHERE P.PRO_ATIVO = 'S' AND (
@@ -443,6 +444,8 @@ app.get('/blocks', (req, res) => {
                                 brand: p.MAR_DESCRI ? safeString(p.MAR_DESCRI) : 'GENÉRICO',
                                 balance: parseFloat(p.PRO_EST_ATUAL || 0),
                                 location: safeString(p.PRO_PRATELEIRA) || 'GERAL',
+                                costPrice: parseFloat(p.PRO_PRECOULTCOMPRA || 0),
+                                salesPrice: parseFloat(p.PRO_PRECOVENDA || 0),
                                 isCounted: isCounted,
                                 lastCount: lastLog ? {
                                     user: lastLog.user,
@@ -526,7 +529,8 @@ app.get('/reserved-blocks/:userId', (req, res) => {
                 if (!loadedFromSnapshot) {
                     const blockId = safeString(r.BLOCK_ID);
                     const sqlItems = `
-                        SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.PRO_NRFABRICANTE, P.PRO_PRATELEIRA, M.MAR_DESCRI, P.PRO_COD_SIMILAR 
+                        SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.PRO_NRFABRICANTE, P.PRO_PRATELEIRA, M.MAR_DESCRI, P.PRO_COD_SIMILAR,
+                        P.PRO_PRECOULTCOMPRA, P.PRO_PRECOVENDA 
                         FROM PRODUTOS P 
                         LEFT JOIN MARCAS M ON M.MAR_COD = P.MAR_COD
                         WHERE P.PRO_ATIVO = 'S'
@@ -546,6 +550,8 @@ app.get('/reserved-blocks/:userId', (req, res) => {
                         brand: p.MAR_DESCRI ? safeString(p.MAR_DESCRI) : 'GENÉRICO',
                         balance: parseFloat(p.PRO_EST_ATUAL || 0),
                         location: safeString(p.PRO_PRATELEIRA) || 'GERAL',
+                        costPrice: parseFloat(p.PRO_PRECOULTCOMPRA || 0),
+                        salesPrice: parseFloat(p.PRO_PRECOVENDA || 0),
                         isCounted: countedSet.has(p.PRO_COD),
                         status: countedSet.has(p.PRO_COD) ? 'completed' : 'pending'
                     }));

@@ -57,7 +57,6 @@ export interface InventoryItem {
   costPrice?: number;
   salesPrice?: number;
   totalStockValue?: number;
-  abcCategory?: 'A' | 'B' | 'C';
   history?: HistoryEntry[];
 }
 
