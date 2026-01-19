@@ -56,6 +56,9 @@ export const ListScreen: React.FC<ListScreenProps> = ({
   
   const [exitingIds, setExitingIds] = useState<number[]>([]);
 
+  // Limite definido para paginação
+  const PAGE_LIMIT = 30;
+
   useEffect(() => {
     const el = document.getElementById('main-scroll-container');
     if(el) el.scrollTo({top: 0, behavior: 'smooth'});
@@ -199,12 +202,13 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                     {activeTab === 'progress' && "Nenhum bloco sendo contado no momento."}
                     {activeTab === 'completed' && "Nenhum item concluído ainda."}
                 </p>
-                {onPageChange && activeTab === 'pending' && (
+                {/* Se não tiver nada na lista mas estivermos na página > 1, mostra opção de voltar */}
+                {onPageChange && page > 1 && (
                     <button 
-                        onClick={() => onPageChange(page + 1)}
+                        onClick={() => onPageChange(page - 1)}
                         className="mt-4 text-primary font-bold text-sm underline"
                     >
-                        Verificar Próxima Página
+                        Voltar para Página Anterior
                     </button>
                 )}
             </div>
@@ -434,19 +438,20 @@ export const ListScreen: React.FC<ListScreenProps> = ({
         )}
 
         {/* Pagination Buttons */}
-        {onPageChange && (
+        {onPageChange && (page > 1 || filteredBlocks.length >= PAGE_LIMIT) && (
             <div className="flex justify-center gap-4 py-4">
                 <button 
                     onClick={() => onPageChange(page - 1)}
                     disabled={page <= 1}
-                    className="p-2 rounded-full bg-gray-200 dark:bg-white/10 disabled:opacity-50"
+                    className="p-2 rounded-full bg-gray-200 dark:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-opacity"
                 >
                     <Icon name="chevron_left" />
                 </button>
                 <span className="py-2 text-sm font-bold text-gray-500">Pág {page}</span>
                 <button 
                     onClick={() => onPageChange(page + 1)}
-                    className="p-2 rounded-full bg-gray-200 dark:bg-white/10"
+                    disabled={filteredBlocks.length < PAGE_LIMIT}
+                    className="p-2 rounded-full bg-gray-200 dark:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-opacity"
                 >
                     <Icon name="chevron_right" />
                 </button>
