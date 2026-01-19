@@ -30,6 +30,9 @@ export const ListScreen: React.FC<ListScreenProps> = ({
   const [expandedBlocks, setExpandedBlocks] = useState<number[]>([]);
   const [selectedItem, setSelectedItem] = useState<any | null>(null);
   const [searchText, setSearchText] = useState('');
+  
+  // Estado para rastrear itens saindo (animação)
+  const [exitingIds, setExitingIds] = useState<number[]>([]);
 
   // Scroll to top on page change
   useEffect(() => {
@@ -46,7 +49,16 @@ export const ListScreen: React.FC<ListScreenProps> = ({
 
   const handleReserve = (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
-    onReserveBlock(id);
+    
+    // 1. Adiciona ID à lista de saída para disparar animação CSS
+    setExitingIds(prev => [...prev, id]);
+
+    // 2. Aguarda o tempo da animação (400ms) para remover os dados
+    setTimeout(() => {
+        onReserveBlock(id);
+        // Limpeza (opcional, pois o componente pode remontar com novos dados)
+        setExitingIds(prev => prev.filter(eid => eid !== id));
+    }, 400);
   };
 
   // Filtragem local
@@ -173,13 +185,22 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                 
                 const isReservedByOther = block.status === 'progress';
                 const isFullyCounted = block.status === 'completed';
+                
+                const isExiting = exitingIds.includes(block.id);
 
                 return (
-                    <div key={block.id} className={`rounded-xl border shadow-sm overflow-hidden transition-all ${
-                        isFullyCounted 
-                        ? 'bg-green-50/50 dark:bg-green-900/5 border-green-100 dark:border-green-900/20 opacity-80' 
-                        : 'bg-white dark:bg-surface-dark border-gray-200 dark:border-card-border'
-                    }`}>
+                    <div 
+                        key={block.id} 
+                        className={`rounded-xl border shadow-sm overflow-hidden transition-all duration-500 ease-in-out transform ${
+                            isExiting 
+                            ? 'opacity-0 translate-x-full max-h-0 mb-0 border-none' // Animação de Saída
+                            : `opacity-100 translate-x-0 max-h-[1000px] ${ // Estado Normal
+                                isFullyCounted 
+                                ? 'bg-green-50/50 dark:bg-green-900/5 border-green-100 dark:border-green-900/20 opacity-80' 
+                                : 'bg-white dark:bg-surface-dark border-gray-200 dark:border-card-border'
+                            }`
+                        }`}
+                    >
                         {/* Header do Bloco */}
                         <div className="p-3 flex justify-between items-center border-b border-gray-100 dark:border-white/5">
                             <div className="flex items-center gap-2">
