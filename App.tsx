@@ -270,7 +270,8 @@ const App: React.FC = () => {
       case 'analytics': return <AnalyticsScreen onNavigate={setCurrentScreen} />;
       case 'mission_detail': return <MissionDetailScreen blockData={activeBlock} onBack={() => { setCurrentScreen('reserved'); }} currentUser={currentUser} />;
       case 'subcategories': return <SubcategoriesScreen categoryLabel={selectedCategoryLabel || ''} categories={categories} onBack={() => setCurrentScreen('dashboard')} onSelectSegment={handleSegmentSelect} />;
-      case 'treatment': return <TreatmentScreen onNavigate={setCurrentScreen} onRefresh={refreshGlobalCounts} />;
+      // Passando currentUser para TreatmentScreen
+      case 'treatment': return <TreatmentScreen onNavigate={setCurrentScreen} onRefresh={refreshGlobalCounts} currentUser={currentUser} />;
       case 'settings': return <SettingsScreen onBack={() => setCurrentScreen('dashboard')} currentUser={currentUser} />;
       case 'address_manager': return <AddressManagerScreen onBack={() => setCurrentScreen('dashboard')} />;
       default: return <DashboardScreen onNavigate={setCurrentScreen} onCategorySelect={handleCategorySelect} currentUser={currentUser} onLogout={handleLogout} categories={categories} treatmentCount={treatmentCount} />;
@@ -299,7 +300,8 @@ const App: React.FC = () => {
                 {renderScreen()}
             </div>
         </div>
-        {showNav && <BottomNav currentScreen={activeNavTab} onNavigate={setCurrentScreen} onScanClick={() => setShowScanner(true)} isAdmin={currentUser?.isAdmin} reservedCount={reservedCount} />}
+        {/* Agora passamos treatmentCount para o BottomNav */}
+        {showNav && <BottomNav currentScreen={activeNavTab} onNavigate={setCurrentScreen} onScanClick={() => setShowScanner(true)} isAdmin={currentUser?.isAdmin} reservedCount={reservedCount} treatmentCount={treatmentCount} />}
       </div>
       <ScannerModal isOpen={showScanner} onClose={() => setShowScanner(false)} onScanComplete={handleScanComplete} title="Escanear Código" instruction="Aponte para QR Code" />
     </div>

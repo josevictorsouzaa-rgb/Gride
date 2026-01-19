@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Icon } from '../components/Icon';
-import { Screen, TreatmentItem } from '../types';
+import { Screen, TreatmentItem, User } from '../types';
 import { HistoryFilterModal } from '../components/Modals';
 import { api } from '../services/api';
 import { AutoPartsLoader } from '../components/AutoPartsLoader';
@@ -9,9 +9,10 @@ import { AutoPartsLoader } from '../components/AutoPartsLoader';
 interface TreatmentScreenProps {
   onNavigate: (screen: Screen) => void;
   onRefresh?: () => void; // Callback para atualizar contadores globais
+  currentUser?: User | null;
 }
 
-export const TreatmentScreen: React.FC<TreatmentScreenProps> = ({ onNavigate, onRefresh }) => {
+export const TreatmentScreen: React.FC<TreatmentScreenProps> = ({ onNavigate, onRefresh, currentUser }) => {
   const [items, setItems] = useState<TreatmentItem[]>([]);
   const [loading, setLoading] = useState(false);
   
@@ -49,14 +50,17 @@ export const TreatmentScreen: React.FC<TreatmentScreenProps> = ({ onNavigate, on
   };
 
   useEffect(() => {
-      loadData();
-  }, []);
+      // Carrega dados apenas se tiver permissão
+      if (currentUser?.isAdmin || currentUser?.canTreat) {
+          loadData();
+      }
+  }, [currentUser]);
 
   const handleResolve = async (id: number, action: 'adjust' | 'inactivate' | 'ignore') => {
       const note = prompt("Observação da resolução:");
       if (note === null) return; // Cancelled
 
-      await api.resolveTreatment(id, note || 'Sem observação', 'Gestor', action); // Hardcoded 'Gestor' as current user for now
+      await api.resolveTreatment(id, note || 'Sem observação', currentUser?.name || 'Gestor', action); 
       
       // Optimistic update
       setItems(prev => prev.filter(i => i.id !== id));
@@ -103,6 +107,40 @@ export const TreatmentScreen: React.FC<TreatmentScreenProps> = ({ onNavigate, on
   }, [items, searchText, activeFilters]);
 
   const hasActiveFilters = activeFilters.startDate || activeFilters.endDate || activeFilters.users.length > 0;
+
+  // --- ACCESS CHECK ---
+  const canAccess = currentUser?.isAdmin || currentUser?.canTreat;
+
+  if (!canAccess) {
+      return (
+        <div className="relative flex flex-col w-full min-h-screen pb-safe bg-background-light dark:bg-background-dark">
+            <header className="sticky top-0 z-20 bg-background-light dark:bg-background-dark/95 backdrop-blur-md border-b border-gray-200 dark:border-card-border">
+                <div className="flex items-center p-4 gap-3">
+                    <button 
+                        onClick={() => onNavigate('dashboard')}
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-gray-700 dark:text-white hover:bg-gray-100 dark:hover:bg-surface-dark transition-colors"
+                    >
+                        <Icon name="arrow_back" size={24} />
+                    </button>
+                    <div className="flex-1">
+                        <h2 className="text-lg font-bold leading-tight">Tratamento</h2>
+                        <p className="text-xs text-gray-500">Gestão de Divergências</p>
+                    </div>
+                </div>
+            </header>
+            
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center animate-fade-in opacity-70">
+                <div className="size-24 bg-gray-200 dark:bg-white/5 rounded-full flex items-center justify-center mb-6">
+                    <Icon name="lock" size={48} className="text-gray-400" />
+                </div>
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Acesso Restrito</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 max-w-xs leading-relaxed">
+                    Apenas gestores ou usuários autorizados podem tratar divergências de estoque.
+                </p>
+            </div>
+        </div>
+      );
+  }
 
   if (loading) return <AutoPartsLoader message="Carregando Divergências..." />;
 

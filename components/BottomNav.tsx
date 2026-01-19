@@ -8,14 +8,27 @@ interface BottomNavProps {
   onNavigate: (screen: Screen) => void;
   onScanClick: () => void;
   isAdmin?: boolean;
-  reservedCount?: number; // New prop for badge
+  reservedCount?: number;
+  treatmentCount?: number; // Nova prop para o badge de tratamento
 }
 
-export const BottomNav: React.FC<BottomNavProps> = ({ currentScreen, onNavigate, onScanClick, isAdmin, reservedCount = 0 }) => {
+export const BottomNav: React.FC<BottomNavProps> = ({ 
+  currentScreen, 
+  onNavigate, 
+  onScanClick, 
+  isAdmin, 
+  reservedCount = 0, 
+  treatmentCount = 0 
+}) => {
+  
+  // Define os itens de navegação (Agora 'Tratar' está disponível visualmente para todos)
   const navItems = [
     { id: 'dashboard', label: 'Hub', icon: 'grid_view' },
-    // Item 'list' (Meta) removido
+    
+    { id: 'treatment', label: 'Tratar', icon: 'admin_panel_settings' },
+    
     { id: 'scan', label: '', icon: 'qr_code_scanner', isFab: true },
+    
     { id: 'reserved', label: 'Reservados', icon: 'assignment' },
     { id: 'history', label: 'Histórico', icon: 'history' },
   ];
@@ -51,10 +64,18 @@ export const BottomNav: React.FC<BottomNavProps> = ({ currentScreen, onNavigate,
             >
               <div className="relative">
                 <Icon name={item.icon} fill={isActive} />
-                {/* Badge for Reserved items */}
+                
+                {/* Badge para Reservados (Vermelho) */}
                 {item.id === 'reserved' && reservedCount > 0 && (
                   <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white border border-white dark:border-surface-dark animate-fade-in">
                     {reservedCount}
+                  </span>
+                )}
+
+                {/* Badge para Tratamento (Laranja) */}
+                {item.id === 'treatment' && treatmentCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-orange-500 text-[9px] font-bold text-white border border-white dark:border-surface-dark animate-bounce">
+                    {treatmentCount}
                   </span>
                 )}
               </div>
