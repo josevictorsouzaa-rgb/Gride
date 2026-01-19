@@ -222,10 +222,6 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                 if (isFullyCounted) borderLeftColor = 'border-l-green-500';
                 if (isReservedByOther) borderLeftColor = 'border-l-amber-500';
 
-                // Tratamento do Título e Código
-                const cleanParentRef = block.parentRef.replace('REF PAI:', '').trim();
-                const mainTitle = block.items[0]?.name || 'Grupo de Itens';
-
                 return (
                     <div 
                         key={block.id} 
@@ -236,41 +232,34 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                         }`}
                     >
                         {/* Header do Bloco */}
-                        <div className="flex flex-col">
-                            {/* RESERVADO POR - BARRA DE TOPO */}
-                            {isReservedByOther && (
-                                <div className="bg-amber-50 dark:bg-amber-900/20 px-3 py-1.5 flex items-center justify-between border-b border-amber-100 dark:border-amber-800/50">
-                                    <span className="text-[10px] font-bold text-amber-800 dark:text-amber-200 uppercase tracking-wide flex items-center gap-1">
-                                        <Icon name="lock" size={12} fill /> Reservado
+                        <div className="p-3 flex justify-between items-start border-b border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-white/5">
+                            <div className="flex flex-col gap-1">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider">Ref. Pai</span>
+                                    <span className="text-sm font-bold text-gray-900 dark:text-white bg-white dark:bg-black/30 px-2 py-0.5 rounded border border-gray-200 dark:border-white/10">
+                                        {block.parentRef}
                                     </span>
-                                    <span className="text-xs font-bold text-amber-900 dark:text-amber-100">
+                                </div>
+                                <span className="text-xs text-gray-500 flex items-center gap-1 mt-1">
+                                    <Icon name="place" size={14} className="text-gray-400" /> {block.location}
+                                </span>
+                            </div>
+                            
+                            {isFullyCounted && (
+                                <Icon name="check_circle" className="text-green-500" size={24} />
+                            )}
+
+                            {/* RESERVADO POR - INTEGRADO AO HEADER */}
+                            {isReservedByOther && (
+                                <div className="flex flex-col items-end">
+                                    <span className="text-[9px] font-bold text-amber-600 dark:text-amber-500 uppercase tracking-wide flex items-center gap-1">
+                                        <Icon name="lock" size={10} fill /> Reservado
+                                    </span>
+                                    <span className="text-xs font-bold text-gray-700 dark:text-gray-200">
                                         {block.lockedBy?.userName || 'Usuário'}
                                     </span>
                                 </div>
                             )}
-
-                            <div className="p-3 flex justify-between items-start border-b border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-white/5">
-                                <div className="flex flex-col gap-1 pr-2">
-                                    {/* Nome do Produto em Destaque */}
-                                    <span className="text-sm font-bold text-gray-900 dark:text-white leading-tight line-clamp-2">
-                                        {mainTitle}
-                                    </span>
-                                    
-                                    <div className="flex items-center gap-2 mt-0.5">
-                                        {/* Código Ref Pai (Discreto) */}
-                                        <span className="text-[10px] font-bold bg-white dark:bg-black/30 text-gray-500 dark:text-gray-400 px-1.5 py-0.5 rounded border border-gray-200 dark:border-white/10 uppercase tracking-wide">
-                                            {cleanParentRef}
-                                        </span>
-                                        <span className="text-xs text-gray-400 flex items-center gap-1">
-                                            <Icon name="place" size={12} /> {block.location}
-                                        </span>
-                                    </div>
-                                </div>
-                                
-                                {!isReservedByOther && isFullyCounted && (
-                                    <Icon name="check_circle" className="text-green-500 shrink-0" size={24} />
-                                )}
-                            </div>
                         </div>
 
                         {/* Itens */}
@@ -286,8 +275,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                                             <span className="text-sm font-bold truncate text-gray-800 dark:text-gray-100">
                                                 {item.name}
                                             </span>
-                                            {/* Oculta check se reservado por outro */}
-                                            {!isReservedByOther && item.isCounted && <Icon name="check" size={16} className="text-green-500" />}
+                                            {item.isCounted && <Icon name="check" size={16} className="text-green-500" />}
                                         </div>
                                         
                                         {/* HIGH CONTRAST INFO */}
@@ -301,24 +289,24 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                                         </div>
                                     </div>
 
-                                    {/* Detalhes de Estoque ou Contagem (OCULTAR SE RESERVADO POR OUTRO) */}
-                                    {!isReservedByOther && (
-                                        <div className="shrink-0 text-right">
-                                            {item.lastCount ? (
-                                                <>
-                                                    <span className="block text-sm font-black text-green-600 dark:text-green-400">{item.lastCount.qty} un</span>
-                                                    <span className="block text-[9px] text-gray-400">
-                                                        {new Date(item.lastCount.date).toLocaleDateString(undefined, {day:'2-digit', month:'2-digit'})}
-                                                    </span>
-                                                </>
-                                            ) : (
+                                    {/* Detalhes de Estoque ou Contagem */}
+                                    <div className="shrink-0 text-right">
+                                        {item.lastCount ? (
+                                            <>
+                                                <span className="block text-sm font-black text-green-600 dark:text-green-400">{item.lastCount.qty} un</span>
+                                                <span className="block text-[9px] text-gray-400">
+                                                    {new Date(item.lastCount.date).toLocaleDateString(undefined, {day:'2-digit', month:'2-digit'})}
+                                                </span>
+                                            </>
+                                        ) : (
+                                            !isReservedByOther && (
                                                 <div className="flex flex-col items-end">
                                                     <span className="text-[9px] text-gray-400 font-bold uppercase">Saldo</span>
                                                     <span className="font-bold text-gray-700 dark:text-gray-300">{item.balance}</span>
                                                 </div>
-                                            )}
-                                        </div>
-                                    )}
+                                            )
+                                        )}
+                                    </div>
                                 </div>
                             ))}
                         </div>
