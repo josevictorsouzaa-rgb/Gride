@@ -300,11 +300,12 @@ app.get('/blocks', (req, res) => {
                     for (const row of discoveryRows) {
                         if (blocksFound >= limit) break;
 
-                        const sim = row.PRO_COD_SIMILAR ? safeString(row.PRO_COD_SIMILAR) : null;
-                        const id = safeString(row.PRO_COD);
+                        // REGRA: Se tem similar, ele é a chave. Se não tem, o ID é a chave.
+                        const simRaw = safeString(row.PRO_COD_SIMILAR);
+                        const idRaw = safeString(row.PRO_COD);
                         
-                        // A chave do bloco é o Similar (se existir) ou o próprio ID
-                        const key = sim || id;
+                        // Chave = Similar se existir e não for vazio, senão ID
+                        const key = simRaw.length > 0 ? simRaw : idRaw;
 
                         if (!seenKeys.has(key)) {
                             seenKeys.add(key);
@@ -319,7 +320,6 @@ app.get('/blocks', (req, res) => {
 
                     // --- ETAPA 2: ENRIQUECIMENTO (Buscar TODOS os itens dos blocos identificados) ---
                     // Agora buscamos a família completa de cada chave identificada.
-                    // IMPORTANTE: Verificamos se o item PERTENCE ao bloco via PRO_COD_SIMILAR *OU* se o item É a chave do bloco via PRO_COD.
                     let fetchSql = `
                         SELECT 
                         P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, 
@@ -349,7 +349,11 @@ app.get('/blocks', (req, res) => {
                         // Agrupamento (Lógica existente mantida, agora com dados completos)
                         const groups = new Map();
                         products.forEach(p => {
-                            const key = p.PRO_COD_SIMILAR ? safeString(p.PRO_COD_SIMILAR) : safeString(p.PRO_COD);
+                            // MESMA REGRA DA DESCOBERTA:
+                            const simRaw = safeString(p.PRO_COD_SIMILAR);
+                            const idRaw = safeString(p.PRO_COD);
+                            const key = simRaw.length > 0 ? simRaw : idRaw;
+
                             const isCounted = countedSet.has(p.PRO_COD);
                             
                             if (!groups.has(key)) groups.set(key, []);
@@ -371,9 +375,15 @@ app.get('/blocks', (req, res) => {
                             let status = allCounted ? 'completed' : 'pending';
                             if (lockedBy) status = 'progress';
 
+                            // Usar 'REF PAI: KEY' conforme solicitado se houver agrupamento
+                            let parentRefDisplay = items[0].ref || items[0].name;
+                            if (items.length > 1) {
+                                parentRefDisplay = `REF PAI: ${key}`; // Carimbo no topo
+                            }
+
                             blocks.push({
                                 id: key,
-                                parentRef: items[0].ref || items[0].name,
+                                parentRef: parentRefDisplay,
                                 location: items[0].location,
                                 status: status,
                                 items: items,
@@ -388,7 +398,6 @@ app.get('/blocks', (req, res) => {
                             return 0;
                         });
 
-                        // Retornamos tudo que encontramos na Etapa 2 (que correspondem ao 'limit' da Etapa 1)
                         res.json(blocks);
                     });
                 });
@@ -435,7 +444,6 @@ app.get('/reserved-blocks/:userId', (req, res) => {
                 } catch(e){ console.error("JSON Error:", e); }
 
                 // FALLBACK: Se não tem snapshot, recarrega itens da tabela PRODUTOS
-                // Isso garante que o bloco nunca apareça vazio!
                 if (!loadedFromSnapshot) {
                     const blockId = safeString(r.BLOCK_ID);
                     
@@ -449,10 +457,16 @@ app.get('/reserved-blocks/:userId', (req, res) => {
                     
                     // Filtragem manual para evitar problemas de SQL complexo no Firebird antigo
                     const allProds = await execute(db, sqlItems);
+                    
                     const products = allProds.filter(p => {
-                        const s = safeString(p.PRO_COD_SIMILAR);
-                        const c = safeString(p.PRO_COD);
-                        return s === blockId || (!s && c === blockId);
+                        // MESMA REGRA DO /BLOCKS para consistência
+                        const simRaw = safeString(p.PRO_COD_SIMILAR);
+                        const idRaw = safeString(p.PRO_COD);
+                        // A chave deste item é...
+                        const itemKey = simRaw.length > 0 ? simRaw : idRaw;
+                        
+                        // Pertence ao bloco se a chave for igual ao ID do bloco reservado
+                        return itemKey === blockId;
                     });
 
                     items = products.map(p => ({
@@ -468,9 +482,14 @@ app.get('/reserved-blocks/:userId', (req, res) => {
                 }
 
                 if (items.length > 0) {
+                    let parentRefDisplay = items[0].ref || items[0].name;
+                    if (items.length > 1) {
+                        parentRefDisplay = `REF PAI: ${safeString(r.BLOCK_ID)}`;
+                    }
+
                     blocks.push({
                         id: safeString(r.BLOCK_ID),
-                        parentRef: items[0].ref || items[0].name,
+                        parentRef: parentRefDisplay,
                         location: items[0].location || 'Geral',
                         status: 'progress',
                         items: items
