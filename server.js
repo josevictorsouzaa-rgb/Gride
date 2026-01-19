@@ -375,10 +375,13 @@ app.get('/blocks', (req, res) => {
                             let status = allCounted ? 'completed' : 'pending';
                             if (lockedBy) status = 'progress';
 
-                            // Usar 'REF PAI: KEY' conforme solicitado se houver agrupamento
+                            // Usar 'REF PAI: [REF]' com busca do item pai
                             let parentRefDisplay = items[0].ref || items[0].name;
                             if (items.length > 1) {
-                                parentRefDisplay = `REF PAI: ${key}`; // Carimbo no topo
+                                // Tenta encontrar o item pai (onde id == key) para usar sua Referência
+                                const parent = items.find(i => i.id === key);
+                                const refToShow = parent ? parent.ref : items[0].ref;
+                                parentRefDisplay = `REF PAI: ${refToShow}`;
                             }
 
                             blocks.push({
@@ -484,7 +487,9 @@ app.get('/reserved-blocks/:userId', (req, res) => {
                 if (items.length > 0) {
                     let parentRefDisplay = items[0].ref || items[0].name;
                     if (items.length > 1) {
-                        parentRefDisplay = `REF PAI: ${safeString(r.BLOCK_ID)}`;
+                        const parent = items.find(i => i.id === safeString(r.BLOCK_ID));
+                        const refToShow = parent ? parent.ref : items[0].ref;
+                        parentRefDisplay = `REF PAI: ${refToShow}`;
                     }
 
                     blocks.push({

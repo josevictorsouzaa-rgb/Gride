@@ -217,25 +217,37 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                             ))}
                         </div>
 
-                        {/* Footer / Actions */}
-                        <div className="p-2 bg-gray-50 dark:bg-white/5 flex gap-2">
+                        {/* Footer / Actions - Reorganizado Verticalmente */}
+                        <div className="flex flex-col">
                             {(hiddenCount > 0) && (
                                 <button 
                                     onClick={(e) => toggleBlock(block.id, e)}
-                                    className="flex-1 py-2 text-xs font-bold text-gray-500 hover:bg-white dark:hover:bg-white/10 rounded transition-colors"
+                                    className="w-full py-3 text-xs font-bold text-gray-500 hover:text-primary hover:bg-gray-50 dark:hover:bg-white/5 transition-colors border-t border-gray-100 dark:border-white/5 flex items-center justify-center gap-1"
                                 >
-                                    {isExpanded ? 'Recolher' : `Ver +${hiddenCount}`}
+                                    {isExpanded ? (
+                                        <>
+                                            <Icon name="expand_less" size={16} />
+                                            Recolher
+                                        </>
+                                    ) : (
+                                        <>
+                                            Ver +{hiddenCount} itens
+                                            <Icon name="expand_more" size={16} />
+                                        </>
+                                    )}
                                 </button>
                             )}
                             
                             {!isFullyCounted && !isReservedByOther && (
-                                <button 
-                                    onClick={(e) => handleReserve(block.id, e)}
-                                    className="flex-1 py-2 bg-gray-900 dark:bg-white text-white dark:text-black rounded text-xs font-bold shadow hover:scale-[1.02] transition-transform flex items-center justify-center gap-1"
-                                >
-                                    <Icon name="lock" size={14} />
-                                    Reservar
-                                </button>
+                                <div className="p-2 bg-gray-50 dark:bg-white/5 border-t border-gray-100 dark:border-white/5">
+                                    <button 
+                                        onClick={(e) => handleReserve(block.id, e)}
+                                        className="w-full py-3 bg-gray-900 dark:bg-white text-white dark:text-black rounded-lg text-sm font-bold shadow-md hover:scale-[1.01] active:scale-[0.99] transition-all flex items-center justify-center gap-2"
+                                    >
+                                        <Icon name="lock" size={16} />
+                                        Reservar Bloco
+                                    </button>
+                                </div>
                             )}
                         </div>
                     </div>
