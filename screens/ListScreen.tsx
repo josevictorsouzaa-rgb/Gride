@@ -33,9 +33,9 @@ const getTimeAgo = (dateStr: string) => {
     const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
     
     if (diffInSeconds < 60) return 'Agora';
-    if (diffInSeconds < 3600) return `Há ${Math.floor(diffInSeconds / 60)}min`;
-    if (diffInSeconds < 86400) return `Há ${Math.floor(diffInSeconds / 3600)}h`;
-    if (diffInSeconds < 2592000) return `Há ${Math.floor(diffInSeconds / 86400)}d`;
+    if (diffInSeconds < 3600) return `Há ${Math.floor(diffInSeconds / 60)} min`;
+    if (diffInSeconds < 86400) return `Há ${Math.floor(diffInSeconds / 3600)} h`;
+    if (diffInSeconds < 2592000) return `Há ${Math.floor(diffInSeconds / 86400)} d`;
     return 'Há +1 mês';
 };
 
@@ -249,6 +249,15 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                 const completedByUser = isFullyCounted 
                     ? (block.items.find((i: any) => i.lastCount)?.lastCount?.user || 'Sistema')
                     : null;
+                
+                // Nome do usuário para exibição
+                const displayUserName = isReservedByOther 
+                    ? (block.lockedBy?.userName?.split(' ')[0] || 'Usuário') 
+                    : (completedByUser?.split(' ')[0] || 'Sistema');
+
+                const displayUserInitials = isReservedByOther
+                    ? getInitials(block.lockedBy?.userName || '')
+                    : getInitials(completedByUser || '');
 
                 // --- CÁLCULO DO TEMPO RELATIVO ---
                 let relativeTimeStr = '';
@@ -296,32 +305,26 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                                 {/* LADO DIREITO DO HEADER: Avatar (Azul ou Verde) + Tempo */}
                                 {(isReservedByOther || isFullyCounted) && (
                                     <div className="flex flex-col items-end shrink-0 pl-2">
-                                        <div className="flex items-center gap-2">
-                                            <div className="text-right">
-                                                <div className="flex flex-col items-end">
-                                                    <span className={`block text-[9px] font-bold uppercase ${labelColor}`}>
-                                                        {isReservedByOther ? 'Reservado por' : 'Concluído por'}
-                                                    </span>
-                                                    {/* TEMPO DECORRIDO NO HEADER */}
-                                                    {relativeTimeStr && (
-                                                        <span className={`block text-[9px] font-bold opacity-80 ${headerTextMain} mb-0.5`}>
-                                                            {relativeTimeStr}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                                <span className={`block text-xs font-bold ${headerTextMain} max-w-[80px] truncate`}>
-                                                    {isReservedByOther 
-                                                        ? (block.lockedBy?.userName?.split(' ')[0] || 'Usuário') 
-                                                        : (completedByUser?.split(' ')[0] || 'Sistema')}
+                                        <div className="flex items-center">
+                                            <div className="flex flex-col items-end mr-2 text-right">
+                                                <span className={`block text-[9px] font-bold uppercase ${labelColor} mb-0.5`}>
+                                                    {isReservedByOther ? 'Reservado por' : 'Concluído por'}
                                                 </span>
+                                                <span className={`block text-xs font-bold ${headerTextMain} max-w-[80px] truncate leading-none`}>
+                                                    {displayUserName}
+                                                </span>
+                                                
+                                                {/* TEMPO DECORRIDO ABAIXO DO NOME */}
+                                                {relativeTimeStr && (
+                                                    <span className={`block text-[9px] font-medium opacity-80 ${headerTextMain} mt-1`}>
+                                                        {relativeTimeStr}
+                                                    </span>
+                                                )}
                                             </div>
                                             
                                             {/* Circulo com Avatar */}
                                             <div className="size-9 rounded-full bg-white/20 border border-white/30 flex items-center justify-center text-white font-bold text-xs shadow-sm">
-                                                {isReservedByOther 
-                                                    ? getInitials(block.lockedBy?.userName || '') 
-                                                    : getInitials(completedByUser || '') 
-                                                }
+                                                {displayUserInitials}
                                             </div>
                                         </div>
                                     </div>
