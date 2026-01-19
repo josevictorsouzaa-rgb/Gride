@@ -46,6 +46,10 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
       const blockGroups = new Map();
 
       data.forEach((entry: any) => {
+          // FILTRO RIGOROSO: Apenas itens concluídos/contados/divergentes/editados.
+          // Ignora logs de processo como 'RESERVADO', 'DEVOLVIDO' ou 'Pendente'.
+          if (['RESERVADO', 'DEVOLVIDO', 'pending'].includes(entry.STATUS)) return;
+
           const rawRef = entry.BLOCK_REF || '';
           // Tenta extrair a referencia do pai. Se tiver || (timestamp), pega a primeira parte.
           // Se não, usa PRO_COD_SIMILAR ou SKU como fallback para agrupamento visual.
@@ -229,7 +233,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
 
       <div className="px-4 pt-2 pb-2 flex items-center justify-between">
          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-           {filteredBlocks.length > 0 ? `${filteredBlocks.length} blocos registrados` : 'Nenhum resultado'}
+           {filteredBlocks.length > 0 ? `${filteredBlocks.length} blocos concluídos` : 'Nenhum resultado'}
          </p>
       </div>
 
@@ -238,14 +242,10 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
         {filteredBlocks.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-gray-400 opacity-60">
              <Icon name="manage_search" size={64} className="mb-2" />
-             <p className="text-sm font-medium">Nenhum histórico encontrado.</p>
+             <p className="text-sm font-medium">Nenhum histórico de conclusão encontrado.</p>
           </div>
         ) : (
           filteredBlocks.map((block) => {
-             // DETECÇÃO DE STATUS DO BLOCO
-             const isReserved = block.items.some((i: any) => i.status === 'RESERVADO');
-             const isReturned = block.items.some((i: any) => i.status === 'DEVOLVIDO');
-
              // CONFIGURAÇÃO VISUAL PADRÃO (CONCLUÍDO - VERDE)
              let headerClass = "bg-green-600 dark:bg-green-700 border-green-600";
              let containerClass = "border-green-500/50 shadow-green-500/10";
@@ -253,23 +253,6 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
              let headerTextSub = "text-green-100";
              let labelColor = "text-green-200";
              let actionLabel = "Concluído por";
-
-             // CONFIGURAÇÃO SE RESERVADO (AZUL)
-             if (isReserved) {
-                 headerClass = "bg-blue-600 dark:bg-blue-700 border-blue-600";
-                 containerClass = "border-blue-500/50 shadow-blue-500/10";
-                 headerTextSub = "text-blue-100";
-                 labelColor = "text-blue-200";
-                 actionLabel = "Reservado por";
-             } 
-             // CONFIGURAÇÃO SE DEVOLVIDO (VERMELHO)
-             else if (isReturned) {
-                 headerClass = "bg-red-600 dark:bg-red-700 border-red-600";
-                 containerClass = "border-red-500/50 shadow-red-500/10";
-                 headerTextSub = "text-red-100";
-                 labelColor = "text-red-200";
-                 actionLabel = "Devolvido por";
-             }
              
              // Extrair iniciais do usuário
              const userInitials = getInitials(block.user);
@@ -328,8 +311,6 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
                 <div className="divide-y divide-gray-100 dark:divide-white/5">
                     {block.items.map((item: any, idx: number) => {
                         const isEdited = item.isEdited;
-                        const isReservedItem = item.status === 'RESERVADO';
-                        const isReturnedItem = item.status === 'DEVOLVIDO';
                         const isIssue = item.status === 'not_located' || item.status === 'divergence_info';
 
                         return (
@@ -344,10 +325,11 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
                                         {item.name}
                                     </span>
                                     {/* ÍCONES DE STATUS */}
-                                    {isIssue && <Icon name="warning" size={16} className="text-red-500" />}
-                                    {!isIssue && !isReservedItem && !isReturnedItem && <Icon name="check" size={16} className="text-green-500" />}
-                                    {isReservedItem && <Icon name="lock" size={16} className="text-blue-500" />}
-                                    {isReturnedItem && <Icon name="keyboard_return" size={16} className="text-red-500" />}
+                                    {isIssue ? (
+                                        <Icon name="warning" size={16} className="text-red-500" />
+                                    ) : (
+                                        <Icon name="check" size={16} className="text-green-500" />
+                                    )}
                                 </div>
                                 
                                 <div className="flex items-center gap-2">
@@ -362,31 +344,22 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
 
                             <div className="shrink-0 text-right flex flex-col items-end">
                                 {/* EXIBIÇÃO DE QUANTIDADE OU STATUS */}
-                                {isReservedItem ? (
-                                     <span className="text-xs font-bold text-blue-500 uppercase tracking-wide bg-blue-50 dark:bg-blue-900/10 px-2 py-1 rounded">Reservado</span>
-                                ) : isReturnedItem ? (
-                                     <span className="text-xs font-bold text-red-500 uppercase tracking-wide bg-red-50 dark:bg-red-900/10 px-2 py-1 rounded">Devolvido</span>
-                                ) : (
-                                    <span className="block text-sm font-black text-green-600 dark:text-green-400">
-                                        {item.qty} un
-                                    </span>
-                                )}
+                                <span className="block text-sm font-black text-green-600 dark:text-green-400">
+                                    {item.qty} un
+                                </span>
 
                                 <span className="block text-[9px] text-gray-400 whitespace-nowrap mt-1">
                                     {formatFullDateTime(item.countedAt)}
                                 </span>
                                 {isEdited && <span className="text-[9px] text-orange-500 font-bold">Editado</span>}
                                 
-                                {/* Botão de Edição - APENAS SE NÃO FOR RESERVA/DEVOLUÇÃO */}
-                                {!isReservedItem && !isReturnedItem && (
-                                    <button 
-                                        onClick={(e) => handleEditCount(e, item)}
-                                        className="mt-2 flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/40 border border-green-200 dark:border-green-900/30 transition-all"
-                                    >
-                                        <Icon name="edit" size={14} />
-                                        Editar
-                                    </button>
-                                )}
+                                <button 
+                                    onClick={(e) => handleEditCount(e, item)}
+                                    className="mt-2 flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/40 border border-green-200 dark:border-green-900/30 transition-all"
+                                >
+                                    <Icon name="edit" size={14} />
+                                    Editar
+                                </button>
                             </div>
                         </div>
                         );
