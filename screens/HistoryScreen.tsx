@@ -13,17 +13,25 @@ interface HistoryScreenProps {
     onReserve: (blockId: string) => Promise<boolean>;
 }
 
+const getInitials = (name: string) => name ? name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() : 'US';
+
+// Helper para data completa
+const formatFullDateTime = (dateStr: string) => {
+    if (!dateStr) return '--/--/---- --:--';
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+};
+
 const getTimeAgo = (dateStr: string) => {
     const date = new Date(dateStr);
     const now = new Date();
     const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
     
     if (diffInSeconds < 60) return 'Agora';
-    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}min atrás`;
-    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h atrás`;
-    if (diffInSeconds < 2592000) return `${Math.floor(diffInSeconds / 86400)}d atrás`;
-    if (diffInSeconds < 31536000) return `${Math.floor(diffInSeconds / 2592000)} meses atrás`;
-    return `${Math.floor(diffInSeconds / 31536000)} ano(s) atrás`;
+    if (diffInSeconds < 3600) return `Há ${Math.floor(diffInSeconds / 60)} min`;
+    if (diffInSeconds < 86400) return `Há ${Math.floor(diffInSeconds / 3600)} h`;
+    if (diffInSeconds < 2592000) return `Há ${Math.floor(diffInSeconds / 86400)} d`;
+    return 'Há +1 mês';
 };
 
 export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNavigate, onReserve }) => {
@@ -226,108 +234,126 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
       </div>
 
       {/* Blocks List */}
-      <div className="flex flex-col gap-6 px-4 pb-28 md:pb-0">
+      <div className="flex flex-col gap-3 px-4 pb-28 md:pb-0">
         {filteredBlocks.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-gray-400 opacity-60">
              <Icon name="manage_search" size={64} className="mb-2" />
              <p className="text-sm font-medium">Nenhum histórico encontrado.</p>
           </div>
         ) : (
-          filteredBlocks.map((block) => (
-             <div key={block.id} className="flex flex-col animate-fade-in">
-                {/* Header do Bloco (Estilo Reservados) */}
-                <div className="flex items-center justify-between mb-2 px-1">
-                    <div className="flex items-center gap-2">
-                        <div className="bg-[#e11d48] text-white text-xs font-bold px-3 py-1 rounded-md uppercase tracking-wider shadow-sm">
-                            REF PAI: {block.parentRef}
+          filteredBlocks.map((block) => {
+             // Configuração visual padronizada (ESTILO CONCLUÍDO)
+             const headerClass = "bg-green-600 dark:bg-green-700 border-green-600";
+             const containerClass = "border-green-500/50 shadow-green-500/10";
+             const headerTextMain = "text-white";
+             const headerTextSub = "text-green-100";
+             const labelColor = "text-green-200";
+             
+             // Extrair iniciais do usuário
+             const userInitials = getInitials(block.user);
+             const firstName = block.user ? block.user.split(' ')[0] : 'Sistema';
+
+             return (
+             <div 
+                key={block.id} 
+                className={`relative rounded-xl shadow-sm bg-white dark:bg-[#1e2329] overflow-hidden transition-all border ${containerClass} animate-fade-in`}
+             >
+                {/* Header Padronizado */}
+                <div className={`p-3 border-b ${headerClass}`}>
+                    <div className="flex justify-between items-start">
+                        <div className="flex-1 pr-2">
+                            <span className={`text-[10px] font-bold uppercase tracking-wider ${labelColor}`}>
+                                Ref. Pai
+                            </span>
+                            <h3 className={`text-sm font-bold leading-tight line-clamp-2 mt-0.5 ${headerTextMain}`}>
+                                {block.parentRef}
+                            </h3>
+                            
+                            <div className={`flex items-center gap-1 mt-1 text-xs ${headerTextSub}`}>
+                                <Icon name="place" size={14} /> 
+                                <span className="font-medium">{block.location}</span>
+                            </div>
                         </div>
-                        <span className="text-[10px] text-gray-400">{block.timeAgo}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                        <Icon name="place" size={14} />
-                        {block.location}
+
+                        {/* Lado Direito: Avatar + Tempo */}
+                        <div className="flex flex-col items-end shrink-0 pl-2">
+                            <div className="flex items-center">
+                                <div className="flex flex-col items-end mr-2 text-right">
+                                    <span className={`block text-[9px] font-bold uppercase ${labelColor} mb-0.5`}>
+                                        Concluído por
+                                    </span>
+                                    <span className={`block text-xs font-bold ${headerTextMain} max-w-[80px] truncate leading-none`}>
+                                        {firstName}
+                                    </span>
+                                    
+                                    <span className={`block text-[9px] font-medium opacity-80 ${headerTextMain} mt-1`}>
+                                        {block.timeAgo}
+                                    </span>
+                                </div>
+                                
+                                <div className="size-9 rounded-full bg-white/20 border border-white/30 flex items-center justify-center text-white font-bold text-xs shadow-sm">
+                                    {userInitials}
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 {/* Itens List */}
-                <div className="flex flex-col gap-3">
+                <div className="divide-y divide-gray-100 dark:divide-white/5">
                     {block.items.map((item: any, idx: number) => {
-                        const isIssue = item.status === 'not_located' || item.status === 'divergence_info';
                         const isEdited = item.isEdited;
-                        const isCounted = !isIssue;
+                        const isIssue = item.status === 'not_located' || item.status === 'divergence_info';
 
                         return (
                         <div 
                             key={item.id}
                             onClick={() => handleOpenDetails(item)}
-                            className={`relative rounded-xl p-4 border shadow-sm transition-all overflow-hidden bg-white dark:bg-[#1e293b] border-gray-200 dark:border-[#334155]`}
+                            className="p-3 flex justify-between items-center hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer transition-colors"
                         >
-                            <div className="flex items-start gap-4">
-                                <div className={`size-12 rounded-lg flex items-center justify-center shrink-0 border ${
-                                    isIssue
-                                      ? 'bg-red-100 dark:bg-red-900/40 text-red-600 border-red-200 dark:border-red-800'
-                                      : 'bg-green-100 dark:bg-green-900/40 text-green-600 border-green-200 dark:border-green-800'
-                                }`}>
-                                    <Icon name={isIssue ? "warning" : "check"} size={24} />
+                            <div className="flex-1 min-w-0 pr-3">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <span className="text-sm font-bold truncate text-gray-800 dark:text-gray-100">
+                                        {item.name}
+                                    </span>
+                                    {isIssue && <Icon name="warning" size={16} className="text-red-500" />}
+                                    {!isIssue && <Icon name="check" size={16} className="text-green-500" />}
                                 </div>
                                 
-                                <div className="flex-1 min-w-0">
-                                    <h3 className="text-base font-extrabold text-gray-900 dark:text-white leading-tight">
-                                        {item.name}
-                                    </h3>
-                                    <div className="flex flex-wrap items-center gap-2 mt-1">
-                                        <span className="text-xs font-mono text-gray-500 dark:text-[#94a3b8]">
-                                            SKU: {item.ref}
-                                        </span>
-                                        <span className="size-1 rounded-full bg-gray-300 dark:bg-gray-600"></span>
-                                        <span className="text-xs font-bold text-gray-500 dark:text-[#94a3b8] uppercase">
-                                            {item.brand}
-                                        </span>
-                                    </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[11px] font-mono font-bold bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-200 px-1.5 py-0.5 rounded border border-gray-200 dark:border-white/10">
+                                        {item.ref}
+                                    </span>
+                                    <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-tight">
+                                        {item.brand}
+                                    </span>
                                 </div>
                             </div>
 
-                            <div className="my-3 border-t border-dashed border-gray-200 dark:border-[#334155]" />
-                            
-                            <div className="flex items-center gap-2 mb-4">
-                                <Icon name="history" size={16} className="text-gray-400" />
-                                <p className="text-xs text-gray-500 dark:text-gray-400">
-                                    Contado por <strong className="text-gray-700 dark:text-gray-300">{item.countedBy}</strong>
-                                </p>
-                            </div>
-
-                            <div className="flex items-end justify-between gap-4">
-                                <div className="flex flex-col">
-                                    <span className="text-[10px] font-bold uppercase text-gray-400 tracking-wider">Localização</span>
-                                    <span className="text-sm font-bold text-gray-800 dark:text-white">{item.location}</span>
-                                </div>
-
-                                <div className="flex flex-col items-end">
-                                    <span className="text-[10px] font-bold text-green-600 uppercase mb-0.5">Qtd Contada</span>
-                                    <div className="flex items-center gap-2 px-3 py-1.5 bg-green-100 dark:bg-green-900/40 rounded-lg border border-green-200 dark:border-green-800">
-                                        <span className="font-bold text-green-800 dark:text-green-300 text-sm">
-                                            {item.qty} un
-                                        </span>
-                                        {/* BOTÃO EDITAR INDIVIDUAL */}
-                                        <button 
-                                            onClick={(e) => handleEditCount(e, item)}
-                                            className="size-6 rounded bg-green-200 dark:bg-green-800 flex items-center justify-center text-green-800 dark:text-green-100 hover:bg-green-300 transition-colors"
-                                            title="Editar Quantidade"
-                                        >
-                                            <Icon name="edit" size={14} />
-                                        </button>
-                                    </div>
-                                    {isEdited && <span className="text-[9px] text-orange-500 font-bold mt-1">Editado</span>}
-                                </div>
+                            <div className="shrink-0 text-right flex flex-col items-end">
+                                <span className="block text-sm font-black text-green-600 dark:text-green-400">
+                                    {item.qty} un
+                                </span>
+                                <span className="block text-[9px] text-gray-400 whitespace-nowrap">
+                                    {formatFullDateTime(item.countedAt)}
+                                </span>
+                                {isEdited && <span className="text-[9px] text-orange-500 font-bold">Editado</span>}
+                                
+                                {/* Botão de Edição Rápida (Exibido sutilmente) */}
+                                <button 
+                                    onClick={(e) => handleEditCount(e, item)}
+                                    className="mt-1 text-gray-300 hover:text-green-600 dark:text-gray-600 dark:hover:text-green-400 transition-colors"
+                                >
+                                    <Icon name="edit" size={14} />
+                                </button>
                             </div>
                         </div>
                         );
                     })}
                 </div>
-
-                <div className="my-6 border-b border-gray-200 dark:border-white/5 w-full" />
              </div>
-          ))
+             );
+          })
         )}
       </div>
 
