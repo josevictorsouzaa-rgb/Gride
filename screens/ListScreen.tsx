@@ -200,54 +200,80 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                 const cleanParentRef = block.parentRef.replace(/REF PAI:?/gi, '').trim();
                 const mainTitle = block.items[0]?.name || 'Grupo de Itens';
 
+                // --- LOGICA DE ESTILOS DINÂMICOS ---
+                let containerClass = "border-gray-200 dark:border-gray-700/50";
+                let headerClass = "bg-gray-50/50 dark:bg-white/5 border-gray-100 dark:border-white/5";
+                let headerTextMain = "text-gray-900 dark:text-white";
+                let headerTextSub = "text-gray-500 dark:text-gray-400";
+                let labelColor = "text-gray-400";
+
+                // Se estiver reservado (AZUL)
+                if (isReservedByOther) {
+                    containerClass = "border-blue-500/50 shadow-blue-500/10";
+                    headerClass = "bg-primary dark:bg-primary-dark border-primary";
+                    headerTextMain = "text-white";
+                    headerTextSub = "text-blue-100";
+                    labelColor = "text-blue-200";
+                } 
+                // Se estiver concluído (VERDE)
+                else if (isFullyCounted) {
+                    containerClass = "border-green-500/50 shadow-green-500/10";
+                    headerClass = "bg-green-600 dark:bg-green-700 border-green-600";
+                    headerTextMain = "text-white";
+                    headerTextSub = "text-green-100";
+                    labelColor = "text-green-200";
+                }
+
                 return (
                     <div 
                         key={block.id} 
-                        className={`relative rounded-xl shadow-sm bg-white dark:bg-[#1e2329] overflow-hidden transition-all duration-500 ease-in-out transform border border-gray-200 dark:border-gray-700/50 ${
-                            isReservedByOther ? 'border-blue-500/50 shadow-blue-500/10' : ''
-                        } ${
+                        className={`relative rounded-xl shadow-sm bg-white dark:bg-[#1e2329] overflow-hidden transition-all duration-500 ease-in-out transform border ${containerClass} ${
                             isExiting 
                             ? 'opacity-0 translate-x-full max-h-0 mb-0 border-none'
                             : `opacity-100 translate-x-0 max-h-[1000px]`
                         }`}
                     >
                         {/* Header do Bloco */}
-                        <div className={`p-3 border-b ${isReservedByOther ? 'bg-primary dark:bg-primary-dark border-primary' : 'bg-gray-50/50 dark:bg-white/5 border-gray-100 dark:border-white/5'}`}>
+                        <div className={`p-3 border-b ${headerClass}`}>
                             <div className="flex justify-between items-start">
                                 <div className="flex-1 pr-2">
-                                    <span className={`text-[10px] font-bold uppercase tracking-wider ${isReservedByOther ? 'text-blue-200' : 'text-gray-400'}`}>
+                                    <span className={`text-[10px] font-bold uppercase tracking-wider ${labelColor}`}>
                                         Ref. Pai
                                     </span>
-                                    <h3 className={`text-sm font-bold leading-tight line-clamp-2 mt-0.5 ${isReservedByOther ? 'text-white' : 'text-gray-900 dark:text-white'}`}>
+                                    <h3 className={`text-sm font-bold leading-tight line-clamp-2 mt-0.5 ${headerTextMain}`}>
                                         {cleanParentRef || mainTitle}
                                     </h3>
                                     
-                                    <div className={`flex items-center gap-1 mt-1 text-xs ${isReservedByOther ? 'text-blue-100' : 'text-gray-500 dark:text-gray-400'}`}>
+                                    <div className={`flex items-center gap-1 mt-1 text-xs ${headerTextSub}`}>
                                         <Icon name="place" size={14} /> 
                                         <span className="font-medium">{block.location}</span>
                                     </div>
                                 </div>
 
-                                {/* Se Reservado: Avatar e Info do Usuário */}
-                                {isReservedByOther && (
+                                {/* LADO DIREITO DO HEADER: Avatar (Azul) ou Check (Verde) */}
+                                {(isReservedByOther || isFullyCounted) && (
                                     <div className="flex flex-col items-end shrink-0 pl-2">
                                         <div className="flex items-center gap-2">
                                             <div className="text-right">
-                                                <span className="block text-[9px] text-blue-200 font-bold uppercase">Reservado por</span>
-                                                <span className="block text-xs font-bold text-white max-w-[80px] truncate">
-                                                    {block.lockedBy?.userName?.split(' ')[0]}
+                                                <span className={`block text-[9px] font-bold uppercase ${labelColor}`}>
+                                                    {isReservedByOther ? 'Reservado por' : 'Status'}
+                                                </span>
+                                                <span className={`block text-xs font-bold ${headerTextMain} max-w-[80px] truncate`}>
+                                                    {isReservedByOther 
+                                                        ? (block.lockedBy?.userName?.split(' ')[0] || 'Usuário') 
+                                                        : 'Finalizado'}
                                                 </span>
                                             </div>
+                                            
+                                            {/* Circulo com Avatar ou Check */}
                                             <div className="size-9 rounded-full bg-white/20 border border-white/30 flex items-center justify-center text-white font-bold text-xs shadow-sm">
-                                                {getInitials(block.lockedBy?.userName || '')}
+                                                {isReservedByOther 
+                                                    ? getInitials(block.lockedBy?.userName || '') 
+                                                    : <Icon name="check" size={18} /> 
+                                                }
                                             </div>
                                         </div>
                                     </div>
-                                )}
-
-                                {/* Se Concluído: Ícone Check */}
-                                {!isReservedByOther && isFullyCounted && (
-                                    <Icon name="check_circle" className="text-green-500 shrink-0" size={24} />
                                 )}
                             </div>
                         </div>
@@ -265,8 +291,8 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                                             <span className="text-sm font-bold truncate text-gray-800 dark:text-gray-100">
                                                 {item.name}
                                             </span>
-                                            {/* Oculta check se reservado por outro */}
-                                            {!isReservedByOther && item.isCounted && <Icon name="check" size={16} className="text-green-500" />}
+                                            {/* Oculta check se reservado por outro, mas mostra se for o dono ou concluido */}
+                                            {(!isReservedByOther || isFullyCounted) && item.isCounted && <Icon name="check" size={16} className="text-green-500" />}
                                         </div>
                                         
                                         <div className="flex items-center gap-2">
@@ -279,8 +305,8 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                                         </div>
                                     </div>
 
-                                    {/* Detalhes de Estoque (OCULTAR SE RESERVADO POR OUTRO) */}
-                                    {!isReservedByOther && (
+                                    {/* Detalhes de Estoque (OCULTAR SE RESERVADO POR OUTRO e não concluído) */}
+                                    {(!isReservedByOther || isFullyCounted) && (
                                         <div className="shrink-0 text-right">
                                             {item.lastCount ? (
                                                 <>
@@ -322,19 +348,28 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                                 </button>
                             )}
                             
-                            {/* BOTÃO DE RESERVA (Apenas se NÃO estiver em progresso por outro) */}
-                            {!isReservedByOther && (
+                            {/* BOTÃO DE RESERVA (Apenas se NÃO estiver em progresso por outro e NÃO estiver concluído) */}
+                            {!isReservedByOther && !isFullyCounted && (
                                 <div className="p-3 bg-gray-50 dark:bg-white/5 border-t border-gray-100 dark:border-white/5">
                                     <button 
                                         onClick={(e) => handleReserve(block.id, e)}
-                                        className={`w-full py-3 rounded-lg text-sm font-bold shadow-sm hover:shadow-md hover:scale-[1.01] active:scale-[0.99] transition-all flex items-center justify-center gap-2 ${
-                                            isFullyCounted 
-                                            ? 'bg-white dark:bg-surface-dark border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5' 
-                                            : 'bg-gray-900 dark:bg-white text-white dark:text-black'
-                                        }`}
+                                        className="w-full py-3 rounded-lg text-sm font-bold shadow-sm hover:shadow-md hover:scale-[1.01] active:scale-[0.99] transition-all flex items-center justify-center gap-2 bg-gray-900 dark:bg-white text-white dark:text-black"
                                     >
-                                        <Icon name={isFullyCounted ? "refresh" : "lock"} size={18} />
-                                        {isFullyCounted ? "Recontar / Validar" : "Reservar Bloco"}
+                                        <Icon name="lock" size={18} />
+                                        Reservar Bloco
+                                    </button>
+                                </div>
+                            )}
+                            
+                            {/* BOTÃO RECONTAR (Apenas se estiver concluído) */}
+                            {isFullyCounted && (
+                                <div className="p-3 bg-gray-50 dark:bg-white/5 border-t border-gray-100 dark:border-white/5">
+                                    <button 
+                                        onClick={(e) => handleReserve(block.id, e)}
+                                        className="w-full py-3 rounded-lg text-sm font-bold shadow-sm hover:shadow-md transition-all flex items-center justify-center gap-2 bg-white dark:bg-surface-dark border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5"
+                                    >
+                                        <Icon name="refresh" size={18} />
+                                        Reabrir / Validar
                                     </button>
                                 </div>
                             )}
