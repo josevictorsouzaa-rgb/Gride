@@ -18,6 +18,27 @@ interface ListScreenProps {
 
 const getInitials = (name: string) => name ? name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() : 'US';
 
+// Helper para data completa
+const formatFullDateTime = (dateStr: string) => {
+    if (!dateStr) return '--/--/---- --:--';
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+};
+
+// Helper para tempo relativo
+const getTimeAgo = (dateStr: string) => {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    
+    if (diffInSeconds < 60) return 'Agora';
+    if (diffInSeconds < 3600) return `Há ${Math.floor(diffInSeconds / 60)}min`;
+    if (diffInSeconds < 86400) return `Há ${Math.floor(diffInSeconds / 3600)}h`;
+    if (diffInSeconds < 2592000) return `Há ${Math.floor(diffInSeconds / 86400)}d`;
+    return 'Há +1 mês';
+};
+
 export const ListScreen: React.FC<ListScreenProps> = ({ 
   onNavigate, 
   blocks, 
@@ -229,6 +250,23 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                     ? (block.items.find((i: any) => i.lastCount)?.lastCount?.user || 'Sistema')
                     : null;
 
+                // --- CÁLCULO DO TEMPO RELATIVO ---
+                let relativeTimeStr = '';
+                if (isReservedByOther && block.lockedBy?.timestamp) {
+                    // Tempo desde que foi reservado
+                    relativeTimeStr = getTimeAgo(block.lockedBy.timestamp);
+                } else if (isFullyCounted) {
+                    // Tempo desde a última contagem registrada no bloco
+                    const dates = block.items
+                        .map((i: any) => i.lastCount?.date ? new Date(i.lastCount.date).getTime() : 0)
+                        .filter((d: number) => d > 0);
+                    
+                    if (dates.length > 0) {
+                        const maxDate = new Date(Math.max(...dates));
+                        relativeTimeStr = getTimeAgo(maxDate.toISOString());
+                    }
+                }
+
                 return (
                     <div 
                         key={block.id} 
@@ -255,14 +293,22 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                                     </div>
                                 </div>
 
-                                {/* LADO DIREITO DO HEADER: Avatar (Azul ou Verde) */}
+                                {/* LADO DIREITO DO HEADER: Avatar (Azul ou Verde) + Tempo */}
                                 {(isReservedByOther || isFullyCounted) && (
                                     <div className="flex flex-col items-end shrink-0 pl-2">
                                         <div className="flex items-center gap-2">
                                             <div className="text-right">
-                                                <span className={`block text-[9px] font-bold uppercase ${labelColor}`}>
-                                                    {isReservedByOther ? 'Reservado por' : 'Concluído por'}
-                                                </span>
+                                                <div className="flex flex-col items-end">
+                                                    <span className={`block text-[9px] font-bold uppercase ${labelColor}`}>
+                                                        {isReservedByOther ? 'Reservado por' : 'Concluído por'}
+                                                    </span>
+                                                    {/* TEMPO DECORRIDO NO HEADER */}
+                                                    {relativeTimeStr && (
+                                                        <span className={`block text-[9px] font-bold opacity-80 ${headerTextMain} mb-0.5`}>
+                                                            {relativeTimeStr}
+                                                        </span>
+                                                    )}
+                                                </div>
                                                 <span className={`block text-xs font-bold ${headerTextMain} max-w-[80px] truncate`}>
                                                     {isReservedByOther 
                                                         ? (block.lockedBy?.userName?.split(' ')[0] || 'Usuário') 
@@ -316,8 +362,8 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                                             {item.lastCount ? (
                                                 <>
                                                     <span className="block text-sm font-black text-green-600 dark:text-green-400">{item.lastCount.qty} un</span>
-                                                    <span className="block text-[9px] text-gray-400">
-                                                        {new Date(item.lastCount.date).toLocaleDateString(undefined, {day:'2-digit', month:'2-digit'})}
+                                                    <span className="block text-[9px] text-gray-400 whitespace-nowrap">
+                                                        {formatFullDateTime(item.lastCount.date)}
                                                     </span>
                                                 </>
                                             ) : (
