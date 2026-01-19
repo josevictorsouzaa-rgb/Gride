@@ -294,8 +294,6 @@ app.get('/blocks', (req, res) => {
                     if (errD) { db.detach(); return res.status(500).json({ error: errD.message }); }
 
                     // Processar linhas para encontrar as chaves únicas dos blocos (Similar ou ID)
-                    const targetSimilars = new Set();
-                    const targetSingles = new Set();
                     const seenKeys = new Set();
                     let blocksFound = 0;
 
@@ -310,19 +308,18 @@ app.get('/blocks', (req, res) => {
 
                         if (!seenKeys.has(key)) {
                             seenKeys.add(key);
-                            if (sim) targetSimilars.add(sim);
-                            else targetSingles.add(id);
                             blocksFound++;
                         }
                     }
 
-                    if (targetSimilars.size === 0 && targetSingles.size === 0) {
+                    if (seenKeys.size === 0) {
                         db.detach();
                         return res.json([]);
                     }
 
                     // --- ETAPA 2: ENRIQUECIMENTO (Buscar TODOS os itens dos blocos identificados) ---
-                    // Agora buscamos a família completa de cada chave identificada
+                    // Agora buscamos a família completa de cada chave identificada.
+                    // IMPORTANTE: Verificamos se o item PERTENCE ao bloco via PRO_COD_SIMILAR *OU* se o item É a chave do bloco via PRO_COD.
                     let fetchSql = `
                         SELECT 
                         P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, 
@@ -333,23 +330,14 @@ app.get('/blocks', (req, res) => {
                     `;
 
                     const fetchParams = [];
-                    const criteria = [];
+                    const allKeys = Array.from(seenKeys);
+                    const placeholders = allKeys.map(() => '?').join(',');
 
-                    // Adiciona critério para Similares
-                    if (targetSimilars.size > 0) {
-                        const placeholders = Array.from(targetSimilars).map(() => '?').join(',');
-                        criteria.push(`P.PRO_COD_SIMILAR IN (${placeholders})`);
-                        fetchParams.push(...targetSimilars);
-                    }
-
-                    // Adiciona critério para Itens Únicos
-                    if (targetSingles.size > 0) {
-                        const placeholders = Array.from(targetSingles).map(() => '?').join(',');
-                        criteria.push(`P.PRO_COD IN (${placeholders})`);
-                        fetchParams.push(...targetSingles);
-                    }
-
-                    fetchSql += criteria.join(' OR ') + `)`;
+                    // A lógica mágica: Traga o produto se seu ID está na lista de chaves OU se seu SIMILAR está na lista de chaves.
+                    fetchSql += `P.PRO_COD IN (${placeholders}) OR P.PRO_COD_SIMILAR IN (${placeholders}))`;
+                    
+                    // Passamos os parâmetros duas vezes (uma para cada IN)
+                    fetchParams.push(...allKeys, ...allKeys);
                     
                     // Mantemos a ordenação para visualização consistente
                     fetchSql += ` ORDER BY P.PRO_PRATELEIRA, P.PRO_DESCRI`;
