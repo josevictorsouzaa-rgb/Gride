@@ -246,7 +246,18 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                                         <div className="flex gap-2 text-[10px] text-gray-500">
                                             <span className="bg-gray-100 dark:bg-white/10 px-1.5 rounded">{item.ref}</span>
                                             <span>{item.brand}</span>
-                                            {activeTab === 'pending' && <span className="ml-auto font-medium">Est: {item.balance}</span>}
+                                            
+                                            {/* SE JÁ FOI CONTADO, MOSTRA DETALHES. SE NÃO, MOSTRA ESTOQUE SISTEMA. */}
+                                            {item.lastCount ? (
+                                                <div className="ml-auto text-right">
+                                                    <span className="block text-xs font-bold text-green-600 dark:text-green-400">{item.lastCount.qty} un</span>
+                                                    <span className="block text-[9px] text-gray-400">
+                                                        Por {item.lastCount.user.split(' ')[0]} em {new Date(item.lastCount.date).toLocaleDateString()}
+                                                    </span>
+                                                </div>
+                                            ) : (
+                                                activeTab === 'pending' && <span className="ml-auto font-medium text-xs">Est: {item.balance}</span>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -274,14 +285,19 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                                 </button>
                             )}
                             
-                            {!isFullyCounted && !isReservedByOther && (
+                            {/* BOTÃO DE RESERVA: Exibido sempre, exceto se bloqueado por outro usuário (progress) */}
+                            {!isReservedByOther && (
                                 <div className="p-2 bg-gray-50 dark:bg-white/5 border-t border-gray-100 dark:border-white/5">
                                     <button 
                                         onClick={(e) => handleReserve(block.id, e)}
-                                        className="w-full py-3 bg-gray-900 dark:bg-white text-white dark:text-black rounded-lg text-sm font-bold shadow-md hover:scale-[1.01] active:scale-[0.99] transition-all flex items-center justify-center gap-2"
+                                        className={`w-full py-3 rounded-lg text-sm font-bold shadow-md hover:scale-[1.01] active:scale-[0.99] transition-all flex items-center justify-center gap-2 ${
+                                            isFullyCounted 
+                                            ? 'bg-white dark:bg-surface-dark border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5' 
+                                            : 'bg-gray-900 dark:bg-white text-white dark:text-black'
+                                        }`}
                                     >
-                                        <Icon name="lock" size={16} />
-                                        Reservar Bloco
+                                        <Icon name={isFullyCounted ? "refresh" : "lock"} size={16} />
+                                        {isFullyCounted ? "Recontar / Validar" : "Reservar Bloco"}
                                     </button>
                                 </div>
                             )}

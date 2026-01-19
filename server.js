@@ -268,13 +268,22 @@ app.get('/blocks', (req, res) => {
             const lockMap = new Map();
             if(reservations) reservations.forEach(r => lockMap.set(safeString(r.BLOCK_ID), r.USER_NAME));
 
-            // 2. Obter mapa de Itens já contados
-            db.query("SELECT PRO_COD FROM GRIDE_INVENTARIO_LOG WHERE STATUS IN ('Contado', 'Divergência', 'Concluído')", [], (errL, logs) => {
-                const countedSet = new Set();
-                if(logs) logs.forEach(l => countedSet.add(l.PRO_COD));
+            // 2. Obter mapa detalhado de Itens já contados (QUEM, QUANDO, QUANTO)
+            // Alterado para trazer detalhes do log em vez de apenas ID
+            db.query("SELECT PRO_COD, USUARIO_NOME, DATA_HORA, QTD_CONTADA FROM GRIDE_INVENTARIO_LOG WHERE STATUS IN ('Contado', 'Divergência', 'Concluído') ORDER BY DATA_HORA ASC", [], (errL, logs) => {
+                const countedMap = new Map();
+                if(logs) {
+                    logs.forEach(l => {
+                        // Como está ordenado por DATA_HORA ASC, a última iteração sobrescreve com o dado mais recente
+                        countedMap.set(l.PRO_COD, {
+                            user: safeString(l.USUARIO_NOME),
+                            date: l.DATA_HORA,
+                            qty: l.QTD_CONTADA
+                        });
+                    });
+                }
 
                 // --- ETAPA 1: DESCOBERTA (Encontrar quais blocos exibir com Paginação) ---
-                // Adicionado SKIP para respeitar a página atual
                 let discoverySql = `
                     SELECT FIRST ? SKIP ?
                     P.PRO_COD, P.PRO_COD_SIMILAR 
@@ -282,8 +291,6 @@ app.get('/blocks', (req, res) => {
                     WHERE P.PRO_ATIVO = 'S'
                 `;
                 
-                // Fetch more rows to ensure we find enough unique blocks, but skip previous pages
-                // Approximation: fetch 5x limit rows to handle grouping collapsing rows
                 const fetchCount = limit * 5;
                 const discoveryParams = [fetchCount, skip]; 
 
@@ -300,18 +307,14 @@ app.get('/blocks', (req, res) => {
                 db.query(discoverySql, discoveryParams, (errD, discoveryRows) => {
                     if (errD) { db.detach(); return res.status(500).json({ error: errD.message }); }
 
-                    // Processar linhas para encontrar as chaves únicas dos blocos (Similar ou ID)
+                    // Processar linhas para encontrar as chaves únicas dos blocos
                     const seenKeys = new Set();
                     let blocksFound = 0;
 
                     for (const row of discoveryRows) {
                         if (blocksFound >= limit) break;
-
-                        // REGRA: Se tem similar, ele é a chave. Se não tem, o ID é a chave.
                         const simRaw = safeString(row.PRO_COD_SIMILAR);
                         const idRaw = safeString(row.PRO_COD);
-                        
-                        // Chave = Similar se existir e não for vazio, senão ID
                         const key = simRaw.length > 0 ? simRaw : idRaw;
 
                         if (!seenKeys.has(key)) {
@@ -325,8 +328,7 @@ app.get('/blocks', (req, res) => {
                         return res.json([]);
                     }
 
-                    // --- ETAPA 2: ENRIQUECIMENTO (Buscar TODOS os itens dos blocos identificados) ---
-                    // Agora buscamos a família completa de cada chave identificada.
+                    // --- ETAPA 2: ENRIQUECIMENTO ---
                     let fetchSql = `
                         SELECT 
                         P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, 
@@ -340,28 +342,23 @@ app.get('/blocks', (req, res) => {
                     const allKeys = Array.from(seenKeys);
                     const placeholders = allKeys.map(() => '?').join(',');
 
-                    // A lógica mágica: Traga o produto se seu ID está na lista de chaves OU se seu SIMILAR está na lista de chaves.
                     fetchSql += `P.PRO_COD IN (${placeholders}) OR P.PRO_COD_SIMILAR IN (${placeholders}))`;
-                    
-                    // Passamos os parâmetros duas vezes (uma para cada IN)
                     fetchParams.push(...allKeys, ...allKeys);
-                    
-                    // Mantemos a ordenação para visualização consistente
                     fetchSql += ` ORDER BY P.PRO_PRATELEIRA, P.PRO_DESCRI`;
 
                     db.query(fetchSql, fetchParams, (errP, products) => {
                         db.detach();
                         if (errP) return res.status(500).json({ error: errP.message });
 
-                        // Agrupamento (Lógica existente mantida, agora com dados completos)
                         const groups = new Map();
                         products.forEach(p => {
-                            // MESMA REGRA DA DESCOBERTA:
                             const simRaw = safeString(p.PRO_COD_SIMILAR);
                             const idRaw = safeString(p.PRO_COD);
                             const key = simRaw.length > 0 ? simRaw : idRaw;
 
-                            const isCounted = countedSet.has(p.PRO_COD);
+                            // Verifica se item foi contado e pega detalhes
+                            const lastLog = countedMap.get(p.PRO_COD);
+                            const isCounted = !!lastLog;
                             
                             if (!groups.has(key)) groups.set(key, []);
                             groups.get(key).push({
@@ -371,7 +368,12 @@ app.get('/blocks', (req, res) => {
                                 brand: p.MAR_DESCRI ? safeString(p.MAR_DESCRI) : 'GENÉRICO',
                                 balance: parseFloat(p.PRO_EST_ATUAL || 0),
                                 location: safeString(p.PRO_PRATELEIRA) || 'GERAL',
-                                isCounted: isCounted
+                                isCounted: isCounted,
+                                lastCount: lastLog ? {
+                                    user: lastLog.user,
+                                    date: lastLog.date,
+                                    qty: parseFloat(lastLog.qty)
+                                } : null
                             });
                         });
 
@@ -382,10 +384,8 @@ app.get('/blocks', (req, res) => {
                             let status = allCounted ? 'completed' : 'pending';
                             if (lockedBy) status = 'progress';
 
-                            // Usar 'REF PAI: [REF]' com busca do item pai
                             let parentRefDisplay = items[0].ref || items[0].name;
                             if (items.length > 1) {
-                                // Tenta encontrar o item pai (onde id == key) para usar sua Referência
                                 const parent = items.find(i => i.id === key);
                                 const refToShow = parent ? parent.ref : items[0].ref;
                                 parentRefDisplay = `REF PAI: ${refToShow}`;
