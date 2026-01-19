@@ -13,6 +13,7 @@ interface ListScreenProps {
   mode?: 'browse'; 
   page?: number;
   onPageChange?: (newPage: number) => void;
+  externalCounts?: { pending: number, completed: number }; // Nova prop para totais reais
 }
 
 export const ListScreen: React.FC<ListScreenProps> = ({ 
@@ -22,7 +23,8 @@ export const ListScreen: React.FC<ListScreenProps> = ({
   onReserveBlock, 
   onClearFilter,
   page = 1,
-  onPageChange
+  onPageChange,
+  externalCounts
 }) => {
   const [activeTab, setActiveTab] = useState<'pending' | 'completed'>('pending');
   const [expandedBlocks, setExpandedBlocks] = useState<number[]>([]);
@@ -77,10 +79,15 @@ export const ListScreen: React.FC<ListScreenProps> = ({
   }, [blocks, searchText, activeTab]);
 
   const counts = useMemo(() => {
+      // Se externalCounts for fornecido, usa-o para mostrar o TOTAL real da categoria
+      if (externalCounts) {
+          return externalCounts;
+      }
+      // Fallback: Conta apenas os blocos carregados
       const pending = blocks.filter(b => b.status !== 'completed').length;
       const completed = blocks.filter(b => b.status === 'completed').length;
       return { pending, completed };
-  }, [blocks]);
+  }, [blocks, externalCounts]);
 
   return (
     <div className="relative flex flex-col w-full min-h-screen pb-24 md:pb-0 bg-background-light dark:bg-background-dark md:bg-transparent">
@@ -148,7 +155,15 @@ export const ListScreen: React.FC<ListScreenProps> = ({
         {filteredBlocks.length === 0 ? (
             <div className="text-center py-20 text-gray-400">
                 <Icon name={activeTab === 'pending' ? "playlist_add_check" : "search_off"} size={48} className="mb-2 opacity-50" />
-                <p>{activeTab === 'pending' ? "Tudo contado por aqui!" : "Nenhum item concluído ainda."}</p>
+                <p>{activeTab === 'pending' ? "Tudo contado por aqui (nesta página)!" : "Nenhum item concluído ainda."}</p>
+                {onPageChange && (
+                    <button 
+                        onClick={() => onPageChange(page + 1)}
+                        className="mt-4 text-primary font-bold text-sm underline"
+                    >
+                        Tentar Próxima Página
+                    </button>
+                )}
             </div>
         ) : (
             filteredBlocks.map((block) => {

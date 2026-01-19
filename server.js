@@ -251,10 +251,14 @@ app.get('/categories', (req, res) => {
 
 app.get('/blocks', (req, res) => {
     const limit = parseInt(req.query.limit) || 100;
+    const page = parseInt(req.query.page) || 1;
     const search = req.query.search || '';
     const gr_cod = req.query.gr_cod;
     const sg_cod = req.query.sg_cod;
     const location = req.query.location;
+
+    // Paginação: Skip logic
+    const skip = (page - 1) * limit;
 
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Conexão' });
@@ -269,16 +273,19 @@ app.get('/blocks', (req, res) => {
                 const countedSet = new Set();
                 if(logs) logs.forEach(l => countedSet.add(l.PRO_COD));
 
-                // --- ETAPA 1: DESCOBERTA (Encontrar quais blocos exibir) ---
-                // Buscamos mais registros (limit * 5) para garantir que encontraremos 'limit' blocos únicos
+                // --- ETAPA 1: DESCOBERTA (Encontrar quais blocos exibir com Paginação) ---
+                // Adicionado SKIP para respeitar a página atual
                 let discoverySql = `
-                    SELECT FIRST ? 
+                    SELECT FIRST ? SKIP ?
                     P.PRO_COD, P.PRO_COD_SIMILAR 
                     FROM PRODUTOS P 
                     WHERE P.PRO_ATIVO = 'S'
                 `;
                 
-                const discoveryParams = [limit * 5]; 
+                // Fetch more rows to ensure we find enough unique blocks, but skip previous pages
+                // Approximation: fetch 5x limit rows to handle grouping collapsing rows
+                const fetchCount = limit * 5;
+                const discoveryParams = [fetchCount, skip]; 
 
                 if (search) { 
                     discoverySql += ` AND (P.PRO_DESCRI CONTAINING ? OR P.PRO_NRFABRICANTE CONTAINING ?)`; 

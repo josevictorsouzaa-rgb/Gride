@@ -47,6 +47,9 @@ const App: React.FC = () => {
   const [reservedCount, setReservedCount] = useState(0);
   const [treatmentCount, setTreatmentCount] = useState(0);
 
+  // External Counts for List Screen (To bypass pagination limits in UI)
+  const [listCounts, setListCounts] = useState<{ pending: number, completed: number } | undefined>(undefined);
+
   const handleLogout = useCallback(() => {
     setCurrentUser(null);
     setCurrentScreen('login');
@@ -121,8 +124,33 @@ const App: React.FC = () => {
                     minDelay
                 ]);
                 setBlocks(metaBlocks);
+                setListCounts(undefined); // No special count logic for generic list
             } else if (isFilteredList) {
                 if (segmentFilter !== 'Resultado da Busca' && selectedGrCod) {
+                    
+                    // Calcular Total e Mapped baseado nas categorias já carregadas
+                    // Isso fornece contagem real independente da páginação
+                    if (categories.length > 0 && selectedSgCod) {
+                        let totalItems = 0;
+                        let doneItems = 0;
+                        
+                        // Find category and subcategory
+                        const group = categories.find(c => c.db_id === selectedGrCod);
+                        if (group) {
+                            const sub = group.subcategories.find(s => s.db_id === selectedSgCod);
+                            if (sub) {
+                                totalItems = sub.count;
+                                doneItems = sub.mappedCount;
+                            }
+                        }
+                        
+                        // Passamos isso para o ListScreen
+                        setListCounts({ 
+                            pending: Math.max(0, totalItems - doneItems), 
+                            completed: doneItems 
+                        });
+                    }
+
                     const [filteredBlocks] = await Promise.all([
                         api.getBlocks(browsePage, BROWSE_LIMIT, '', selectedGrCod, selectedSgCod),
                         minDelay
@@ -149,7 +177,7 @@ const App: React.FC = () => {
     };
 
     fetchBlocks();
-  }, [currentScreen, selectedGrCod, selectedSgCod, currentUser, browsePage]);
+  }, [currentScreen, selectedGrCod, selectedSgCod, currentUser, browsePage, categories]); // Added categories dependency
 
   
   const handleCategorySelect = (categoryLabel: string, dbId: number) => {
@@ -264,6 +292,7 @@ const App: React.FC = () => {
             mode="browse"
             page={browsePage}
             onPageChange={handlePageChange}
+            externalCounts={listCounts} // Pass the calculated total counts
         />;
       case 'reserved': return <ReservedScreen onNavigate={setCurrentScreen} blocks={blocks} onStartBlock={handleStartBlock} currentUser={currentUser} onRefreshCount={refreshGlobalCounts} />;
       case 'history': return <HistoryScreen currentUser={currentUser} onNavigate={setCurrentScreen} onReserve={handleHistoryReserve} />;
