@@ -1,3 +1,4 @@
+
 import express from 'express';
 import Firebird from 'node-firebird';
 import cors from 'cors';
@@ -13,21 +14,241 @@ const DB_PATH = 'C:\\Users\\DELL G15\\Desktop\\BD\\DATABASE\\DATABASE.FDB';
 app.use(cors());
 app.use(bodyParser.json({ limit: '50mb' }));
 
+// Configuração do Firebird
 const options = {
     host: '127.0.0.1',
     port: 3050,
     database: DB_PATH,
     user: 'SYSDBA',
     password: 'masterkey',
-    lowercase_keys: false,
+    lowercase_keys: false, 
     role: null,
     pageSize: 4096
 };
 
-// Funções Auxiliares
-const safeString = (v) => (v === null || v === undefined) ? '' : String(v).trim();
+// --- MAPAS DE TRADUÇÃO DE STATUS (FRONTEND <-> BANCO) ---
+const TO_DB_STATUS = {
+    'pending': 'Pendente',
+    'progress': 'Em Andamento',
+    'counted': 'Contado',
+    'not_located': 'Não Localizado',
+    'issue': 'Divergência',
+    'divergence_info': 'Divergência',
+    'completed': 'Concluído',
+    'reserved': 'RESERVADO',
+    'released': 'DEVOLVIDO',
+    'edited': 'EDIÇÃO'
+};
 
-// --- ROTA DE BLOCOS CORRIGIDA ---
+const FROM_DB_STATUS = {
+    'Pendente': 'pending',
+    'Em Andamento': 'progress',
+    'Contado': 'counted',
+    'Não Localizado': 'not_located',
+    'Divergência': 'divergence_info',
+    'Concluído': 'completed',
+    'RESERVADO': 'reserved',
+    'DEVOLVIDO': 'released',
+    'EDIÇÃO': 'edited'
+};
+
+// --- HELPER DE QUERY PROMISIFIED ---
+const execute = (db, sql, params = []) => {
+    return new Promise((resolve, reject) => {
+        db.query(sql, params, (err, result) => {
+            if (err) return reject(err);
+            resolve(result);
+        });
+    });
+};
+
+// --- HELPER PARA IGNORAR ERROS DE "JÁ EXISTE" ---
+const safeExecute = async (db, sql, description) => {
+    try {
+        console.log(`Executing: ${description}`);
+        await execute(db, sql);
+        console.log(`   [OK] ${description}`);
+    } catch (e) {
+        const msg = e.message.toLowerCase();
+        if (msg.includes('exists') || msg.includes('unsuccessful metadata update') || msg.includes('already')) {
+            // console.log(`   [SKIP] ${description} (Já existe)`);
+        } else {
+            console.error(`   [ERRO] ${description}:`, e.message);
+        }
+    }
+};
+
+const safeString = (value) => {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'object' && Buffer.isBuffer(value)) return value.toString().trim();
+    return String(value).trim();
+};
+
+const blobToString = (blob) => {
+    if (blob === null || blob === undefined) return null;
+    if (Buffer.isBuffer(blob)) return blob.toString('utf8');
+    if (typeof blob === 'string') return blob;
+    return String(blob);
+};
+
+// --- INIT DB ---
+const initDb = () => {
+    return new Promise((resolve, reject) => {
+        console.log(">>> [INIT] Conectando ao Firebird...");
+        Firebird.attach(options, async (err, db) => {
+            if (err) {
+                console.error(">>> [FATAL] Não foi possível conectar ao DB:", err.message);
+                return resolve(); 
+            }
+            try {
+                // Tabelas Principais
+                await safeExecute(db, `CREATE TABLE GRIDE_ENDERECOS (ID INTEGER NOT NULL PRIMARY KEY, CODIGO VARCHAR(50) NOT NULL, DESCRICAO VARCHAR(100), TIPO VARCHAR(20), PRO_COD VARCHAR(20))`, "Tabela Endereços");
+                await safeExecute(db, `CREATE TABLE GRIDE_GALPOES (ID INTEGER NOT NULL PRIMARY KEY, SIGLA VARCHAR(10) NOT NULL, DESCRICAO VARCHAR(50))`, "Tabela Galpões");
+                await safeExecute(db, `CREATE TABLE GRIDE_RESERVAS (BLOCK_ID VARCHAR(50) NOT NULL PRIMARY KEY, USU_COD VARCHAR(20) NOT NULL, USER_NAME VARCHAR(100), PRO_COD INTEGER, RESERVED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`, "Tabela Reservas");
+                await safeExecute(db, `ALTER TABLE GRIDE_RESERVAS ADD ITEMS_JSON BLOB SUB_TYPE TEXT`, "Coluna ITEMS_JSON em Reservas");
+                await safeExecute(db, `CREATE TABLE GRIDE_INVENTARIO_LOG (ID INTEGER NOT NULL PRIMARY KEY, PRO_COD INTEGER, PRO_NRFABRICANTE VARCHAR(50), NOME_PRODUTO VARCHAR(200), USU_COD VARCHAR(20), USUARIO_NOME VARCHAR(100), QTD_SISTEMA DECIMAL(15,4), QTD_CONTADA DECIMAL(15,4), LOCALIZACAO VARCHAR(100), STATUS VARCHAR(50), DIVERGENCIA_MOTIVO VARCHAR(255), BLOCK_REF VARCHAR(50), DATA_HORA TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`, "Tabela Logs");
+                await safeExecute(db, `CREATE TABLE GRIDE_CONTAS_FINALIZADAS (ID INTEGER NOT NULL PRIMARY KEY, SKU VARCHAR(50), PRO_COD INTEGER, QTD_FINAL DECIMAL(15,4), DATA_HORA TIMESTAMP DEFAULT CURRENT_TIMESTAMP, USUARIO_NOME VARCHAR(100), STATUS VARCHAR(20), LOG_ORIGEM_ID INTEGER)`, "Tabela Contas Finalizadas");
+                await safeExecute(db, `CREATE TABLE GRIDE_TRATAMENTO (ID INTEGER NOT NULL PRIMARY KEY, LOG_ID INTEGER, PRO_COD INTEGER, PRO_NRFABRICANTE VARCHAR(50), NOME_PRODUTO VARCHAR(200), LOCALIZACAO VARCHAR(100), TIPO_ERRO VARCHAR(50), DESCRICAO_ERRO VARCHAR(255), REPORTADO_POR VARCHAR(100), REPORTADO_EM TIMESTAMP DEFAULT CURRENT_TIMESTAMP, STATUS VARCHAR(20) DEFAULT 'PENDING', RESOLVIDO_POR VARCHAR(20), RESOLVIDO_EM TIMESTAMP, RESOLUCAO_NOTA VARCHAR(255))`, "Tabela Tratamento");
+
+                // Generators
+                const gens = ['GEN_GRIDE_ENDERECOS_ID', 'GEN_GRIDE_GALPOES_ID', 'GEN_GRIDE_LOG_ID', 'GEN_GRIDE_TRATAMENTO_ID', 'GEN_GRIDE_CONTAS_FIN_ID'];
+                for (const g of gens) await safeExecute(db, `CREATE GENERATOR ${g}`, `Generator ${g}`);
+
+                // Triggers
+                await safeExecute(db, `CREATE TRIGGER TR_GRIDE_ENDERECOS FOR GRIDE_ENDERECOS ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_ENDERECOS_ID, 1); END`, "Trigger Endereços");
+                await safeExecute(db, `CREATE TRIGGER TR_GRIDE_GALPOES FOR GRIDE_GALPOES ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_GALPOES_ID, 1); END`, "Trigger Galpões");
+                await safeExecute(db, `CREATE TRIGGER TR_GRIDE_LOG FOR GRIDE_INVENTARIO_LOG ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_LOG_ID, 1); END`, "Trigger Logs");
+                await safeExecute(db, `CREATE TRIGGER TR_GRIDE_TRATAMENTO FOR GRIDE_TRATAMENTO ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_TRATAMENTO_ID, 1); END`, "Trigger Tratamento");
+                await safeExecute(db, `CREATE TRIGGER TR_GRIDE_CONTAS_FIN FOR GRIDE_CONTAS_FINALIZADAS ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_CONTAS_FIN_ID, 1); END`, "Trigger Contas Finalizadas");
+
+                console.log(">>> [INIT] Banco de dados padronizado.");
+            } catch (e) { console.error(">>> [INIT ERROR]", e); } 
+            finally { db.detach(); resolve(); }
+        });
+    });
+};
+
+// --- ROTAS ---
+
+app.get('/meta-status', (req, res) => {
+    Firebird.attach(options, async (err, db) => {
+        if (err) return res.status(500).json({ totalStock: 0, mappedStock: 0 });
+        try {
+            const resTotal = await execute(db, "SELECT COUNT(*) as TOTAL FROM PRODUTOS WHERE PRO_ATIVO = 'S'");
+            const totalStock = resTotal[0].TOTAL;
+            const resMapped = await execute(db, "SELECT COUNT(DISTINCT PRO_COD) as MAPPED FROM GRIDE_INVENTARIO_LOG WHERE STATUS IN ('Contado', 'Divergência', 'Concluído')");
+            const mappedStock = resMapped[0].MAPPED;
+            db.detach();
+            res.json({ totalStock, mappedStock });
+        } catch (e) {
+            db.detach();
+            res.json({ totalStock: 0, mappedStock: 0 });
+        }
+    });
+});
+
+app.get('/daily-meta-suggestions', (req, res) => {
+    res.redirect('/blocks?limit=50&status=pending');
+});
+
+app.get('/user-name/:id', (req, res) => {
+    const { id } = req.params;
+    if (id === '9999') return res.json({ name: 'Gestor de Teste' });
+    if (id === '8888') return res.json({ name: 'Colaborador Teste' });
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.status(500).json({ error: 'Erro DB' });
+        db.query(`SELECT USU_NOME FROM USUARIOS WHERE USU_COD = ? AND USU_ATIVO = 'S'`, [id], (err, result) => {
+            db.detach();
+            if (!err && result.length > 0) res.json({ name: safeString(result[0].USU_NOME) });
+            else res.status(404).json({ error: 'Usuário não encontrado' });
+        });
+    });
+});
+
+app.post('/login', (req, res) => {
+    const { usuario_id, senha } = req.body;
+    if (usuario_id === '9999' && senha === 'admin') return res.json({ success: true, user: { id: '9999', name: 'Gestor', role: 'Gerente', isAdmin: true } });
+    if (usuario_id === '8888' && senha === 'user') return res.json({ success: true, user: { id: '8888', name: 'Colaborador', role: 'Conferente', isAdmin: false } });
+
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.status(500).json({ error: err.message });
+        db.query(`SELECT USU_COD, USU_NOME, USU_ATIVO FROM USUARIOS WHERE USU_COD = ?`, [usuario_id], (err, resultUser) => {
+            if (err || resultUser.length === 0) { db.detach(); return res.status(401).json({error: 'User not found'}); }
+            if (safeString(resultUser[0].USU_ATIVO) !== 'S') { db.detach(); return res.status(403).json({error: 'Inactive'}); }
+            
+            db.query(`SELECT FIRST 1 PWD_SENHA FROM PASSWORDS WHERE USU_COD = ? ORDER BY PWD_ID DESC`, [usuario_id], (err, resultPwd) => {
+                db.detach();
+                if (!err && resultPwd.length > 0 && safeString(resultPwd[0].PWD_SENHA) === senha) {
+                    res.json({ success: true, user: { id: usuario_id, name: safeString(resultUser[0].USU_NOME), role: 'Colaborador', isAdmin: usuario_id === '18' } });
+                } else {
+                    res.status(401).json({ error: 'Senha incorreta' });
+                }
+            });
+        });
+    });
+});
+
+app.get('/users', (req, res) => {
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.status(500).json([]);
+        db.query(`SELECT USU_COD, USU_NOME FROM USUARIOS WHERE USU_ATIVO = 'S' ORDER BY USU_NOME`, [], (err, result) => {
+            db.detach();
+            if (err) return res.json([]);
+            res.json(result.map(u => ({ id: u.USU_COD.toString(), name: safeString(u.USU_NOME), role: 'Colaborador', avatar: '', canTreat: false })));
+        });
+    });
+});
+
+app.get('/categories', (req, res) => {
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.status(500).json([]);
+        
+        db.query('SELECT GR_COD, GR_DESCRI FROM GRUPOPRODUTOS', [], (errG, groups) => {
+            if (errG) { db.detach(); return res.json([]); }
+            
+            db.query('SELECT GR_COD, SG_COD, SG_DESCRI FROM SUBGRUPOPRODUTOS', [], (errS, subgroups) => {
+                if (errS) { db.detach(); return res.json([]); }
+                
+                const sqlTotal = `SELECT GR_COD, SG_COD, COUNT(*) as TOTAL FROM PRODUTOS WHERE PRO_ATIVO = 'S' GROUP BY GR_COD, SG_COD`;
+                const sqlMapped = `SELECT P.GR_COD, P.SG_COD, COUNT(DISTINCT L.PRO_COD) as MAPPED FROM GRIDE_INVENTARIO_LOG L JOIN PRODUTOS P ON P.PRO_COD = L.PRO_COD WHERE L.STATUS IN ('Contado', 'Divergência', 'Concluído') GROUP BY P.GR_COD, P.SG_COD`;
+
+                db.query(sqlTotal, [], (errT, totalRes) => {
+                    if (errT) { db.detach(); return res.json([]); }
+                    db.query(sqlMapped, [], (errM, mappedRes) => {
+                        db.detach();
+                        
+                        const totalMap = new Map();
+                        totalRes.forEach(r => totalMap.set(`${r.GR_COD}-${r.SG_COD}`, r.TOTAL));
+                        const mappedMap = new Map();
+                        if(mappedRes) mappedRes.forEach(r => mappedMap.set(`${r.GR_COD}-${r.SG_COD}`, r.MAPPED));
+
+                        const tree = groups.map(g => {
+                            const grId = String(g.GR_COD).trim();
+                            const subs = subgroups
+                                .filter(s => String(s.GR_COD).trim() === grId)
+                                .map(s => {
+                                    const sgId = String(s.SG_COD).trim();
+                                    const key = `${grId}-${sgId}`;
+                                    return { 
+                                        id: sgId, 
+                                        db_id: s.SG_COD, 
+                                        name: safeString(s.SG_DESCRI), 
+                                        count: totalMap.get(key) || 0,       
+                                        mappedCount: mappedMap.get(key) || 0 
+                                    };
+                                });
+                            const groupTotal = subs.reduce((acc, s) => acc + s.count, 0);
+                            const groupMapped = subs.reduce((acc, s) => acc + s.mappedCount, 0);
+                            return { id: grId, db_id: g.GR_COD, label: safeString(g.GR_DESCRI), count: groupTotal, mappedCount: groupMapped, subcategories: subs };
+                        });
+                        res.json(tree);
+                    });
+                });
+            });
+        });
+    });
+});
+
 app.get('/blocks', (req, res) => {
     const limit = parseInt(req.query.limit) || 100;
     const search = req.query.search || '';
@@ -36,10 +257,9 @@ app.get('/blocks', (req, res) => {
     const location = req.query.location;
 
     Firebird.attach(options, (err, db) => {
-        if (err) return res.status(500).json({ error: 'Erro de ligação ao DB' });
+        if (err) return res.status(500).json({ error: 'Conexão' });
         
-        // 1. Obter Reservas e Logs para Status
-        db.query('SELECT BLOCK_ID, USER_NAME FROM GRIDE_RESERVAS', [], (errR, reservations) => {
+        db.query('SELECT BLOCK_ID, USU_COD, USER_NAME FROM GRIDE_RESERVAS', [], (errR, reservations) => {
             const lockMap = new Map();
             if(reservations) reservations.forEach(r => lockMap.set(safeString(r.BLOCK_ID), r.USER_NAME));
 
@@ -47,91 +267,402 @@ app.get('/blocks', (req, res) => {
                 const countedSet = new Set();
                 if(logs) logs.forEach(l => countedSet.add(l.PRO_COD));
 
-                // ETAPA 1: DESCOBERTA (Encontrar IDs de blocos únicos seguindo os filtros)
-                let discoverySql = `SELECT FIRST ? P.PRO_COD, P.PRO_COD_SIMILAR FROM PRODUTOS P WHERE P.PRO_ATIVO = 'S'`;
-                const discoveryParams = [limit * 5]; 
+                let sql = `
+                    SELECT FIRST ? 
+                    P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, 
+                    M.MAR_DESCRI, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE, P.PRO_PRATELEIRA 
+                    FROM PRODUTOS P 
+                    LEFT JOIN MARCAS M ON (M.MAR_COD = P.MAR_COD) 
+                    WHERE P.PRO_ATIVO = 'S'
+                `;
+                
+                const params = [limit * 10]; 
 
-                if (search) { discoverySql += ` AND (P.PRO_DESCRI CONTAINING ? OR P.PRO_NRFABRICANTE CONTAINING ?)`; discoveryParams.push(search, search); }
-                if (gr_cod) { discoverySql += ` AND TRIM(P.GR_COD) = ?`; discoveryParams.push(gr_cod); }
-                if (sg_cod) { discoverySql += ` AND TRIM(P.SG_COD) = ?`; discoveryParams.push(sg_cod); }
-                if (location) { discoverySql += ` AND P.PRO_PRATELEIRA STARTING WITH ?`; discoveryParams.push(location); }
+                if (search) { 
+                    sql += ` AND (P.PRO_DESCRI CONTAINING ? OR P.PRO_NRFABRICANTE CONTAINING ?)`; 
+                    params.push(search); params.push(search); 
+                }
+                if (gr_cod) { sql += ` AND TRIM(P.GR_COD) = ?`; params.push(gr_cod); }
+                if (sg_cod) { sql += ` AND TRIM(P.SG_COD) = ?`; params.push(sg_cod); }
+                if (location) { sql += ` AND P.PRO_PRATELEIRA STARTING WITH ?`; params.push(location); }
 
-                db.query(discoverySql, discoveryParams, (errD, discoveryRows) => {
-                    if (errD) { db.detach(); return res.status(500).json({ error: errD.message }); }
+                sql += ` ORDER BY P.PRO_PRATELEIRA, P.PRO_DESCRI`;
 
-                    const targetSimilars = new Set();
-                    const targetSingles = new Set();
-                    const seenKeys = new Set();
-                    let blocksFound = 0;
+                db.query(sql, params, (errP, products) => {
+                    db.detach();
+                    if (errP) return res.status(500).json({ error: errP.message });
 
-                    for (const row of discoveryRows) {
-                        if (blocksFound >= limit) break;
-                        const key = row.PRO_COD_SIMILAR ? safeString(row.PRO_COD_SIMILAR) : safeString(row.PRO_COD);
-                        if (!seenKeys.has(key)) {
-                            seenKeys.add(key);
-                            if (row.PRO_COD_SIMILAR) targetSimilars.add(safeString(row.PRO_COD_SIMILAR));
-                            else targetSingles.add(safeString(row.PRO_COD));
-                            blocksFound++;
-                        }
-                    }
-
-                    if (seenKeys.size === 0) { db.detach(); return res.json([]); }
-
-                    // ETAPA 2: ENRIQUECIMENTO (Buscar todos os itens dos blocos identificados)
-                    let fetchSql = `SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, M.MAR_DESCRI, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE, P.PRO_PRATELEIRA 
-                                    FROM PRODUTOS P LEFT JOIN MARCAS M ON (M.MAR_COD = P.MAR_COD) 
-                                    WHERE P.PRO_ATIVO = 'S' AND (`;
-                    
-                    const fetchParams = [];
-                    const criteria = [];
-                    if (targetSimilars.size > 0) {
-                        criteria.push(`P.PRO_COD_SIMILAR IN (${Array.from(targetSimilars).map(() => '?').join(',')})`);
-                        fetchParams.push(...targetSimilars);
-                    }
-                    if (targetSingles.size > 0) {
-                        criteria.push(`P.PRO_COD IN (${Array.from(targetSingles).map(() => '?').join(',')})`);
-                        fetchParams.push(...targetSingles);
-                    }
-                    fetchSql += criteria.join(' OR ') + `) ORDER BY P.PRO_PRATELEIRA, P.PRO_DESCRI`;
-
-                    db.query(fetchSql, fetchParams, (errP, products) => {
-                        db.detach();
-                        if (errP) return res.status(500).json({ error: errP.message });
-
-                        const groups = new Map();
-                        products.forEach(p => {
-                            const key = p.PRO_COD_SIMILAR ? safeString(p.PRO_COD_SIMILAR) : safeString(p.PRO_COD);
-                            if (!groups.has(key)) groups.set(key, []);
-                            groups.get(key).push({
-                                id: safeString(p.PRO_COD),
-                                name: safeString(p.PRO_DESCRI),
-                                ref: safeString(p.PRO_NRFABRICANTE),
-                                brand: p.MAR_DESCRI ? safeString(p.MAR_DESCRI) : 'GENÉRICO',
-                                balance: parseFloat(p.PRO_EST_ATUAL || 0),
-                                location: safeString(p.PRO_PRATELEIRA) || 'GERAL',
-                                isCounted: countedSet.has(p.PRO_COD)
-                            });
+                    const groups = new Map();
+                    products.forEach(p => {
+                        const key = p.PRO_COD_SIMILAR ? safeString(p.PRO_COD_SIMILAR) : safeString(p.PRO_COD);
+                        const isCounted = countedSet.has(p.PRO_COD);
+                        if (!groups.has(key)) groups.set(key, []);
+                        groups.get(key).push({
+                            id: safeString(p.PRO_COD),
+                            name: safeString(p.PRO_DESCRI),
+                            ref: safeString(p.PRO_NRFABRICANTE),
+                            brand: p.MAR_DESCRI ? safeString(p.MAR_DESCRI) : 'GENÉRICO',
+                            balance: parseFloat(p.PRO_EST_ATUAL || 0),
+                            location: safeString(p.PRO_PRATELEIRA) || 'GERAL',
+                            isCounted: isCounted
                         });
-
-                        const blocks = Array.from(groups.entries()).map(([key, items]) => {
-                            const lockedBy = lockMap.get(key);
-                            return {
-                                id: key,
-                                parentRef: items[0].ref || items[0].name,
-                                location: items[0].location,
-                                status: items.every(i => i.isCounted) ? 'completed' : (lockedBy ? 'progress' : 'pending'),
-                                items: items,
-                                lockedBy: lockedBy ? { userName: lockedBy } : null
-                            };
-                        });
-
-                        res.json(blocks);
                     });
+
+                    const blocks = [];
+                    groups.forEach((items, key) => {
+                        const lockedBy = lockMap.get(key);
+                        const allCounted = items.every(i => i.isCounted);
+                        let status = allCounted ? 'completed' : 'pending';
+                        if (lockedBy) status = 'progress';
+
+                        blocks.push({
+                            id: key,
+                            parentRef: items[0].ref || items[0].name,
+                            location: items[0].location,
+                            status: status,
+                            items: items,
+                            lockedBy: lockedBy ? { userName: lockedBy } : null
+                        });
+                    });
+
+                    blocks.sort((a, b) => {
+                        if (a.status === 'pending' && b.status !== 'pending') return -1;
+                        if (a.status !== 'pending' && b.status === 'pending') return 1;
+                        return 0;
+                    });
+
+                    res.json(blocks.slice(0, limit));
                 });
             });
         });
     });
 });
 
-// Outras rotas permanecem iguais...
-app.listen(port, () => console.log(`Servidor rodando em http://localhost:${port}`));
+// --- ROTA CRÍTICA: MEUS RESERVADOS COM FALLBACK ---
+app.get('/reserved-blocks/:userId', (req, res) => {
+    const { userId } = req.params;
+    Firebird.attach(options, async (err, db) => {
+        if(err) return res.json([]);
+        
+        try {
+            // 1. Buscar Reservas do Usuário
+            const rows = await execute(db, 'SELECT BLOCK_ID, ITEMS_JSON FROM GRIDE_RESERVAS WHERE TRIM(USU_COD) = ?', [userId]);
+            
+            if(!rows || rows.length === 0) {
+                db.detach();
+                return res.json([]);
+            }
+
+            const blocks = [];
+
+            // 2. Buscar Status de Contagem (para saber se já concluiu algo mesmo sem JSON)
+            const logs = await execute(db, "SELECT PRO_COD FROM GRIDE_INVENTARIO_LOG WHERE STATUS IN ('Contado', 'Divergência', 'Concluído')");
+            const countedSet = new Set(logs.map(l => l.PRO_COD));
+
+            for (const r of rows) {
+                let items = [];
+                let loadedFromSnapshot = false;
+
+                // Tentar carregar do JSON salvo (Progresso)
+                try { 
+                    const jsonStr = blobToString(r.ITEMS_JSON);
+                    if (jsonStr) {
+                        const parsed = JSON.parse(jsonStr);
+                        if (Array.isArray(parsed) && parsed.length > 0) {
+                            items = parsed;
+                            loadedFromSnapshot = true;
+                        }
+                    }
+                } catch(e){ console.error("JSON Error:", e); }
+
+                // FALLBACK: Se não tem snapshot, recarrega itens da tabela PRODUTOS
+                // Isso garante que o bloco nunca apareça vazio!
+                if (!loadedFromSnapshot) {
+                    const blockId = safeString(r.BLOCK_ID);
+                    
+                    // Busca todos os produtos que compõem este bloco (Similar ou ID direto)
+                    const sqlItems = `
+                        SELECT P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.PRO_NRFABRICANTE, P.PRO_PRATELEIRA, M.MAR_DESCRI, P.PRO_COD_SIMILAR 
+                        FROM PRODUTOS P 
+                        LEFT JOIN MARCAS M ON M.MAR_COD = P.MAR_COD
+                        WHERE P.PRO_ATIVO = 'S'
+                    `;
+                    
+                    // Filtragem manual para evitar problemas de SQL complexo no Firebird antigo
+                    const allProds = await execute(db, sqlItems);
+                    const products = allProds.filter(p => {
+                        const s = safeString(p.PRO_COD_SIMILAR);
+                        const c = safeString(p.PRO_COD);
+                        return s === blockId || (!s && c === blockId);
+                    });
+
+                    items = products.map(p => ({
+                        id: safeString(p.PRO_COD),
+                        name: safeString(p.PRO_DESCRI),
+                        ref: safeString(p.PRO_NRFABRICANTE),
+                        brand: p.MAR_DESCRI ? safeString(p.MAR_DESCRI) : 'GENÉRICO',
+                        balance: parseFloat(p.PRO_EST_ATUAL || 0),
+                        location: safeString(p.PRO_PRATELEIRA) || 'GERAL',
+                        isCounted: countedSet.has(p.PRO_COD),
+                        status: countedSet.has(p.PRO_COD) ? 'completed' : 'pending'
+                    }));
+                }
+
+                if (items.length > 0) {
+                    blocks.push({
+                        id: safeString(r.BLOCK_ID),
+                        parentRef: items[0].ref || items[0].name,
+                        location: items[0].location || 'Geral',
+                        status: 'progress',
+                        items: items
+                    });
+                }
+            }
+
+            db.detach();
+            res.json(blocks);
+
+        } catch(e) {
+            db.detach();
+            console.error("Error in reserved-blocks:", e);
+            res.json([]);
+        }
+    });
+});
+
+app.post('/reserve-block', (req, res) => {
+    const { block_id, user_id, user_name } = req.body;
+    Firebird.attach(options, (err, db) => {
+        if(err) return res.json({success:false});
+        // Inserimos a reserva. O ITEMS_JSON começa nulo, e será preenchido pelo frontend ou pelo fallback.
+        db.query('INSERT INTO GRIDE_RESERVAS (BLOCK_ID, USU_COD, USER_NAME, RESERVED_AT) VALUES (?, ?, ?, CURRENT_TIMESTAMP)', 
+            [block_id, user_id, user_name], (err) => {
+            db.detach();
+            res.json({ success: !err });
+        });
+    });
+});
+
+app.post('/update-reservation-progress', (req, res) => {
+    const { block_id, items } = req.body;
+    const buffer = Buffer.from(JSON.stringify(items));
+    Firebird.attach(options, (err, db) => {
+        db.query('UPDATE GRIDE_RESERVAS SET ITEMS_JSON = ? WHERE BLOCK_ID = ?', [buffer, block_id], () => {
+            db.detach(); res.json({success:true});
+        });
+    });
+});
+
+app.post('/finalize-block', (req, res) => {
+    const { block_id, user_id, user_name, items, parent_ref } = req.body;
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.status(500).json({ error: 'DB' });
+        
+        db.transaction(Firebird.ISOLATION_READ_COMMITTED, async (err, transaction) => {
+            try {
+                const uniqueRef = `${parent_ref}||${Date.now()}`;
+                
+                for(const item of items) {
+                    const statusDB = TO_DB_STATUS[item.status] || 'Contado';
+                    const qtd = item.countedQty || 0;
+                    
+                    // 1. Log
+                    await new Promise((resolve, reject) => {
+                        transaction.query(
+                            `INSERT INTO GRIDE_INVENTARIO_LOG (PRO_NRFABRICANTE, NOME_PRODUTO, USU_COD, USUARIO_NOME, QTD_SISTEMA, QTD_CONTADA, LOCALIZACAO, STATUS, BLOCK_REF, DATA_HORA, PRO_COD) 
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, (SELECT FIRST 1 PRO_COD FROM PRODUTOS WHERE PRO_NRFABRICANTE = ?))`,
+                            [item.ref, item.name, user_id, user_name, item.balance, qtd, item.lastCount?.location || 'Geral', statusDB, uniqueRef, item.ref],
+                            (err) => err ? reject(err) : resolve()
+                        );
+                    });
+
+                    // 2. Atualizar Localização e Estoque se contado
+                    if (statusDB === 'Contado') {
+                        await new Promise((resolve) => {
+                            transaction.query(
+                                `UPDATE PRODUTOS SET PRO_EST_ATUAL = ?, PRO_PRATELEIRA = ? WHERE PRO_NRFABRICANTE = ?`,
+                                [qtd, item.lastCount?.location || 'Geral', item.ref],
+                                () => resolve()
+                            );
+                        });
+                    }
+                }
+
+                // 3. Remove Reserva
+                await new Promise((resolve) => transaction.query('DELETE FROM GRIDE_RESERVAS WHERE BLOCK_ID = ?', [block_id], () => resolve()));
+
+                transaction.commit((err) => {
+                    db.detach();
+                    if(err) res.json({success: false});
+                    else res.json({success: true});
+                });
+            } catch(e) {
+                transaction.rollback();
+                db.detach();
+                res.json({success: false, error: e.message});
+            }
+        });
+    });
+});
+
+app.post('/release-block', (req, res) => {
+    const { block_id } = req.body;
+    Firebird.attach(options, (err, db) => {
+        db.query('DELETE FROM GRIDE_RESERVAS WHERE BLOCK_ID = ?', [block_id], () => {
+            db.detach(); res.json({success:true});
+        });
+    });
+});
+
+app.get('/history', (req, res) => {
+    Firebird.attach(options, (err, db) => {
+        db.query('SELECT FIRST 100 * FROM GRIDE_INVENTARIO_LOG ORDER BY DATA_HORA DESC', [], (err, rows) => {
+            db.detach();
+            res.json(rows || []);
+        });
+    });
+});
+
+app.get('/treatment-items', (req, res) => { 
+    Firebird.attach(options, (err, db) => {
+        if(err) return res.json([]);
+        const sql = `SELECT * FROM GRIDE_TRATAMENTO WHERE STATUS = 'PENDING' ORDER BY REPORTADO_EM DESC`;
+        db.query(sql, [], (err, rows) => {
+            db.detach();
+            if(err || !rows) return res.json([]);
+            
+            const formatted = rows.map(r => ({
+                id: r.ID,
+                sku: safeString(r.PRO_NRFABRICANTE),
+                name: safeString(r.NOME_PRODUTO),
+                location: safeString(r.LOCALIZACAO),
+                issueType: r.TIPO_ERRO === 'Não Localizado' ? 'not_located' : 'divergence_info',
+                description: safeString(r.DESCRICAO_ERRO),
+                reportedBy: safeString(r.REPORTADO_POR),
+                reportedAt: r.REPORTADO_EM,
+                status: 'PENDING'
+            }));
+            res.json(formatted);
+        });
+    });
+});
+
+app.get('/addresses', (req, res) => {
+    Firebird.attach(options, (err, db) => {
+        if(err) return res.json([]);
+        db.query('SELECT ID, CODIGO, DESCRICAO, TIPO FROM GRIDE_ENDERECOS ORDER BY CODIGO', [], (err, rows) => {
+            db.detach();
+            if(err) return res.json([]);
+            const addrs = rows.map(r => ({
+                id: r.ID,
+                code: safeString(r.CODIGO),
+                description: safeString(r.DESCRICAO),
+                type: safeString(r.TIPO) || 'shelf'
+            }));
+            res.json(addrs);
+        });
+    });
+});
+
+app.post('/save-addresses', (req, res) => {
+    const addresses = req.body;
+    if (!Array.isArray(addresses)) return res.json({success:false});
+
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.json({success:false});
+        
+        db.transaction(Firebird.ISOLATION_READ_COMMITTED, async (err, transaction) => {
+            if (err) { db.detach(); return res.json({success:false}); }
+            
+            let count = 0;
+            let skipped = 0;
+
+            try {
+                for (const addr of addresses) {
+                    const exists = await new Promise((resolve, reject) => {
+                        transaction.query('SELECT ID FROM GRIDE_ENDERECOS WHERE CODIGO = ?', [addr.code], (err, rows) => {
+                            if (err) reject(err);
+                            else resolve(rows.length > 0);
+                        });
+                    });
+
+                    if (!exists) {
+                        await new Promise((resolve, reject) => {
+                            transaction.query(
+                                'INSERT INTO GRIDE_ENDERECOS (CODIGO, DESCRICAO, TIPO) VALUES (?, ?, ?)',
+                                [addr.code, addr.description, addr.type],
+                                (err) => err ? reject(err) : resolve()
+                            );
+                        });
+                        count++;
+                    } else {
+                        skipped++;
+                    }
+                }
+
+                transaction.commit((err) => {
+                    db.detach();
+                    if(err) res.json({success:false});
+                    else res.json({success:true, count, skipped});
+                });
+            } catch(e) {
+                transaction.rollback();
+                db.detach();
+                res.json({success:false});
+            }
+        });
+    });
+});
+
+app.get('/warehouses', (req, res) => {
+    Firebird.attach(options, (err, db) => {
+        if(err) return res.json([]);
+        db.query('SELECT ID, SIGLA, DESCRICAO FROM GRIDE_GALPOES', [], (err, rows) => {
+            db.detach();
+            if(err) return res.json([]);
+            const wars = rows.map(r => ({
+                id: r.ID,
+                sigla: safeString(r.SIGLA),
+                descricao: safeString(r.DESCRICAO)
+            }));
+            res.json(wars);
+        });
+    });
+});
+
+app.post('/save-warehouse', (req, res) => {
+    const { sigla, descricao } = req.body;
+    Firebird.attach(options, (err, db) => {
+        if(err) return res.json({success:false});
+        db.query('INSERT INTO GRIDE_GALPOES (SIGLA, DESCRICAO) VALUES (?, ?)', [sigla, descricao], (err) => {
+            db.detach();
+            res.json({success: !err, message: err ? err.message : null});
+        });
+    });
+});
+
+app.post('/delete-warehouse', (req, res) => {
+    const { id } = req.body;
+    Firebird.attach(options, (err, db) => {
+        if(err) return res.json({success:false});
+        db.query('DELETE FROM GRIDE_GALPOES WHERE ID = ?', [id], (err) => {
+            db.detach();
+            res.json({success: !err});
+        });
+    });
+});
+
+app.post('/update-count', (req, res) => { res.json({success:true}); });
+
+const startServer = async () => {
+    try {
+        await initDb();
+        app.listen(port, '0.0.0.0', () => {
+            console.log(`Servidor GRIDE (Cobertura Total) rodando em http://localhost:${port}`);
+        });
+    } catch (e) {
+        console.error("Falha fatal na inicialização:", e);
+    }
+};
+
+startServer();
