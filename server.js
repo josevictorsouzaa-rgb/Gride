@@ -679,9 +679,17 @@ app.post('/release-block', (req, res) => {
     });
 });
 
+// ALTERADO: JOIN COM MARCAS E PRODUTOS PARA OBTER DESCRIÇÃO DA MARCA
 app.get('/history', (req, res) => {
     Firebird.attach(options, (err, db) => {
-        db.query('SELECT FIRST 100 * FROM GRIDE_INVENTARIO_LOG ORDER BY DATA_HORA DESC', [], (err, rows) => {
+        const sql = `
+            SELECT FIRST 100 L.*, M.MAR_DESCRI 
+            FROM GRIDE_INVENTARIO_LOG L 
+            LEFT JOIN PRODUTOS P ON L.PRO_COD = P.PRO_COD 
+            LEFT JOIN MARCAS M ON P.MAR_COD = M.MAR_COD 
+            ORDER BY L.DATA_HORA DESC
+        `;
+        db.query(sql, [], (err, rows) => {
             db.detach();
             res.json(rows || []);
         });

@@ -71,9 +71,8 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
           group.items.push({
               id: entry.ID, // Log ID crucial para edição
               name: entry.NOME_PRODUTO,
-              ref: entry.SKU,
-              // ALTERADO: Exibir ID (PRO_COD) em vez de 'GENÉRICO'
-              brand: `ID: ${entry.PRO_COD || '?'}`,
+              ref: entry.PRO_NRFABRICANTE || 'S/N', // Usa Nr Fabricante
+              brand: entry.MAR_DESCRI || '', // Usa Marca (agora trazida pelo JOIN)
               qty: entry.QTD_CONTADA,
               countedBy: entry.USUARIO_NOME,
               countedAt: entry.DATA_HORA,
@@ -328,7 +327,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
                                     <span className="text-[11px] font-mono font-bold bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-200 px-1.5 py-0.5 rounded border border-gray-200 dark:border-white/10">
                                         {item.ref}
                                     </span>
-                                    {/* Mostra PRO_COD (ID) no lugar de Marca Genérica */}
+                                    {/* Mostra MARCA */}
                                     <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-tight">
                                         {item.brand}
                                     </span>
@@ -344,12 +343,12 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
                                 </span>
                                 {isEdited && <span className="text-[9px] text-orange-500 font-bold">Editado</span>}
                                 
-                                {/* Botão de Edição - AGORA MAIS VISÍVEL */}
+                                {/* Botão de Edição - AGORA AZUL E MAIS VISÍVEL */}
                                 <button 
                                     onClick={(e) => handleEditCount(e, item)}
-                                    className="mt-2 flex items-center gap-1 px-3 py-1.5 bg-gray-100 dark:bg-white/10 rounded-lg text-xs font-bold text-gray-600 dark:text-gray-300 hover:bg-green-100 dark:hover:bg-green-900/30 hover:text-green-700 dark:hover:text-green-400 transition-colors shadow-sm"
+                                    className="mt-2 flex items-center gap-1 px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold shadow-md hover:bg-blue-700 transition-all active:scale-95"
                                 >
-                                    <Icon name="edit" size={14} />
+                                    <Icon name="edit" size={16} />
                                     Editar
                                 </button>
                             </div>
