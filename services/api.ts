@@ -1,3 +1,4 @@
+
 import { User, WMSAddress, WarehouseLayout, Block, TreatmentItem } from '../types';
 import { getIconByTerm, GROUP_ICONS } from '../data/categories';
 import { CountingSettings } from '../data/settingsStore';
@@ -171,6 +172,24 @@ export const api = {
       console.error(error);
       return [];
     }
+  },
+
+  // NOVA FUNÇÃO: Obter contagem de status para os filtros atuais
+  getBlockCounts: async (search = '', gr_cod?: number, sg_cod?: number, location?: string): Promise<{ pending: number, progress: number, completed: number }> => {
+      try {
+          const params = new URLSearchParams({ 
+              search,
+              ...(gr_cod ? { gr_cod: gr_cod.toString() } : {}),
+              ...(sg_cod ? { sg_cod: sg_cod.toString() } : {}),
+              ...(location ? { location } : {})
+          });
+          
+          const response = await fetch(`${API_BASE_URL}/block-counts?${params}`);
+          if (!response.ok) return { pending: 0, progress: 0, completed: 0 };
+          return await response.json();
+      } catch (e) {
+          return { pending: 0, progress: 0, completed: 0 };
+      }
   },
 
   getReservedBlocks: async (userId: string): Promise<Block[]> => {

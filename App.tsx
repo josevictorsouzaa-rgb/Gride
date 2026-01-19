@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Screen, User, Block } from './types';
 import { LoginScreen } from './screens/LoginScreen';
 import { DashboardScreen } from './screens/DashboardScreen';
@@ -22,6 +22,7 @@ import { api, ApiCategory } from './services/api';
 const initialBlocksData: Block[] = [];
 const INACTIVITY_LIMIT = 15 * 60 * 1000;
 const MIN_LOADING_TIME = 600; 
+const POLLING_INTERVAL = 5000; // 5 Segundos para atualização
 
 const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<Screen>('login');
@@ -47,8 +48,12 @@ const App: React.FC = () => {
   const [reservedCount, setReservedCount] = useState(0);
   const [treatmentCount, setTreatmentCount] = useState(0);
 
-  // External Counts for List Screen (To bypass pagination limits in UI)
-  const [listCounts, setListCounts] = useState<{ pending: number, completed: number } | undefined>(undefined);
+  // External Counts for List Screen (Counts from DB, not page)
+  const [listCounts, setListCounts] = useState<{ pending: number, progress: number, completed: number } | undefined>(undefined);
+
+  // Ref to track if interval is active to avoid closure staleness if needed, 
+  // though standard useEffect dependency array handles this.
+  const intervalRef = useRef<any>(null);
 
   const handleLogout = useCallback(() => {
     setCurrentUser(null);
@@ -100,84 +105,106 @@ const App: React.FC = () => {
       }
   }, [currentScreen, currentUser, refreshGlobalCounts]);
 
-  // Lógica principal de carregamento de blocos
+  // Função Centralizada para Buscar Dados da Lista
+  const fetchListBlocks = useCallback(async (isBackgroundRefresh = false) => {
+      const isListScreen = currentScreen === 'list';
+      const isFilteredList = currentScreen === 'filtered_list';
+      
+      if (!isListScreen && !isFilteredList) return;
+
+      if (!isBackgroundRefresh) setIsLoading(true);
+      const minDelay = !isBackgroundRefresh ? new Promise(resolve => setTimeout(resolve, MIN_LOADING_TIME)) : Promise.resolve();
+
+      try {
+          // Parâmetros de Filtro
+          let search = '';
+          let gr = undefined;
+          let sg = undefined;
+          let loc = undefined;
+
+          if (isFilteredList) {
+              if (segmentFilter === 'Resultado da Busca') {
+                  // Lógica específica de busca já define blocks, mas aqui estamos generalizando
+                  // Se for busca, não temos gr/sg normalmente, mas search/loc
+                  // NOTA: A lógica original de busca fazia um setBlocks direto. 
+                  // Para manter compatibilidade com polling, precisaríamos guardar o termo de busca no state.
+                  // Simplificação: Polling funciona melhor com filtros de categoria.
+              } else {
+                  gr = selectedGrCod;
+                  sg = selectedSgCod;
+              }
+          }
+
+          // 1. Busca Blocos Paginados
+          const blocksPromise = api.getBlocks(
+              isListScreen ? 1 : browsePage, // Reset page for main list logic if needed, or maintain browsePage
+              isListScreen ? 100 : BROWSE_LIMIT, 
+              search, 
+              gr, 
+              sg
+          );
+
+          // 2. Busca Contadores Totais (API nova)
+          const countsPromise = api.getBlockCounts(search, gr, sg, loc);
+
+          const [fetchedBlocks, fetchedCounts] = await Promise.all([
+              blocksPromise,
+              countsPromise,
+              minDelay
+          ]);
+
+          setBlocks(fetchedBlocks);
+          
+          // Mapeia para o formato esperado pelo ListScreen { pending, progress, completed }
+          setListCounts(fetchedCounts);
+
+      } catch (error) {
+          console.error("Erro ao carregar dados:", error);
+      } finally {
+          if (!isBackgroundRefresh) setIsLoading(false);
+      }
+  }, [currentScreen, browsePage, selectedGrCod, selectedSgCod, segmentFilter]);
+
+
+  // Effect para Carga Inicial e Mudança de Tela
   useEffect(() => {
-    if (currentScreen === 'login') return;
+      fetchListBlocks(false);
+  }, [fetchListBlocks]);
 
-    const fetchBlocks = async () => {
-        const shouldFetchReservations = currentScreen === 'reserved' || currentScreen === 'dashboard';
-        const isListScreen = currentScreen === 'list';
-        const isFilteredList = currentScreen === 'filtered_list';
+  // Effect para Polling (Atualização em Background)
+  useEffect(() => {
+      if (currentScreen === 'list' || currentScreen === 'filtered_list') {
+          intervalRef.current = setInterval(() => {
+              fetchListBlocks(true); // Background refresh
+          }, POLLING_INTERVAL);
+      }
 
-        if (!isListScreen && !isFilteredList && !shouldFetchReservations) {
-            return; 
-        }
+      return () => {
+          if (intervalRef.current) clearInterval(intervalRef.current);
+      };
+  }, [currentScreen, fetchListBlocks]);
 
-        setIsLoading(true);
-        const minDelay = new Promise(resolve => setTimeout(resolve, MIN_LOADING_TIME));
 
-        try {
-            if (isListScreen) {
-                // AGORA LISTA GERAL DE PENDENTES (Não mais "Meta Diária")
-                const [metaBlocks] = await Promise.all([
-                    api.getBlocks(1, 100), // Busca geral sem filtro de meta
-                    minDelay
-                ]);
-                setBlocks(metaBlocks);
-                setListCounts(undefined); // No special count logic for generic list
-            } else if (isFilteredList) {
-                if (segmentFilter !== 'Resultado da Busca' && selectedGrCod) {
-                    
-                    // Calcular Total e Mapped baseado nas categorias já carregadas
-                    // Isso fornece contagem real independente da páginação
-                    if (categories.length > 0 && selectedSgCod) {
-                        let totalItems = 0;
-                        let doneItems = 0;
-                        
-                        // Find category and subcategory
-                        const group = categories.find(c => c.db_id === selectedGrCod);
-                        if (group) {
-                            const sub = group.subcategories.find(s => s.db_id === selectedSgCod);
-                            if (sub) {
-                                totalItems = sub.count;
-                                doneItems = sub.mappedCount;
-                            }
-                        }
-                        
-                        // Passamos isso para o ListScreen
-                        setListCounts({ 
-                            pending: Math.max(0, totalItems - doneItems), 
-                            completed: doneItems 
-                        });
-                    }
+  // Lógica específica para RESERVED SCREEN (Polling também)
+  useEffect(() => {
+      if (currentScreen === 'reserved' && currentUser) {
+          const fetchReserved = async (bg = false) => {
+              if(!bg) setIsLoading(true);
+              try {
+                  const myReserved = await api.getReservedBlocks(currentUser.id);
+                  setBlocks(myReserved);
+                  setReservedCount(myReserved.length);
+              } finally {
+                  if(!bg) setIsLoading(false);
+              }
+          };
 
-                    const [filteredBlocks] = await Promise.all([
-                        api.getBlocks(browsePage, BROWSE_LIMIT, '', selectedGrCod, selectedSgCod),
-                        minDelay
-                    ]);
-                    setBlocks(filteredBlocks);
-                } else {
-                    await minDelay;
-                }
-            } else if (currentScreen === 'reserved' && currentUser) {
-                const [myReserved] = await Promise.all([
-                    api.getReservedBlocks(currentUser.id),
-                    minDelay
-                ]);
-                setBlocks(myReserved);
-                setReservedCount(myReserved.length); 
-            } else {
-                await minDelay; 
-            }
-        } catch (error) {
-            console.error("Erro ao carregar dados:", error);
-        } finally {
-            setIsLoading(false);
-        }
-    };
+          fetchReserved(false);
+          const interval = setInterval(() => fetchReserved(true), POLLING_INTERVAL);
+          return () => clearInterval(interval);
+      }
+  }, [currentScreen, currentUser]);
 
-    fetchBlocks();
-  }, [currentScreen, selectedGrCod, selectedSgCod, currentUser, browsePage, categories]); // Added categories dependency
 
   
   const handleCategorySelect = (categoryLabel: string, dbId: number) => {
@@ -197,8 +224,11 @@ const App: React.FC = () => {
     if (!currentUser) return;
     const res = await api.reserveBlock(id, currentUser);
     if (res.success) {
+        // Optimistic Update
         setBlocks(prev => prev.filter(b => b.id !== id));
-        await refreshGlobalCounts();
+        refreshGlobalCounts();
+        // Force immediate refresh of lists
+        fetchListBlocks(true);
     } else {
         alert(res.message || 'Erro ao reservar.');
     }
@@ -231,13 +261,16 @@ const App: React.FC = () => {
     try {
         if (cleanCode.startsWith('LOC-')) {
             const rawLocation = cleanCode.replace('LOC-', ''); 
-            const [results] = await Promise.all([
+            // Para busca por local, usamos getBlocks diretamente pois o filtro de search bar é diferente
+            const [results, counts] = await Promise.all([
                 api.getBlocks(1, 100, '', undefined, undefined, false, rawLocation),
+                api.getBlockCounts('', undefined, undefined, rawLocation), // Busca counts do local
                 minDelay
             ]);
             
             if (results.length > 0) {
                 setBlocks(results);
+                setListCounts(counts); // Seta counts corretos
                 setSegmentFilter('Resultado da Busca');
                 setBrowsePage(1);
                 setSelectedGrCod(undefined);
@@ -247,13 +280,15 @@ const App: React.FC = () => {
                 alert(`Nenhum item encontrado na localização: ${cleanCode}`);
             }
         } else {
-            const [results] = await Promise.all([
+            const [results, counts] = await Promise.all([
                 api.getBlocks(1, 50, cleanCode),
+                api.getBlockCounts(cleanCode), // Busca counts do termo
                 minDelay
             ]);
 
             if (results.length > 0) {
                 setBlocks(results);
+                setListCounts(counts); // Seta counts corretos
                 setSegmentFilter('Resultado da Busca');
                 setBrowsePage(1);
                 setSelectedGrCod(undefined);
@@ -280,7 +315,7 @@ const App: React.FC = () => {
     switch (currentScreen) {
       case 'login': return <LoginScreen onLogin={handleLogin} />;
       case 'dashboard': return <DashboardScreen onNavigate={setCurrentScreen} onCategorySelect={handleCategorySelect} currentUser={currentUser} onLogout={handleLogout} categories={categories} treatmentCount={treatmentCount} />;
-      case 'list': return <ListScreen key="meta-list" onNavigate={setCurrentScreen} blocks={blocks} segmentFilter={null} onReserveBlock={handleReserveBlock} onClearFilter={() => {}} mode="browse" />;
+      case 'list': return <ListScreen key="meta-list" onNavigate={setCurrentScreen} blocks={blocks} segmentFilter={null} onReserveBlock={handleReserveBlock} onClearFilter={() => {}} mode="browse" externalCounts={listCounts} />;
       case 'filtered_list': 
         return <ListScreen 
             key="browse-list" 
@@ -292,14 +327,13 @@ const App: React.FC = () => {
             mode="browse"
             page={browsePage}
             onPageChange={handlePageChange}
-            externalCounts={listCounts} // Pass the calculated total counts
+            externalCounts={listCounts} // Pass the API fetched totals
         />;
       case 'reserved': return <ReservedScreen onNavigate={setCurrentScreen} blocks={blocks} onStartBlock={handleStartBlock} currentUser={currentUser} onRefreshCount={refreshGlobalCounts} />;
       case 'history': return <HistoryScreen currentUser={currentUser} onNavigate={setCurrentScreen} onReserve={handleHistoryReserve} />;
       case 'analytics': return <AnalyticsScreen onNavigate={setCurrentScreen} />;
       case 'mission_detail': return <MissionDetailScreen blockData={activeBlock} onBack={() => { setCurrentScreen('reserved'); }} currentUser={currentUser} />;
       case 'subcategories': return <SubcategoriesScreen categoryLabel={selectedCategoryLabel || ''} categories={categories} onBack={() => setCurrentScreen('dashboard')} onSelectSegment={handleSegmentSelect} />;
-      // Passando currentUser para TreatmentScreen
       case 'treatment': return <TreatmentScreen onNavigate={setCurrentScreen} onRefresh={refreshGlobalCounts} currentUser={currentUser} />;
       case 'settings': return <SettingsScreen onBack={() => setCurrentScreen('dashboard')} currentUser={currentUser} />;
       case 'address_manager': return <AddressManagerScreen onBack={() => setCurrentScreen('dashboard')} />;

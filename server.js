@@ -130,6 +130,83 @@ const initDb = () => {
 
 // --- ROTAS ---
 
+// NOVA ROTA: Contagem de status (Totais)
+app.get('/block-counts', (req, res) => {
+    const search = req.query.search || '';
+    const gr_cod = req.query.gr_cod;
+    const sg_cod = req.query.sg_cod;
+    const location = req.query.location;
+
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.status(500).json({ pending: 0, progress: 0, completed: 0 });
+
+        // 1. Reservas
+        db.query('SELECT BLOCK_ID FROM GRIDE_RESERVAS', [], (errR, reservations) => {
+            const lockSet = new Set();
+            if(reservations) reservations.forEach(r => lockSet.add(safeString(r.BLOCK_ID)));
+
+            // 2. Itens Contados
+            db.query("SELECT PRO_COD FROM GRIDE_INVENTARIO_LOG WHERE STATUS IN ('Contado', 'Divergência', 'Concluído')", [], (errL, logs) => {
+                const countedSet = new Set();
+                if(logs) logs.forEach(l => countedSet.add(l.PRO_COD));
+
+                // 3. Buscar Produtos (Base para Blocos)
+                let sql = `
+                    SELECT P.PRO_COD, P.PRO_COD_SIMILAR 
+                    FROM PRODUTOS P 
+                    WHERE P.PRO_ATIVO = 'S'
+                `;
+                const params = [];
+
+                if (search) { 
+                    sql += ` AND (P.PRO_DESCRI CONTAINING ? OR P.PRO_NRFABRICANTE CONTAINING ?)`; 
+                    params.push(search); params.push(search); 
+                }
+                if (gr_cod) { sql += ` AND TRIM(P.GR_COD) = ?`; params.push(gr_cod); }
+                if (sg_cod) { sql += ` AND TRIM(P.SG_COD) = ?`; params.push(sg_cod); }
+                if (location) { sql += ` AND P.PRO_PRATELEIRA STARTING WITH ?`; params.push(location); }
+
+                db.query(sql, params, (errP, products) => {
+                    db.detach();
+                    if (errP) return res.json({ pending: 0, progress: 0, completed: 0 });
+
+                    // Agrupar por Bloco (Chave Única)
+                    const blockGroups = new Map();
+
+                    products.forEach(p => {
+                        const simRaw = safeString(p.PRO_COD_SIMILAR);
+                        const idRaw = safeString(p.PRO_COD);
+                        const key = simRaw.length > 0 ? simRaw : idRaw;
+
+                        if (!blockGroups.has(key)) blockGroups.set(key, []);
+                        blockGroups.get(key).push(p.PRO_COD);
+                    });
+
+                    // Calcular Status de cada Bloco
+                    let pending = 0;
+                    let progress = 0;
+                    let completed = 0;
+
+                    blockGroups.forEach((prodIds, key) => {
+                        const isLocked = lockSet.has(key);
+                        const allCounted = prodIds.every(id => countedSet.has(id));
+
+                        if (isLocked) {
+                            progress++;
+                        } else if (allCounted) {
+                            completed++;
+                        } else {
+                            pending++;
+                        }
+                    });
+
+                    res.json({ pending, progress, completed });
+                });
+            });
+        });
+    });
+});
+
 app.get('/meta-status', (req, res) => {
     Firebird.attach(options, async (err, db) => {
         if (err) return res.status(500).json({ totalStock: 0, mappedStock: 0 });
@@ -268,13 +345,11 @@ app.get('/blocks', (req, res) => {
             const lockMap = new Map();
             if(reservations) reservations.forEach(r => lockMap.set(safeString(r.BLOCK_ID), r.USER_NAME));
 
-            // 2. Obter mapa detalhado de Itens já contados (QUEM, QUANDO, QUANTO)
-            // Alterado para trazer detalhes do log em vez de apenas ID
+            // 2. Obter mapa detalhado de Itens já contados
             db.query("SELECT PRO_COD, USUARIO_NOME, DATA_HORA, QTD_CONTADA FROM GRIDE_INVENTARIO_LOG WHERE STATUS IN ('Contado', 'Divergência', 'Concluído') ORDER BY DATA_HORA ASC", [], (errL, logs) => {
                 const countedMap = new Map();
                 if(logs) {
                     logs.forEach(l => {
-                        // Como está ordenado por DATA_HORA ASC, a última iteração sobrescreve com o dado mais recente
                         countedMap.set(l.PRO_COD, {
                             user: safeString(l.USUARIO_NOME),
                             date: l.DATA_HORA,
@@ -283,7 +358,7 @@ app.get('/blocks', (req, res) => {
                     });
                 }
 
-                // --- ETAPA 1: DESCOBERTA (Encontrar quais blocos exibir com Paginação) ---
+                // --- ETAPA 1: DESCOBERTA (Paginada) ---
                 let discoverySql = `
                     SELECT FIRST ? SKIP ?
                     P.PRO_COD, P.PRO_COD_SIMILAR 

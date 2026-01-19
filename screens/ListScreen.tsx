@@ -13,7 +13,7 @@ interface ListScreenProps {
   mode?: 'browse'; 
   page?: number;
   onPageChange?: (newPage: number) => void;
-  externalCounts?: { pending: number, completed: number };
+  externalCounts?: { pending: number, progress: number, completed: number }; // Tipagem ajustada
 }
 
 const getInitials = (name: string) => name ? name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() : 'US';
@@ -80,8 +80,10 @@ export const ListScreen: React.FC<ListScreenProps> = ({
     }, 400);
   };
 
+  // Filtragem local apenas para exibir o que está na página atual
   const filteredBlocks = useMemo(() => {
     return blocks.filter(block => {
+      // Filtragem por Tab
       if (activeTab === 'pending') {
           if (block.status === 'completed' || block.status === 'progress') return false;
       } else if (activeTab === 'progress') {
@@ -90,6 +92,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
           if (block.status !== 'completed') return false;
       }
 
+      // Filtragem por Texto Local
       if (searchText) {
            const lower = searchText.toLowerCase();
            const matchItems = block.items.some(item => 
@@ -104,7 +107,13 @@ export const ListScreen: React.FC<ListScreenProps> = ({
     });
   }, [blocks, searchText, activeTab]);
 
+  // Contadores Reais (Usando ExternalCounts se disponível)
   const counts = useMemo(() => {
+      if (externalCounts) {
+          return externalCounts;
+      }
+      
+      // Fallback para contagem local (apenas página atual) caso a API não retorne
       const localProgress = blocks.filter(b => b.status === 'progress').length;
       const localPending = blocks.filter(b => b.status !== 'completed' && b.status !== 'progress').length;
       const localCompleted = blocks.filter(b => b.status === 'completed').length;
@@ -136,7 +145,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
           </div>
         </div>
 
-        {/* TABS */}
+        {/* TABS (Com Totais Reais) */}
         <div className="px-4 pb-2 flex gap-2">
             <button 
               onClick={() => setActiveTab('pending')}
@@ -181,7 +190,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
               <div className="pl-3 text-gray-400"><Icon name="search" size={20} /></div>
               <input 
                 className="flex-1 bg-transparent border-none focus:ring-0 text-sm px-3 text-gray-900 dark:text-white" 
-                placeholder={activeTab === 'progress' ? "Buscar por usuário ou item..." : "Filtrar lista..."}
+                placeholder={activeTab === 'progress' ? "Buscar por usuário ou item..." : "Filtrar na página..."}
                 value={searchText}
                 onChange={(e) => setSearchText(e.target.value)}
               />
@@ -198,9 +207,9 @@ export const ListScreen: React.FC<ListScreenProps> = ({
             <div className="text-center py-20 text-gray-400">
                 <Icon name={activeTab === 'pending' ? "playlist_add_check" : (activeTab === 'progress' ? "hourglass_empty" : "search_off")} size={48} className="mb-2 opacity-50" />
                 <p>
-                    {activeTab === 'pending' && "Tudo limpo! Nada pendente aqui."}
-                    {activeTab === 'progress' && "Nenhum bloco sendo contado no momento."}
-                    {activeTab === 'completed' && "Nenhum item concluído ainda."}
+                    {activeTab === 'pending' && "Nada encontrado nesta página."}
+                    {activeTab === 'progress' && "Nenhum bloco em andamento nesta página."}
+                    {activeTab === 'completed' && "Nenhum item concluído nesta página."}
                 </p>
                 {/* Se não tiver nada na lista mas estivermos na página > 1, mostra opção de voltar */}
                 {onPageChange && page > 1 && (
