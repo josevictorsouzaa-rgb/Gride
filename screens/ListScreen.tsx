@@ -26,7 +26,8 @@ export const ListScreen: React.FC<ListScreenProps> = ({
   onPageChange,
   externalCounts
 }) => {
-  const [activeTab, setActiveTab] = useState<'pending' | 'completed'>('pending');
+  // Estado da aba alterado para incluir 'progress'
+  const [activeTab, setActiveTab] = useState<'pending' | 'progress' | 'completed'>('pending');
   const [expandedBlocks, setExpandedBlocks] = useState<number[]>([]);
   const [selectedItem, setSelectedItem] = useState<any | null>(null);
   const [searchText, setSearchText] = useState('');
@@ -66,11 +67,11 @@ export const ListScreen: React.FC<ListScreenProps> = ({
     return blocks.filter(block => {
       // 1. Filtrar por Aba
       if (activeTab === 'pending') {
-          // Pendentes: Não estão completados E não estão em progresso (a menos que seja visualização admin, mas aqui assumimos reservar)
-          // Mas "blocks" do backend vem com status 'progress' se estiver reservado por alguém.
-          // Vamos mostrar em pendente mas desabilitado se estiver reservado.
-          // Ocultar completados.
-          if (block.status === 'completed') return false;
+          // Pendentes: Apenas livres (não completados E não reservados)
+          if (block.status === 'completed' || block.status === 'progress') return false;
+      } else if (activeTab === 'progress') {
+          // Em Andamento: Apenas os reservados (progress)
+          if (block.status !== 'progress') return false;
       } else {
           // Concluídos: Apenas completed
           if (block.status !== 'completed') return false;
@@ -84,21 +85,30 @@ export const ListScreen: React.FC<ListScreenProps> = ({
              item.ref.toLowerCase().includes(lower)
            );
            const matchLoc = block.location.toLowerCase().includes(lower);
-           if (!matchItems && !matchLoc) return false;
+           const matchUser = block.lockedBy?.userName.toLowerCase().includes(lower); // Busca também pelo usuário se estiver reservado
+           
+           if (!matchItems && !matchLoc && !matchUser) return false;
       }
       return true;
     });
   }, [blocks, searchText, activeTab]);
 
   const counts = useMemo(() => {
-      // Se externalCounts for fornecido, usa-o para mostrar o TOTAL real da categoria
-      if (externalCounts) {
-          return externalCounts;
-      }
-      // Fallback: Conta apenas os blocos carregados
-      const pending = blocks.filter(b => b.status !== 'completed').length;
-      const completed = blocks.filter(b => b.status === 'completed').length;
-      return { pending, completed };
+      // Contagem baseada nos blocos carregados atualmente (página atual)
+      // Se tiver externalCounts, usamos para pending/completed, mas calculamos progress localmente ou precisamos ajustar a API.
+      // Assumindo que externalCounts é global para a categoria:
+      
+      const localProgress = blocks.filter(b => b.status === 'progress').length;
+      
+      // Fallback para contagem local se não houver externa
+      const localPending = blocks.filter(b => b.status !== 'completed' && b.status !== 'progress').length;
+      const localCompleted = blocks.filter(b => b.status === 'completed').length;
+
+      return { 
+          pending: localPending, 
+          progress: localProgress,
+          completed: localCompleted 
+      };
   }, [blocks, externalCounts]);
 
   return (
@@ -116,32 +126,47 @@ export const ListScreen: React.FC<ListScreenProps> = ({
           <div className="flex-1 text-center pr-10">
             <h2 className="text-base font-bold leading-tight line-clamp-1">{segmentFilter || 'Explorar Estoque'}</h2>
             <p className="text-xs text-gray-500">
-               {activeTab === 'pending' ? 'Itens a Inventariar' : 'Itens Já Contados'}
+               {activeTab === 'pending' ? 'Disponíveis para Contagem' : (activeTab === 'progress' ? 'Sendo Contados' : 'Itens Finalizados')}
             </p>
           </div>
         </div>
 
-        {/* TABS */}
+        {/* TABS - AGORA SÃO 3 */}
         <div className="px-4 pb-2 flex gap-2">
             <button 
               onClick={() => setActiveTab('pending')}
-              className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors border ${
+              className={`flex-1 py-2 text-[10px] sm:text-xs font-bold rounded-lg transition-colors border flex flex-col items-center justify-center ${
                   activeTab === 'pending' 
                   ? 'bg-white dark:bg-surface-dark border-gray-200 dark:border-card-border text-primary shadow-sm' 
                   : 'bg-transparent border-transparent text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5'
               }`}
             >
-                A Fazer ({counts.pending})
+                <span>A Fazer</span>
+                <span className="opacity-70">({counts.pending})</span>
             </button>
+            
+            <button 
+              onClick={() => setActiveTab('progress')}
+              className={`flex-1 py-2 text-[10px] sm:text-xs font-bold rounded-lg transition-colors border flex flex-col items-center justify-center ${
+                  activeTab === 'progress' 
+                  ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-900/30 text-orange-700 dark:text-orange-300 shadow-sm' 
+                  : 'bg-transparent border-transparent text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5'
+              }`}
+            >
+                <span>Em Andamento</span>
+                <span className="opacity-70">({counts.progress})</span>
+            </button>
+
             <button 
               onClick={() => setActiveTab('completed')}
-              className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors border ${
+              className={`flex-1 py-2 text-[10px] sm:text-xs font-bold rounded-lg transition-colors border flex flex-col items-center justify-center ${
                   activeTab === 'completed' 
                   ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-900/30 text-green-700 dark:text-green-300 shadow-sm' 
                   : 'bg-transparent border-transparent text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5'
               }`}
             >
-                Concluídos ({counts.completed})
+                <span>Concluídos</span>
+                <span className="opacity-70">({counts.completed})</span>
             </button>
         </div>
 
@@ -151,7 +176,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
               <div className="pl-3 text-gray-400"><Icon name="search" size={20} /></div>
               <input 
                 className="flex-1 bg-transparent border-none focus:ring-0 text-sm px-3 text-gray-900 dark:text-white" 
-                placeholder={activeTab === 'pending' ? "Filtrar pendentes..." : "Buscar nos concluídos..."}
+                placeholder={activeTab === 'progress' ? "Buscar por usuário ou item..." : "Filtrar lista..."}
                 value={searchText}
                 onChange={(e) => setSearchText(e.target.value)}
               />
@@ -166,14 +191,18 @@ export const ListScreen: React.FC<ListScreenProps> = ({
       <main className="flex flex-col gap-3 p-4">
         {filteredBlocks.length === 0 ? (
             <div className="text-center py-20 text-gray-400">
-                <Icon name={activeTab === 'pending' ? "playlist_add_check" : "search_off"} size={48} className="mb-2 opacity-50" />
-                <p>{activeTab === 'pending' ? "Tudo contado por aqui (nesta página)!" : "Nenhum item concluído ainda."}</p>
-                {onPageChange && (
+                <Icon name={activeTab === 'pending' ? "playlist_add_check" : (activeTab === 'progress' ? "hourglass_empty" : "search_off")} size={48} className="mb-2 opacity-50" />
+                <p>
+                    {activeTab === 'pending' && "Tudo limpo! Nada pendente aqui."}
+                    {activeTab === 'progress' && "Nenhum bloco sendo contado no momento."}
+                    {activeTab === 'completed' && "Nenhum item concluído ainda."}
+                </p>
+                {onPageChange && activeTab === 'pending' && (
                     <button 
                         onClick={() => onPageChange(page + 1)}
                         className="mt-4 text-primary font-bold text-sm underline"
                     >
-                        Tentar Próxima Página
+                        Verificar Próxima Página
                     </button>
                 )}
             </div>
@@ -197,7 +226,9 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                             : `opacity-100 translate-x-0 max-h-[1000px] ${ // Estado Normal
                                 isFullyCounted 
                                 ? 'bg-green-50/50 dark:bg-green-900/5 border-green-100 dark:border-green-900/20 opacity-80' 
-                                : 'bg-white dark:bg-surface-dark border-gray-200 dark:border-card-border'
+                                : isReservedByOther 
+                                    ? 'bg-orange-50/30 dark:bg-orange-900/5 border-orange-100 dark:border-orange-900/20'
+                                    : 'bg-white dark:bg-surface-dark border-gray-200 dark:border-card-border'
                             }`
                         }`}
                     >
@@ -216,17 +247,22 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                                 </span>
                             </div>
                             
-                            {isReservedByOther && (
-                                <div className="flex items-center gap-1 text-[10px] font-bold text-orange-500 bg-orange-100 dark:bg-orange-900/20 px-2 py-0.5 rounded">
-                                    <Icon name="lock" size={10} />
-                                    {block.lockedBy?.userName || 'Em uso'}
-                                </div>
-                            )}
-                            
                             {isFullyCounted && (
                                 <Icon name="check_circle" className="text-green-500" size={20} />
                             )}
                         </div>
+
+                        {/* STATUS RESERVADO (Apenas na aba Progress) */}
+                        {isReservedByOther && (
+                            <div className="bg-orange-100 dark:bg-orange-900/30 px-3 py-2 flex items-center justify-center gap-2 border-b border-orange-200 dark:border-orange-900/30">
+                                <div className="p-1 bg-white dark:bg-black/20 rounded-full">
+                                    <Icon name="person" size={14} className="text-orange-600 dark:text-orange-400" />
+                                </div>
+                                <span className="text-xs font-bold text-orange-700 dark:text-orange-300 uppercase tracking-wide">
+                                    Em uso por: {block.lockedBy?.userName || 'Usuário'}
+                                </span>
+                            </div>
+                        )}
 
                         {/* Itens */}
                         <div className="divide-y divide-gray-100 dark:divide-white/5">
@@ -247,7 +283,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                                             <span className="bg-gray-100 dark:bg-white/10 px-1.5 rounded">{item.ref}</span>
                                             <span>{item.brand}</span>
                                             
-                                            {/* SE JÁ FOI CONTADO, MOSTRA DETALHES. SE NÃO, MOSTRA ESTOQUE SISTEMA. */}
+                                            {/* Detalhes de Estoque ou Contagem */}
                                             {item.lastCount ? (
                                                 <div className="ml-auto text-right">
                                                     <span className="block text-xs font-bold text-green-600 dark:text-green-400">{item.lastCount.qty} un</span>
@@ -256,7 +292,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                                                     </span>
                                                 </div>
                                             ) : (
-                                                activeTab === 'pending' && <span className="ml-auto font-medium text-xs">Est: {item.balance}</span>
+                                                !isReservedByOther && <span className="ml-auto font-medium text-xs">Est: {item.balance}</span>
                                             )}
                                         </div>
                                     </div>
@@ -264,7 +300,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                             ))}
                         </div>
 
-                        {/* Footer / Actions - Reorganizado Verticalmente */}
+                        {/* Footer / Actions */}
                         <div className="flex flex-col">
                             {(hiddenCount > 0) && (
                                 <button 
@@ -285,7 +321,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                                 </button>
                             )}
                             
-                            {/* BOTÃO DE RESERVA: Exibido sempre, exceto se bloqueado por outro usuário (progress) */}
+                            {/* BOTÃO DE RESERVA (Apenas se NÃO estiver em progresso por outro) */}
                             {!isReservedByOther && (
                                 <div className="p-2 bg-gray-50 dark:bg-white/5 border-t border-gray-100 dark:border-white/5">
                                     <button 
@@ -299,6 +335,15 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                                         <Icon name={isFullyCounted ? "refresh" : "lock"} size={16} />
                                         {isFullyCounted ? "Recontar / Validar" : "Reservar Bloco"}
                                     </button>
+                                </div>
+                            )}
+                            
+                            {/* SE ESTIVER EM PROGRESSO, MOSTRAR APENAS VISUALIZAÇÃO */}
+                            {isReservedByOther && (
+                                <div className="p-2 bg-orange-50/50 dark:bg-orange-900/10 border-t border-orange-100 dark:border-orange-900/20 text-center">
+                                    <p className="text-[10px] text-orange-600 dark:text-orange-400 font-bold uppercase tracking-wider">
+                                        Visualização Apenas
+                                    </p>
                                 </div>
                             )}
                         </div>
