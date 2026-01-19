@@ -343,12 +343,12 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
                                 </span>
                                 {isEdited && <span className="text-[9px] text-orange-500 font-bold">Editado</span>}
                                 
-                                {/* Botão de Edição - AGORA AZUL E MAIS VISÍVEL */}
+                                {/* Botão de Edição - DISCRETO (Tema Verde Suave) */}
                                 <button 
                                     onClick={(e) => handleEditCount(e, item)}
-                                    className="mt-2 flex items-center gap-1 px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold shadow-md hover:bg-blue-700 transition-all active:scale-95"
+                                    className="mt-2 flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/40 border border-green-200 dark:border-green-900/30 transition-all"
                                 >
-                                    <Icon name="edit" size={16} />
+                                    <Icon name="edit" size={14} />
                                     Editar
                                 </button>
                             </div>
