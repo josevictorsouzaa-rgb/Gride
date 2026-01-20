@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from './Icon';
@@ -122,7 +123,8 @@ export const EntryModal: React.FC<EntryModalProps> = ({
       
       const locToParse = scannedLocation || initialLocation;
       
-      if (locToParse) {
+      // Validação: Ignora "GERAL" como localização válida para preenchimento
+      if (locToParse && locToParse !== 'GERAL') {
           parseLocation(locToParse);
       } else {
           setLocGalpao('');

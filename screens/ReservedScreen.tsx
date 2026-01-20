@@ -53,7 +53,7 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                         user: 'Você',
                         date: 'Salvo',
                         qty: i.countedQty || 0,
-                        location: i.location
+                        location: i.location || ''
                     } : null)
                 }))
               }));
@@ -116,7 +116,8 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
     }
 
     // Localização Final: Ou escaneou agora, ou já tinha salvo (lastCount), ou usa o cadastro
-    const finalLocation = scannedCode || selectedItem.lastCount?.location || selectedItem.location || 'GERAL';
+    // MODIFICADO: Removemos o fallback || 'GERAL'
+    const finalLocation = scannedCode || selectedItem.lastCount?.location || selectedItem.location || '';
 
     // 1. ATUALIZA ESTADO LOCAL
     const updatedBlocks = localBlocks.map(block => {
@@ -276,7 +277,7 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                             </div>
                             <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                                 <Icon name="place" size={14} />
-                                {block.location}
+                                {block.location || 'Sem Local'}
                             </div>
                         </div>
 
@@ -299,7 +300,8 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                                 const hasDivergenceReason = !!item.divergenceReason;
                                 
                                 // Localização a exibir: Do lastCount (inserido) ou padrão do item
-                                const displayLocation = item.lastCount?.location || item.location || block.location;
+                                // Se for vazio, mostra 'Não Definido' ou espaço em branco
+                                const displayLocation = item.lastCount?.location || item.location || '';
 
                                 return (
                                 <div 
@@ -358,7 +360,9 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                                     <div className="flex items-end justify-between gap-4">
                                         <div className="flex flex-col">
                                             <span className="text-[10px] font-bold uppercase text-gray-400 tracking-wider">Localização</span>
-                                            <span className="text-sm font-bold text-gray-800 dark:text-white">{displayLocation}</span>
+                                            <span className="text-sm font-bold text-gray-800 dark:text-white">
+                                                {displayLocation || <span className="text-gray-400 italic font-normal">Não definida</span>}
+                                            </span>
                                         </div>
 
                                         {isProcessed ? (

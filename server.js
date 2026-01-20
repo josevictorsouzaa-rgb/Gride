@@ -84,10 +84,22 @@ const safeString = (value) => {
     return String(value).trim();
 };
 
+// CORREÇÃO CRÍTICA: Conversão robusta de BLOB para String JSON
 const blobToString = (blob) => {
     if (blob === null || blob === undefined) return null;
-    if (Buffer.isBuffer(blob)) return blob.toString('utf8');
+    
+    // Se já for string (driver converteu auto)
     if (typeof blob === 'string') return blob;
+    
+    // Se for Buffer (padrão Node)
+    if (Buffer.isBuffer(blob)) return blob.toString('utf8');
+    
+    // Se for uma função (stream do Firebird), precisamos ler (embora node-firebird geralmente entregue buffer com as configs atuais)
+    if (typeof blob === 'function') {
+        // Fallback simples, mas idealmente não deve cair aqui com as configs atuais
+        return null; 
+    }
+    
     return String(blob);
 };
 
@@ -477,7 +489,7 @@ app.get('/blocks', (req, res) => {
                                     ref: safeString(p.PRO_NRFABRICANTE),
                                     brand: p.MAR_DESCRI ? safeString(p.MAR_DESCRI) : 'GENÉRICO',
                                     balance: parseFloat(p.PRO_EST_ATUAL || 0),
-                                    location: safeString(p.PRO_PRATELEIRA) || 'GERAL',
+                                    location: safeString(p.PRO_PRATELEIRA) || '', // REMOVIDO "GERAL"
                                     costPrice: parseFloat(p.PRO_PRECOULTCOMPRA || 0),
                                     salesPrice: parseFloat(p.PRO_PRECOVENDA || 0),
                                     isCounted: isCounted,
@@ -591,7 +603,7 @@ app.get('/reserved-blocks/:userId', (req, res) => {
                         ref: safeString(p.PRO_NRFABRICANTE),
                         brand: p.MAR_DESCRI ? safeString(p.MAR_DESCRI) : 'GENÉRICO',
                         balance: parseFloat(p.PRO_EST_ATUAL || 0),
-                        location: safeString(p.PRO_PRATELEIRA) || 'GERAL',
+                        location: safeString(p.PRO_PRATELEIRA) || '', // REMOVIDO "GERAL"
                         costPrice: parseFloat(p.PRO_PRECOULTCOMPRA || 0),
                         salesPrice: parseFloat(p.PRO_PRECOVENDA || 0),
                         isCounted: countedSet.has(p.PRO_COD),
@@ -677,10 +689,13 @@ app.post('/reserve-block', (req, res) => {
 
 app.post('/update-reservation-progress', (req, res) => {
     const { block_id, items } = req.body;
-    const buffer = Buffer.from(JSON.stringify(items));
+    // Buffer garante que string longa seja gravada como BLOB
+    const buffer = Buffer.from(JSON.stringify(items), 'utf8');
+    
     Firebird.attach(options, (err, db) => {
-        db.query('UPDATE GRIDE_RESERVAS SET ITEMS_JSON = ? WHERE BLOCK_ID = ?', [buffer, block_id], () => {
-            db.detach(); res.json({success:true});
+        db.query('UPDATE GRIDE_RESERVAS SET ITEMS_JSON = ? WHERE BLOCK_ID = ?', [buffer, block_id], (err) => {
+            db.detach(); 
+            res.json({success: !err});
         });
     });
 });
