@@ -260,19 +260,20 @@ const App: React.FC = () => {
 
     try {
         if (cleanCode.startsWith('LOC-')) {
-            const rawLocation = cleanCode.replace('LOC-', ''); 
-            // Para busca por local, usamos getBlocks diretamente pois o filtro de search bar é diferente
+            // FIX: Envia o código COMPLETO (com LOC-) para o backend.
+            // O backend fará a busca híbrida (com e sem prefixo) para encontrar itens legados e novos.
+            const queryLocation = cleanCode; 
+            
             const [results, counts] = await Promise.all([
-                api.getBlocks(1, 100, '', undefined, undefined, false, rawLocation),
-                api.getBlockCounts('', undefined, undefined, rawLocation), // Busca counts do local
+                api.getBlocks(1, 100, '', undefined, undefined, false, queryLocation),
+                api.getBlockCounts('', undefined, undefined, queryLocation), // Busca counts do local
                 minDelay
             ]);
             
             if (results.length > 0) {
                 setBlocks(results);
                 setListCounts(counts); // Seta counts corretos
-                // MUDANÇA: Nome específico para ativar a aba "Todos" na ListScreen
-                setSegmentFilter(`Localização: ${rawLocation}`);
+                setSegmentFilter(`Localização: ${queryLocation}`);
                 setBrowsePage(1);
                 setSelectedGrCod(undefined);
                 setSelectedSgCod(undefined);

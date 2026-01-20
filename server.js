@@ -342,7 +342,6 @@ app.get('/analytics/categories-financial', (req, res) => {
     });
 });
 
-// ** CORREÇÃO SOLICITADA: Incluindo unitPrice **
 app.get('/analytics/financial-items', (req, res) => {
     const { gr_cod, sg_cod } = req.query;
     if (!gr_cod || !sg_cod) return res.json([]);
@@ -367,7 +366,7 @@ app.get('/analytics/financial-items', (req, res) => {
                 sku: safeString(r.PRO_NRFABRICANTE),
                 name: safeString(r.PRO_DESCRI),
                 qty: r.PRO_EST_ATUAL,
-                unitPrice: r.PRO_PRECOULTCOMPRA || 0, // Campo Adicionado
+                unitPrice: r.PRO_PRECOULTCOMPRA || 0,
                 value: r.VALOR_TOTAL || 0
             }));
             res.json(items);
@@ -395,7 +394,13 @@ app.get('/block-counts', (req, res) => {
                 if (search) { sql += ` AND (P.PRO_DESCRI CONTAINING ? OR P.PRO_NRFABRICANTE CONTAINING ?)`; params.push(search); params.push(search); }
                 if (gr_cod) { sql += ` AND TRIM(P.GR_COD) = ?`; params.push(gr_cod); }
                 if (sg_cod) { sql += ` AND TRIM(P.SG_COD) = ?`; params.push(sg_cod); }
-                if (location) { sql += ` AND P.PRO_PRATELEIRA STARTING WITH ?`; params.push(location); }
+                if (location) { 
+                    // BUSCA HÍBRIDA: Tenta encontrar com o endereço completo OU sem o prefixo LOC-
+                    const cleanLoc = location.replace(/^LOC-/i, '');
+                    sql += ` AND (P.PRO_PRATELEIRA STARTING WITH ? OR P.PRO_PRATELEIRA STARTING WITH ?)`; 
+                    params.push(location);
+                    params.push(cleanLoc);
+                }
                 db.query(sql, params, (errP, products) => {
                     db.detach();
                     if (errP) return res.json({ pending: 0, progress: 0, completed: 0 });
@@ -540,7 +545,13 @@ app.get('/blocks', (req, res) => {
                     if (search) { discoverySql += ` AND (P.PRO_DESCRI CONTAINING ? OR P.PRO_NRFABRICANTE CONTAINING ?)`; discoveryParams.push(search); discoveryParams.push(search); }
                     if (gr_cod) { discoverySql += ` AND TRIM(P.GR_COD) = ?`; discoveryParams.push(gr_cod); }
                     if (sg_cod) { discoverySql += ` AND TRIM(P.SG_COD) = ?`; discoveryParams.push(sg_cod); }
-                    if (location) { discoverySql += ` AND P.PRO_PRATELEIRA STARTING WITH ?`; discoveryParams.push(location); }
+                    if (location) { 
+                        // BUSCA HÍBRIDA: Tenta encontrar com o endereço completo OU sem o prefixo LOC-
+                        const cleanLoc = location.replace(/^LOC-/i, '');
+                        discoverySql += ` AND (P.PRO_PRATELEIRA STARTING WITH ? OR P.PRO_PRATELEIRA STARTING WITH ?)`; 
+                        discoveryParams.push(location);
+                        discoveryParams.push(cleanLoc);
+                    }
                     discoverySql += ` ORDER BY P.PRO_PRATELEIRA, P.PRO_DESCRI`;
                     db.query(discoverySql, discoveryParams, (errD, discoveryRows) => {
                         if (errD) { db.detach(); return res.status(500).json({ error: errD.message }); }
