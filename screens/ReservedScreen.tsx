@@ -90,12 +90,20 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
   const handleConfirmCount = async (qty: number, status: 'counted' | 'not_located' | 'issue', reason?: string) => {
     if (!selectedItem || activeBlockId === null) return;
 
-    // Lógica cirúrgica: define status como divergência se houver motivo de ajuste ou se for um problema reportado
+    // LÓGICA CRÍTICA DE TRATAMENTO:
+    // Se 'issue' -> 'divergence_info' (Problema direto)
+    // Se 'counted' E tiver 'reason' -> 'divergence_info' (Apontamento com contagem)
+    // Se 'not_located' -> 'not_located'
+    
     let finalStatus: 'counted' | 'not_located' | 'divergence_info' = 'counted';
     
     if (status === 'not_located') {
         finalStatus = 'not_located';
-    } else if (status === 'issue' || (reason && reason.trim() !== '')) {
+    } else if (status === 'issue') {
+        finalStatus = 'divergence_info';
+    } else if (status === 'counted' && reason && reason.trim().length > 0) {
+        // Se contou mas tem observação, é uma divergência que requer tratamento, 
+        // mas a quantidade será salva.
         finalStatus = 'divergence_info';
     }
 
@@ -346,7 +354,7 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                                             <div className="flex flex-col items-end">
                                                 {isIssue ? (
                                                     <span className="text-xs font-bold text-red-600 bg-red-100 dark:bg-red-900/40 px-2 py-1 rounded">
-                                                        Bloqueio/Diverg.
+                                                        Aguardando Tratamento
                                                     </span>
                                                 ) : (
                                                     <>
@@ -365,7 +373,7 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                                                                 <Icon name="edit" size={14} />
                                                             </button>
                                                         </div>
-                                                        {hasDivergenceReason && <span className="text-[9px] text-orange-500 font-bold mt-1">Com Ajuste</span>}
+                                                        {hasDivergenceReason && <span className="text-[9px] text-orange-500 font-bold mt-1">Com Apontamento</span>}
                                                     </>
                                                 )}
                                             </div>

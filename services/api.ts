@@ -269,7 +269,15 @@ export const api = {
   },
 
   resolveTreatment: async (id: number, note: string, user: string, action: 'adjust' | 'inactivate' | 'ignore'): Promise<boolean> => {
-      return true; 
+      try {
+          const response = await fetch(`${API_BASE_URL}/resolve-treatment`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id, note, user, action })
+          });
+          const json = await response.json();
+          return json.success;
+      } catch(e) { return false; }
   },
 
   saveCount: async (logEntry: Partial<InventoryLogEntry>) => {

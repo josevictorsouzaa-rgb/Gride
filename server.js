@@ -708,19 +708,41 @@ app.post('/finalize-block', (req, res) => {
                 for(const item of items) {
                     const statusDB = TO_DB_STATUS[item.status] || 'Contado';
                     const qtd = item.countedQty || 0;
+                    const reason = item.divergenceReason || '';
                     
-                    // 1. Log
+                    // 1. Obter Próximo ID de Log Manualmente (Segurança)
+                    const genRes = await new Promise((resolve, reject) => {
+                        transaction.query('SELECT GEN_ID(GEN_GRIDE_LOG_ID, 1) as NEW_ID FROM RDB$DATABASE', (err, rows) => {
+                            if(err) reject(err);
+                            else resolve(rows[0].NEW_ID);
+                        });
+                    });
+                    const logId = genRes;
+
+                    // 2. Inserir Log com ID explícito
                     await new Promise((resolve, reject) => {
                         transaction.query(
-                            `INSERT INTO GRIDE_INVENTARIO_LOG (PRO_NRFABRICANTE, NOME_PRODUTO, USU_COD, USUARIO_NOME, QTD_SISTEMA, QTD_CONTADA, LOCALIZACAO, STATUS, DIVERGENCIA_MOTIVO, BLOCK_REF, DATA_HORA, PRO_COD) 
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, (SELECT FIRST 1 PRO_COD FROM PRODUTOS WHERE PRO_NRFABRICANTE = ?))`,
-                            [item.ref, item.name, user_id, user_name, item.balance, qtd, item.lastCount?.location || 'Geral', statusDB, item.divergenceReason || '', uniqueRef, item.ref],
+                            `INSERT INTO GRIDE_INVENTARIO_LOG (ID, PRO_NRFABRICANTE, NOME_PRODUTO, USU_COD, USUARIO_NOME, QTD_SISTEMA, QTD_CONTADA, LOCALIZACAO, STATUS, DIVERGENCIA_MOTIVO, BLOCK_REF, DATA_HORA, PRO_COD) 
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, (SELECT FIRST 1 PRO_COD FROM PRODUTOS WHERE PRO_NRFABRICANTE = ?))`,
+                            [logId, item.ref, item.name, user_id, user_name, item.balance, qtd, item.lastCount?.location || 'Geral', statusDB, reason, uniqueRef, item.ref],
                             (err) => err ? reject(err) : resolve()
                         );
                     });
 
-                    // 2. Atualizar Localização e Estoque se contado
-                    if (statusDB === 'Contado') {
+                    // 3. Se houver divergência ou não localizado, inserir na tabela de TRATAMENTO
+                    if (statusDB === 'Divergência' || statusDB === 'Não Localizado') {
+                        await new Promise((resolve) => {
+                            transaction.query(
+                                `INSERT INTO GRIDE_TRATAMENTO (LOG_ID, PRO_NRFABRICANTE, NOME_PRODUTO, LOCALIZACAO, TIPO_ERRO, DESCRICAO_ERRO, REPORTADO_POR, REPORTADO_EM, STATUS)
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 'PENDING')`,
+                                [logId, item.ref, item.name, item.lastCount?.location || 'Geral', statusDB, reason || 'Sem descrição', user_name],
+                                () => resolve()
+                            );
+                        });
+                    }
+
+                    // 4. Atualizar Localização e Estoque se contado (mesmo com divergência, atualiza o saldo físico)
+                    if (statusDB === 'Contado' || statusDB === 'Divergência') {
                         await new Promise((resolve) => {
                             transaction.query(
                                 `UPDATE PRODUTOS SET PRO_EST_ATUAL = ?, PRO_PRATELEIRA = ? WHERE PRO_NRFABRICANTE = ?`,
@@ -731,7 +753,7 @@ app.post('/finalize-block', (req, res) => {
                     }
                 }
 
-                // 3. Remove Reserva
+                // 5. Remove Reserva
                 await new Promise((resolve) => transaction.query('DELETE FROM GRIDE_RESERVAS WHERE BLOCK_ID = ?', [block_id], () => resolve()));
 
                 transaction.commit((err) => {
@@ -744,6 +766,20 @@ app.post('/finalize-block', (req, res) => {
                 db.detach();
                 res.json({success: false, error: e.message});
             }
+        });
+    });
+});
+
+app.post('/resolve-treatment', (req, res) => {
+    const { id, note, user, action } = req.body;
+    Firebird.attach(options, (err, db) => {
+        if(err) return res.json({success:false});
+        
+        // Simples update para marcar como resolvido
+        const sql = `UPDATE GRIDE_TRATAMENTO SET STATUS = 'RESOLVED', RESOLUCAO_NOTA = ?, RESOLVIDO_POR = ?, RESOLVIDO_EM = CURRENT_TIMESTAMP WHERE ID = ?`;
+        db.query(sql, [note, user, id], (err) => {
+            db.detach();
+            res.json({success: !err});
         });
     });
 });
