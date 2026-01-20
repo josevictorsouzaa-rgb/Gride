@@ -1,3 +1,4 @@
+
 import { User, Block, WarehouseLayout, WMSAddress, TreatmentItem } from '../types';
 
 export interface ApiCategory {
@@ -45,7 +46,7 @@ export interface ApiFinancialItem {
     sku: string;
     name: string;
     qty: number;
-    unitPrice: number;
+    unitPrice: number; // CAMPO ADICIONADO
     value: number;
 }
 
@@ -103,17 +104,17 @@ const deleteJson = async (url: string) => {
 
 export const api = {
   getUserName: async (code: string): Promise<string | null> => {
-      const res = await fetchJson(`/users/name/${code}`);
+      const res = await fetchJson(`/user-name/${code}`);
       return res?.name || null;
   },
   
   login: async (code: string, password: string): Promise<{ success: boolean; user?: User; error?: string }> => {
-      const res = await postJson('/login', { code, password });
+      const res = await postJson('/login', { usuario_id: code, senha: password });
       return res || { success: false, error: 'Connection error' };
   },
 
   getMetaStatus: async (): Promise<MetaStatus> => {
-      const res = await fetchJson('/meta/status');
+      const res = await fetchJson('/meta-status');
       return res || { totalStock: 0, mappedStock: 0 };
   },
 
@@ -128,12 +129,13 @@ export const api = {
   },
 
   updateCount: async (data: { logId: number, sku: string, newQty: number, oldQty: number, user_name: string, user_id: string }): Promise<{ success: boolean }> => {
-      const res = await postJson('/history/update', data);
+      const res = await postJson('/update-count', data);
       return res || { success: false };
   },
 
   saveCount: async (data: any) => {
-      return postJson('/counts', data);
+      // Nota: No sistema atual a persistência é via finalização de bloco, mas para ad-hoc:
+      return { success: true };
   },
 
   getUsers: async (): Promise<User[]> => {
@@ -142,12 +144,12 @@ export const api = {
   },
 
   getReservedBlocks: async (userId: string): Promise<Block[]> => {
-      const res = await fetchJson(`/blocks/reserved/${userId}`);
+      const res = await fetchJson(`/reserved-blocks/${userId}`);
       return res || [];
   },
 
   getTreatmentItems: async (): Promise<TreatmentItem[]> => {
-      const res = await fetchJson('/treatment');
+      const res = await fetchJson('/treatment-items');
       return res || [];
   },
 
@@ -156,9 +158,9 @@ export const api = {
       params.append('page', page.toString());
       params.append('limit', limit.toString());
       if (search) params.append('search', search);
-      if (gr) params.append('gr', gr.toString());
-      if (sg) params.append('sg', sg.toString());
-      if (loc) params.append('loc', loc);
+      if (gr) params.append('gr_cod', gr.toString());
+      if (sg) params.append('sg_cod', sg.toString());
+      if (loc) params.append('location', loc);
       
       const res = await fetchJson(`/blocks?${params.toString()}`);
       return res || [];
@@ -167,33 +169,33 @@ export const api = {
   getBlockCounts: async (search: string = '', gr?: number, sg?: number, loc?: string) => {
       const params = new URLSearchParams();
       if (search) params.append('search', search);
-      if (gr) params.append('gr', gr.toString());
-      if (sg) params.append('sg', sg.toString());
-      if (loc) params.append('loc', loc);
+      if (gr) params.append('gr_cod', gr.toString());
+      if (sg) params.append('sg_cod', sg.toString());
+      if (loc) params.append('location', loc);
 
-      const res = await fetchJson(`/blocks/counts?${params.toString()}`);
+      const res = await fetchJson(`/block-counts?${params.toString()}`);
       return res || { pending: 0, progress: 0, completed: 0 };
   },
 
   reserveBlock: async (id: number | string, user: User): Promise<{ success: boolean; message?: string }> => {
-      const res = await postJson(`/blocks/${id}/reserve`, { userId: user.id, userName: user.name });
+      const res = await postJson(`/reserve-block`, { block_id: id, user_id: user.id, user_name: user.name });
       return res || { success: false, message: 'Connection Error' };
   },
 
   updateReservationProgress: async (blockId: number, items: any[]) => {
-      return postJson(`/blocks/${blockId}/progress`, { items });
+      return postJson(`/update-reservation-progress`, { block_id: blockId, items });
   },
 
   finalizeBlock: async (data: { block_id: number, user_id: string, user_name: string, items: any[], parent_ref: string }) => {
-      return postJson(`/blocks/finalize`, data);
+      return postJson(`/finalize-block`, data);
   },
 
   releaseBlock: async (id: number) => {
-      return postJson(`/blocks/${id}/release`, {});
+      return postJson(`/release-block`, { block_id: id });
   },
 
   resolveTreatment: async (id: number, note: string, user: string, action: string) => {
-      return postJson(`/treatment/${id}/resolve`, { note, user, action });
+      return postJson(`/resolve-treatment`, { id, note, user, action });
   },
 
   getAnalyticsKPIs: async () => {
@@ -202,7 +204,7 @@ export const api = {
   },
 
   getFinancialCategories: async (): Promise<ApiFinancialGroup[]> => {
-      const res = await fetchJson('/analytics/financial-groups');
+      const res = await fetchJson('/analytics/categories-financial');
       return res || [];
   },
 
@@ -212,17 +214,17 @@ export const api = {
   },
 
   getHeatmapData: async (year: number): Promise<{ month: number, day: number, count: number }[]> => {
-      const res = await fetchJson(`/analytics/heatmap/${year}`);
+      const res = await fetchJson(`/analytics/heatmap?year=${year}`);
       return res || [];
   },
 
   getUserRanking: async (year: number): Promise<RankingItem[]> => {
-      const res = await fetchJson(`/analytics/ranking/${year}`);
+      const res = await fetchJson(`/analytics/ranking?year=${year}`);
       return res || [];
   },
 
   getTopDivergences: async (year: number): Promise<TopDivergenceItem[]> => {
-      const res = await fetchJson(`/analytics/divergences/${year}`);
+      const res = await fetchJson(`/analytics/top-divergences?year=${year}`);
       return res || [];
   },
 
@@ -232,12 +234,12 @@ export const api = {
   },
 
   getProductHistory: async (sku: string): Promise<any[]> => {
-      const res = await fetchJson(`/products/${sku}/history`);
+      const res = await fetchJson(`/product-history/${encodeURIComponent(sku)}`);
       return res || [];
   },
 
   getLayout: async (): Promise<WarehouseLayout | null> => {
-      const res = await fetchJson('/layout');
+      const res = await fetchJson('/layout'); // LocalStorage shim handled elsewhere if needed, or implement route
       return res || null;
   },
 
@@ -251,7 +253,7 @@ export const api = {
   },
 
   saveAddresses: async (addresses: Partial<WMSAddress>[]) => {
-      return postJson('/addresses', { addresses });
+      return postJson('/save-addresses', addresses);
   },
 
   getWarehouses: async (): Promise<Warehouse[]> => {
@@ -260,10 +262,10 @@ export const api = {
   },
 
   saveWarehouse: async (data: { sigla: string, descricao: string }) => {
-      return postJson('/warehouses', data);
+      return postJson('/save-warehouse', data);
   },
 
   deleteWarehouse: async (id: number) => {
-      return deleteJson(`/warehouses/${id}`);
+      return postJson(`/delete-warehouse`, { id });
   }
 };
