@@ -121,16 +121,19 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
   if (!isOpen || !item || !financialData) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[70] flex items-end md:items-center justify-center sm:p-4 md:p-6">
-      <div className="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity" onClick={onClose} />
+    <div className="fixed inset-0 z-[70] flex items-end md:items-center justify-center p-0 md:p-6">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
       
-      {/* Container Principal: Fullscreen no Mobile, Modal no Desktop */}
-      <div className="relative z-10 w-full h-full md:h-[85vh] md:max-w-6xl bg-gray-50 dark:bg-[#0f1115] md:rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-slide-up md:animate-scale-up">
+      {/* Container Principal: Bottom Sheet (Mobile) vs Center Modal (Desktop) */}
+      <div className="relative z-10 w-full h-[90vh] md:h-[85vh] md:max-w-6xl bg-gray-50 dark:bg-[#0f1115] rounded-t-[2.5rem] md:rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-slide-up md:animate-scale-up">
         
+        {/* Mobile Drag Handle */}
+        <div className="md:hidden absolute top-3 left-1/2 -translate-x-1/2 w-12 h-1.5 bg-gray-300 dark:bg-gray-600 rounded-full z-30" />
+
         {/* HEADER FIXO */}
-        <div className="shrink-0 bg-white dark:bg-[#181c22] border-b border-gray-200 dark:border-white/5 p-4 md:p-6 flex gap-4 items-center justify-between z-20 shadow-sm">
+        <div className="shrink-0 bg-white dark:bg-[#181c22] border-b border-gray-200 dark:border-white/5 pt-8 pb-4 px-6 md:p-6 flex gap-4 items-center justify-between z-20 shadow-sm rounded-t-[2.5rem] md:rounded-t-none">
             <div className="flex gap-3 md:gap-5 items-center overflow-hidden">
-                 <div className="size-12 md:size-16 rounded-xl bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 flex items-center justify-center shrink-0 text-primary">
+                 <div className="size-12 md:size-16 rounded-2xl bg-gradient-to-br from-gray-100 to-gray-200 dark:from-white/5 dark:to-white/10 border border-gray-200 dark:border-white/5 flex items-center justify-center shrink-0 text-primary shadow-inner">
                     <Icon name="category" size={28} /> 
                  </div>
                  <div className="flex-1 min-w-0">
@@ -155,53 +158,81 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
         {/* CORPO FLEXÍVEL */}
         <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
             
-            {/* ESQUERDA (DESKTOP) / TOPO (MOBILE) - KPIs */}
-            {/* Mobile: Scroll Horizontal (Carrossel). Desktop: Coluna Lateral */}
-            <div className="shrink-0 md:w-[340px] lg:w-[400px] bg-white dark:bg-[#181c22] md:border-r border-b md:border-b-0 border-gray-200 dark:border-white/5 z-10 flex flex-row md:flex-col gap-3 p-4 overflow-x-auto md:overflow-y-auto no-scrollbar snap-x snap-mandatory md:snap-none">
+            {/* ÁREA DE KPIs (INDICADORES) */}
+            <div className="shrink-0 z-10 bg-white dark:bg-[#181c22] border-b md:border-b-0 md:border-r border-gray-200 dark:border-white/5">
                 
-                {/* Card 1: Estoque (Hero) */}
-                <div className="snap-center shrink-0 w-[85vw] md:w-full p-5 rounded-2xl bg-gradient-to-br from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-900/20 relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:scale-110 transition-transform">
-                        <Icon name="inventory_2" size={90} />
+                {/* MOBILE LAYOUT: GRID 2x1 COMPACTO (Visível apenas mobile) */}
+                <div className="md:hidden grid grid-cols-2 gap-3 p-4 bg-gray-50/50 dark:bg-black/10">
+                    {/* Card 1: Estoque */}
+                    <div className="col-span-1 bg-gradient-to-br from-blue-600 to-blue-700 text-white p-4 rounded-2xl shadow-lg shadow-blue-900/20 relative overflow-hidden flex flex-col justify-center h-28">
+                         <div className="absolute -right-3 -bottom-3 text-white/10 rotate-12"><Icon name="inventory_2" size={80} /></div>
+                         <p className="text-[10px] font-bold uppercase tracking-wider text-blue-100 mb-1 flex items-center gap-1">
+                            <Icon name="check_circle" size={12} /> Saldo
+                         </p>
+                         <div className="flex items-baseline gap-1 relative z-10">
+                             <span className="text-4xl font-black tracking-tighter">{financialData.stock}</span>
+                             <span className="text-sm font-medium text-blue-200">un</span>
+                         </div>
+                         <p className="text-[10px] text-blue-200 mt-1 relative z-10 opacity-80">{item.loc || 'Geral'}</p>
                     </div>
-                    <p className="text-xs font-bold uppercase tracking-widest text-blue-100 mb-2 flex items-center gap-2">
-                        <Icon name="check_circle" size={16} /> Saldo Físico
-                    </p>
-                    <div className="flex items-baseline gap-2">
-                        <span className="text-5xl md:text-6xl font-black tracking-tighter">{financialData.stock}</span>
-                        <span className="text-xl font-medium text-blue-200">un</span>
+
+                    {/* Card 2: Financeiro */}
+                    <div className="col-span-1 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 p-4 rounded-2xl shadow-sm flex flex-col justify-center h-28 relative">
+                         <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">Valor Total</p>
+                         <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight leading-none mb-2">
+                            {formatCurrency(financialData.totalValue)}
+                         </p>
+                         <div className="w-full h-px bg-gray-100 dark:bg-white/10 mb-2"></div>
+                         <div className="flex flex-col">
+                            <span className="text-[9px] uppercase text-gray-400 font-bold">Venda Unit.</span>
+                            <span className="text-sm font-bold text-green-600 dark:text-green-400">{formatCurrency(financialData.price)}</span>
+                         </div>
                     </div>
-                    <div className="mt-4 pt-3 border-t border-white/20 flex items-center gap-2">
-                        <div className="p-1 bg-white/20 rounded">
-                            <Icon name="place" size={16} className="text-white" />
+                </div>
+
+                {/* DESKTOP LAYOUT: SIDEBAR COMPLETA (Visível apenas desktop) */}
+                <div className="hidden md:flex flex-col w-[340px] lg:w-[400px] gap-4 p-6 h-full overflow-y-auto no-scrollbar bg-white dark:bg-[#181c22]">
+                    {/* Card 1: Estoque Desktop */}
+                    <div className="p-6 rounded-3xl bg-gradient-to-br from-blue-600 to-blue-700 text-white shadow-xl shadow-blue-900/20 relative overflow-hidden group">
+                        <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
+                            <Icon name="inventory_2" size={100} />
                         </div>
-                        <span className="font-bold text-lg">{item.loc || item.location || 'Geral'}</span>
+                        <p className="text-xs font-bold uppercase tracking-widest text-blue-100 mb-3 flex items-center gap-2">
+                            <Icon name="check_circle" size={18} /> Saldo Físico
+                        </p>
+                        <div className="flex items-baseline gap-2">
+                            <span className="text-6xl font-black tracking-tighter">{financialData.stock}</span>
+                            <span className="text-2xl font-medium text-blue-200">un</span>
+                        </div>
+                        <div className="mt-6 pt-4 border-t border-white/20 flex items-center gap-3">
+                            <div className="p-2 bg-white/20 rounded-lg">
+                                <Icon name="place" size={20} className="text-white" />
+                            </div>
+                            <div>
+                                <p className="text-[10px] uppercase text-blue-200 font-bold">Localização</p>
+                                <p className="font-bold text-lg leading-none">{item.loc || item.location || 'Geral'}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Card 2: Financeiro Desktop */}
+                    <div className="p-6 rounded-3xl bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10 shadow-sm relative group">
+                        <p className="text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400 mb-2">Valor em Estoque</p>
+                        <p className="text-4xl font-black text-gray-900 dark:text-white tracking-tight mb-6">
+                            {formatCurrency(financialData.totalValue)}
+                        </p>
+                        <div className="grid grid-cols-2 gap-6 pt-4 border-t border-dashed border-gray-200 dark:border-white/10">
+                             <div>
+                                <span className="text-[10px] uppercase text-gray-400 font-bold block mb-1">Custo Unit.</span>
+                                <span className="text-lg font-bold text-gray-700 dark:text-gray-300">{formatCurrency(financialData.cost)}</span>
+                             </div>
+                             <div className="pl-6 border-l border-gray-200 dark:border-white/5">
+                                <span className="text-[10px] uppercase text-gray-400 font-bold block mb-1">Venda Unit.</span>
+                                <span className="text-lg font-bold text-green-600 dark:text-green-400">{formatCurrency(financialData.price)}</span>
+                             </div>
+                        </div>
                     </div>
                 </div>
-
-                {/* Card 2: Financeiro */}
-                <div className="snap-center shrink-0 w-[85vw] md:w-full p-5 rounded-2xl bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 shadow-sm relative group">
-                    <div className="absolute top-4 right-4 text-green-500 opacity-20 group-hover:opacity-40 transition-opacity">
-                        <Icon name="monetization_on" size={40} />
-                    </div>
-                    <p className="text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400 mb-2">Valor Total</p>
-                    <p className="text-3xl md:text-4xl font-black text-gray-900 dark:text-white tracking-tight mb-4">
-                        {formatCurrency(financialData.totalValue)}
-                    </p>
-                    <div className="grid grid-cols-2 gap-4 pt-3 border-t border-dashed border-gray-200 dark:border-white/10">
-                         <div>
-                            <span className="text-[10px] uppercase text-gray-400 font-bold block mb-0.5">Custo Unit.</span>
-                            <span className="text-sm md:text-base font-bold text-gray-700 dark:text-gray-300">{formatCurrency(financialData.cost)}</span>
-                         </div>
-                         <div className="pl-4 border-l border-gray-100 dark:border-white/5">
-                            <span className="text-[10px] uppercase text-gray-400 font-bold block mb-0.5">Venda Unit.</span>
-                            <span className="text-sm md:text-base font-bold text-green-600 dark:text-green-400">{formatCurrency(financialData.price)}</span>
-                         </div>
-                    </div>
-                </div>
-
-                {/* Card 3: Mobile Hint (Só aparece no mobile para indicar scroll se houver mais conteúdo) */}
-                <div className="md:hidden snap-center shrink-0 w-4"></div>
             </div>
 
             {/* DIREITA (DESKTOP) / BAIXO (MOBILE) - TIMELINE */}
