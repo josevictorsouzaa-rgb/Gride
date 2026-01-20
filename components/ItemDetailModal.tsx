@@ -236,96 +236,108 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
             </div>
 
             {/* DIREITA (DESKTOP) / BAIXO (MOBILE) - TIMELINE */}
-            <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-gray-50/50 dark:bg-black/20 min-h-0">
-                <h3 className="text-xs md:text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-6 flex items-center gap-2 sticky top-0 bg-gray-50/95 dark:bg-[#0d1116]/95 backdrop-blur py-2 z-10 w-full">
-                    <Icon name="history" size={18} />
-                    Linha do Tempo (Audit Trail)
-                </h3>
+            {/* Agora é um flex-col para ter header fixo e conteúdo rolável */}
+            <div className="flex-1 flex flex-col min-h-0 bg-gray-50/50 dark:bg-black/20">
+                
+                {/* CABEÇALHO DA TIMELINE (FIXO) */}
+                <div className="px-5 py-3 border-b border-gray-200 dark:border-white/5 bg-gray-50/90 dark:bg-[#0f1115]/90 backdrop-blur shrink-0 z-20 flex justify-between items-center">
+                    <h3 className="text-xs md:text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                        <Icon name="history" size={18} />
+                        Linha do Tempo
+                    </h3>
+                    <div className="text-[10px] font-bold bg-gray-200 dark:bg-white/10 text-gray-600 dark:text-gray-300 px-2.5 py-1 rounded-md">
+                        {loadingHistory ? '...' : `${history.length} Reg.`}
+                    </div>
+                </div>
 
-                <div className="relative pl-4 space-y-0 pb-10">
-                    {/* Linha Vertical Contínua */}
-                    <div className="absolute top-2 bottom-4 left-[23px] w-0.5 bg-gray-200 dark:bg-gray-800"></div>
+                {/* CONTEÚDO DA TIMELINE (ROLÁVEL) */}
+                <div className="flex-1 overflow-y-auto p-4 md:p-8 pt-4">
+                    <div className="relative space-y-0 pb-10">
+                        {/* Linha Vertical Contínua (Centralizada no DOT) */}
+                        {/* Left-6 = 24px. Dots também estão no Left-6. Perfeito alinhamento. */}
+                        <div className="absolute top-2 bottom-0 left-6 w-0.5 bg-gray-200 dark:bg-gray-800 -translate-x-[1px]"></div>
 
-                    {loadingHistory ? (
-                        <div className="py-12 flex flex-col items-center justify-center opacity-50">
-                            <Icon name="sync" className="animate-spin mb-3 text-primary" size={32} />
-                            <p className="text-sm font-medium text-gray-500">Buscando registros...</p>
-                        </div>
-                    ) : history.length === 0 ? (
-                        <div className="py-10 text-center opacity-60 bg-white dark:bg-white/5 rounded-2xl border border-dashed border-gray-200 dark:border-white/10 mx-4">
-                            <Icon name="event_note" size={40} className="mb-2 text-gray-300" />
-                            <p className="text-sm font-medium text-gray-500">Nenhum histórico recente.</p>
-                        </div>
-                    ) : (
-                        history.map((h, idx) => {
-                            const themeColors: any = {
-                                blue: { dot: 'bg-blue-500', text: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-900/10', border: 'border-blue-100 dark:border-blue-900/30' },
-                                green: { dot: 'bg-green-500', text: 'text-green-600 dark:text-green-400', bg: 'bg-green-50 dark:bg-green-900/10', border: 'border-green-100 dark:border-green-900/30' },
-                                red: { dot: 'bg-red-500', text: 'text-red-600 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-900/10', border: 'border-red-100 dark:border-red-900/30' },
-                                orange: { dot: 'bg-orange-500', text: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-50 dark:bg-orange-900/10', border: 'border-orange-100 dark:border-orange-900/30' },
-                                purple: { dot: 'bg-purple-500', text: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-50 dark:bg-purple-900/10', border: 'border-purple-100 dark:border-purple-900/30' },
-                                gray: { dot: 'bg-gray-400', text: 'text-gray-600 dark:text-gray-400', bg: 'bg-white dark:bg-white/5', border: 'border-gray-200 dark:border-white/10' },
-                                indigo: { dot: 'bg-indigo-500', text: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-50 dark:bg-indigo-900/10', border: 'border-indigo-100 dark:border-indigo-900/30' },
-                            };
-                            const theme = themeColors[h.themeColor] || themeColors.gray;
+                        {loadingHistory ? (
+                            <div className="py-12 flex flex-col items-center justify-center opacity-50">
+                                <Icon name="sync" className="animate-spin mb-3 text-primary" size={32} />
+                                <p className="text-sm font-medium text-gray-500">Buscando registros...</p>
+                            </div>
+                        ) : history.length === 0 ? (
+                            <div className="py-10 text-center opacity-60 bg-white dark:bg-white/5 rounded-2xl border border-dashed border-gray-200 dark:border-white/10 mx-4 relative z-10">
+                                <Icon name="event_note" size={40} className="mb-2 text-gray-300" />
+                                <p className="text-sm font-medium text-gray-500">Nenhum histórico recente.</p>
+                            </div>
+                        ) : (
+                            history.map((h, idx) => {
+                                const themeColors: any = {
+                                    blue: { dot: 'bg-blue-500', text: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-900/10', border: 'border-blue-100 dark:border-blue-900/30' },
+                                    green: { dot: 'bg-green-500', text: 'text-green-600 dark:text-green-400', bg: 'bg-green-50 dark:bg-green-900/10', border: 'border-green-100 dark:border-green-900/30' },
+                                    red: { dot: 'bg-red-500', text: 'text-red-600 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-900/10', border: 'border-red-100 dark:border-red-900/30' },
+                                    orange: { dot: 'bg-orange-500', text: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-50 dark:bg-orange-900/10', border: 'border-orange-100 dark:border-orange-900/30' },
+                                    purple: { dot: 'bg-purple-500', text: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-50 dark:bg-purple-900/10', border: 'border-purple-100 dark:border-purple-900/30' },
+                                    gray: { dot: 'bg-gray-400', text: 'text-gray-600 dark:text-gray-400', bg: 'bg-white dark:bg-white/5', border: 'border-gray-200 dark:border-white/10' },
+                                    indigo: { dot: 'bg-indigo-500', text: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-50 dark:bg-indigo-900/10', border: 'border-indigo-100 dark:border-indigo-900/30' },
+                                };
+                                const theme = themeColors[h.themeColor] || themeColors.gray;
 
-                            return (
-                                <div key={idx} className="relative pl-10 pb-6 group last:pb-0">
-                                    {/* Ponto na Linha */}
-                                    <div className={`absolute top-4 left-[16px] -translate-x-1/2 size-3.5 rounded-full border-[2px] border-white dark:border-[#0d1116] shadow-sm z-10 ring-2 ring-opacity-20 ${theme.dot} ring-gray-400`} />
+                                return (
+                                    <div key={idx} className="relative pl-14 pb-6 group last:pb-0">
+                                        {/* Ponto na Linha */}
+                                        <div className={`absolute top-4 left-6 -translate-x-1/2 size-3.5 rounded-full border-[2px] border-white dark:border-[#0d1116] shadow-sm z-10 ring-2 ring-opacity-20 ${theme.dot} ring-gray-400`} />
 
-                                    {/* Card do Evento */}
-                                    <div className={`rounded-2xl p-4 border ${theme.bg} ${theme.border} relative transition-all hover:shadow-md`}>
-                                        <div className="flex justify-between items-start mb-2 gap-2">
-                                            <div className="flex items-center gap-2 min-w-0">
-                                                <div className={`p-1.5 rounded-lg ${theme.text.replace('text-', 'bg-').replace('600','100').replace('400','900/20')} bg-opacity-10`}>
-                                                    <Icon name={h.icon} size={18} className={theme.text} />
+                                        {/* Card do Evento */}
+                                        <div className={`rounded-2xl p-4 border ${theme.bg} ${theme.border} relative transition-all hover:shadow-md`}>
+                                            <div className="flex justify-between items-start mb-2 gap-2">
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    <div className={`p-1.5 rounded-lg ${theme.text.replace('text-', 'bg-').replace('600','100').replace('400','900/20')} bg-opacity-10`}>
+                                                        <Icon name={h.icon} size={18} className={theme.text} />
+                                                    </div>
+                                                    <span className={`text-sm font-bold ${theme.text} uppercase tracking-tight truncate`}>
+                                                        {h.actionLabel}
+                                                    </span>
                                                 </div>
-                                                <span className={`text-sm font-bold ${theme.text} uppercase tracking-tight truncate`}>
-                                                    {h.actionLabel}
+                                                <div className="text-right shrink-0">
+                                                    <span className="block text-xs font-bold text-gray-900 dark:text-white">{h.displayDate}</span>
+                                                    <span className="block text-[10px] text-gray-400 font-medium">{h.displayTime}</span>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-center gap-2 mb-3 px-1">
+                                                <div className="size-5 rounded-full bg-white dark:bg-white/10 border border-gray-100 dark:border-white/5 flex items-center justify-center text-[10px] font-bold text-gray-500 dark:text-gray-400">
+                                                    {h.user.charAt(0)}
+                                                </div>
+                                                <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                                                    {h.user}
                                                 </span>
                                             </div>
-                                            <div className="text-right shrink-0">
-                                                <span className="block text-xs font-bold text-gray-900 dark:text-white">{h.displayDate}</span>
-                                                <span className="block text-[10px] text-gray-400 font-medium">{h.displayTime}</span>
-                                            </div>
-                                        </div>
 
-                                        <div className="flex items-center gap-2 mb-3 px-1">
-                                            <div className="size-5 rounded-full bg-white dark:bg-white/10 border border-gray-100 dark:border-white/5 flex items-center justify-center text-[10px] font-bold text-gray-500 dark:text-gray-400">
-                                                {h.user.charAt(0)}
-                                            </div>
-                                            <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
-                                                {h.user}
-                                            </span>
+                                            {/* Detalhes de Quantidade */}
+                                            {(h.newValue !== undefined || h.reason) && (
+                                                <div className="mt-3 pt-3 border-t border-dashed border-black/5 dark:border-white/10">
+                                                    {h.newValue !== undefined && (
+                                                        <div className="flex justify-between items-center text-sm">
+                                                            <span className="text-gray-500 dark:text-gray-400 font-medium text-xs uppercase">Quantidade Registrada</span>
+                                                            <span className="font-mono font-black text-gray-900 dark:text-white text-lg">
+                                                                {h.newValue} <span className="text-xs font-normal text-gray-400">un</span>
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                    
+                                                    {/* Motivo (Se houver) */}
+                                                    {h.reason && (
+                                                        <div className="mt-3 text-xs font-medium text-orange-800 dark:text-orange-200 bg-orange-100 dark:bg-orange-900/30 p-2.5 rounded-lg border border-orange-200 dark:border-orange-800/50 flex items-start gap-2">
+                                                            <Icon name="format_quote" size={14} className="shrink-0 opacity-50" />
+                                                            <span className="italic leading-relaxed">{h.reason}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
-
-                                        {/* Detalhes de Quantidade */}
-                                        {(h.newValue !== undefined || h.reason) && (
-                                            <div className="mt-3 pt-3 border-t border-dashed border-black/5 dark:border-white/10">
-                                                {h.newValue !== undefined && (
-                                                    <div className="flex justify-between items-center text-sm">
-                                                        <span className="text-gray-500 dark:text-gray-400 font-medium text-xs uppercase">Quantidade Registrada</span>
-                                                        <span className="font-mono font-black text-gray-900 dark:text-white text-lg">
-                                                            {h.newValue} <span className="text-xs font-normal text-gray-400">un</span>
-                                                        </span>
-                                                    </div>
-                                                )}
-                                                
-                                                {/* Motivo (Se houver) */}
-                                                {h.reason && (
-                                                    <div className="mt-3 text-xs font-medium text-orange-800 dark:text-orange-200 bg-orange-100 dark:bg-orange-900/30 p-2.5 rounded-lg border border-orange-200 dark:border-orange-800/50 flex items-start gap-2">
-                                                        <Icon name="format_quote" size={14} className="shrink-0 opacity-50" />
-                                                        <span className="italic leading-relaxed">{h.reason}</span>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
                                     </div>
-                                </div>
-                            );
-                        })
-                    )}
+                                );
+                            })
+                        )}
+                    </div>
                 </div>
             </div>
         </div>
