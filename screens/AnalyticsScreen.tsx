@@ -513,84 +513,79 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                                                                 </td>
                                                             </tr>
 
-                                                            {/* ITEMS LIST (LEVEL 3) - REDESIGNED */}
+                                                            {/* ITEMS LIST (LEVEL 3) - TABLE ROWS INTEGRATED */}
                                                             {subIsExpanded && (
-                                                                <tr>
-                                                                    <td colSpan={4} className="p-0 border-l-4 border-primary/20 bg-[#f8f9fa] dark:bg-[#0d1116] shadow-inner">
-                                                                        <div className="p-6 pl-20">
-                                                                            {loadingItems ? (
-                                                                                <div className="flex flex-col items-center justify-center py-8 text-gray-400">
-                                                                                    <Icon name="sync" className="animate-spin text-primary mb-2" size={24} />
-                                                                                    <span className="text-xs font-medium">Carregando itens...</span>
-                                                                                </div>
-                                                                            ) : (
-                                                                                <div className="rounded-xl overflow-hidden border border-gray-200 dark:border-white/10 shadow-sm bg-white dark:bg-surface-dark">
-                                                                                    {/* HEADER ITEMS - CSS GRID */}
-                                                                                    <div className="grid grid-cols-12 bg-gray-50 dark:bg-white/5 border-b border-gray-200 dark:border-white/10 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase py-3 px-5 tracking-wider">
-                                                                                        <div className="col-span-5">Produto / SKU</div>
-                                                                                        <div 
-                                                                                            className="col-span-3 text-right cursor-pointer hover:text-primary flex items-center justify-end gap-1"
-                                                                                            onClick={() => handleSortItems('unit')}
-                                                                                        >
-                                                                                            Vlr. Unit. {itemSort.field === 'unit' && <Icon name={itemSort.direction === 'desc' ? "arrow_drop_down" : "arrow_drop_up"} size={14} />}
-                                                                                        </div>
-                                                                                        <div 
-                                                                                            className="col-span-1 text-right cursor-pointer hover:text-primary flex items-center justify-end gap-1" 
-                                                                                            onClick={() => handleSortItems('qty')}
-                                                                                        >
-                                                                                            Qtd {itemSort.field === 'qty' && <Icon name={itemSort.direction === 'desc' ? "arrow_drop_down" : "arrow_drop_up"} size={14} />}
-                                                                                        </div>
-                                                                                        <div 
-                                                                                            className="col-span-3 text-right cursor-pointer hover:text-primary flex items-center justify-end gap-1" 
-                                                                                            onClick={() => handleSortItems('value')}
-                                                                                        >
-                                                                                            Total {itemSort.field === 'value' && <Icon name={itemSort.direction === 'desc' ? "arrow_drop_down" : "arrow_drop_up"} size={14} />}
-                                                                                        </div>
-                                                                                    </div>
-                                                                                    
-                                                                                    {/* LIST ITEMS - CSS GRID */}
-                                                                                    <div className="max-h-[400px] overflow-y-auto no-scrollbar">
-                                                                                        {sortedSubgroupItems.map((item, idx) => (
-                                                                                            <div key={idx} className="grid grid-cols-12 items-center py-3 px-5 border-b border-gray-100 dark:border-white/5 last:border-0 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-colors group">
-                                                                                                
-                                                                                                {/* Produto */}
-                                                                                                <div className="col-span-5 pr-4">
-                                                                                                    <div className="font-bold text-xs text-gray-800 dark:text-gray-200 line-clamp-1 group-hover:text-primary transition-colors">
-                                                                                                        {item.name}
-                                                                                                    </div>
-                                                                                                    <div className="text-[10px] font-mono text-gray-400 mt-0.5">
-                                                                                                        {item.sku}
-                                                                                                    </div>
-                                                                                                </div>
+                                                                <>
+                                                                    {/* Item Sort Header - Subtle row underneath subgroup */}
+                                                                    <tr className="bg-gray-100/50 dark:bg-black/30 border-b border-gray-100 dark:border-white/5 text-[10px] text-gray-400 font-bold uppercase tracking-wider select-none">
+                                                                        <td className="py-2 pl-28">Produto / SKU</td>
+                                                                        <td className="text-right py-2 px-6 cursor-pointer hover:text-primary transition-colors" onClick={() => handleSortItems('unit')}>
+                                                                            Unit. {itemSort.field === 'unit' && <Icon name={itemSort.direction === 'desc' ? "arrow_drop_down" : "arrow_drop_up"} size={12} className="inline align-middle" />}
+                                                                        </td>
+                                                                        <td className="text-right py-2 px-6 cursor-pointer hover:text-primary transition-colors" onClick={() => handleSortItems('qty')}>
+                                                                            Qtd {itemSort.field === 'qty' && <Icon name={itemSort.direction === 'desc' ? "arrow_drop_down" : "arrow_drop_up"} size={12} className="inline align-middle" />}
+                                                                        </td>
+                                                                        <td className="text-right py-2 px-6 cursor-pointer hover:text-primary transition-colors" onClick={() => handleSortItems('value')}>
+                                                                            Total {itemSort.field === 'value' && <Icon name={itemSort.direction === 'desc' ? "arrow_drop_down" : "arrow_drop_up"} size={12} className="inline align-middle" />}
+                                                                        </td>
+                                                                    </tr>
 
-                                                                                                {/* Valor Unitário */}
-                                                                                                <div className="col-span-3 text-right">
-                                                                                                    <div className="font-mono text-xs text-gray-500 dark:text-gray-400">
-                                                                                                        {item.unitPrice.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                                                                                    </div>
+                                                                    {loadingItems ? (
+                                                                        <tr>
+                                                                            <td colSpan={4} className="py-8 text-center text-gray-400">
+                                                                                <Icon name="sync" className="animate-spin mb-1 mx-auto" size={20} />
+                                                                                <span className="text-xs">Carregando itens...</span>
+                                                                            </td>
+                                                                        </tr>
+                                                                    ) : (
+                                                                        sortedSubgroupItems.map((item, idx) => {
+                                                                            const itemPercentage = sub.value > 0 ? (item.value / sub.value) * 100 : 0;
+                                                                            return (
+                                                                                <tr key={idx} className="bg-gray-50 dark:bg-black/20 hover:bg-blue-50 dark:hover:bg-white/5 transition-colors border-b border-gray-100 dark:border-white/5 last:border-0 group">
+                                                                                    {/* Name Col - Increased Indentation */}
+                                                                                    <td className="py-2 px-6 pl-28 border-l-4 border-transparent">
+                                                                                        <div className="flex items-center gap-3">
+                                                                                            <Icon name="corner_down_right" size={14} className="text-gray-300 group-hover:text-primary transition-colors" />
+                                                                                            <div>
+                                                                                                <div className="font-bold text-xs text-gray-800 dark:text-gray-200 line-clamp-1 group-hover:text-primary transition-colors">
+                                                                                                    {item.name}
                                                                                                 </div>
-
-                                                                                                {/* Quantidade */}
-                                                                                                <div className="col-span-1 text-right">
-                                                                                                    <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-white/5 min-w-[24px] text-center">
-                                                                                                        {item.qty}
+                                                                                                <div className="flex items-center gap-2">
+                                                                                                    <span className="text-[10px] font-mono text-gray-400">{item.sku}</span>
+                                                                                                    <span className="text-[9px] text-gray-400 font-medium bg-gray-100 dark:bg-white/10 px-1 rounded">
+                                                                                                        Unit: {item.unitPrice.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                                                                                     </span>
                                                                                                 </div>
-
-                                                                                                {/* Valor Total */}
-                                                                                                <div className="col-span-3 text-right">
-                                                                                                    <div className="font-mono font-bold text-xs text-gray-900 dark:text-white">
-                                                                                                        {item.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                                                                                    </div>
-                                                                                                </div>
                                                                                             </div>
-                                                                                        ))}
-                                                                                    </div>
-                                                                                </div>
-                                                                            )}
-                                                                        </div>
-                                                                    </td>
-                                                                </tr>
+                                                                                        </div>
+                                                                                    </td>
+                                                                                    
+                                                                                    {/* Qty Col */}
+                                                                                    <td className="py-2 px-6 text-right">
+                                                                                        <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-white dark:bg-white/5 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-white/10 min-w-[24px] text-center">
+                                                                                            {item.qty}
+                                                                                        </span>
+                                                                                    </td>
+
+                                                                                    {/* Value Col */}
+                                                                                    <td className="py-2 px-6 text-right font-bold text-xs text-gray-900 dark:text-white">
+                                                                                        {item.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                                                                    </td>
+
+                                                                                    {/* Share Col */}
+                                                                                    <td className="py-2 px-6">
+                                                                                        <div className="flex items-center gap-2">
+                                                                                            <div className="flex-1 h-1 bg-gray-200 dark:bg-white/10 rounded-full overflow-hidden">
+                                                                                                <div className="h-full bg-blue-300 dark:bg-blue-500 rounded-full" style={{ width: `${itemPercentage}%` }} />
+                                                                                            </div>
+                                                                                            <span className="text-[9px] text-gray-400 w-6 text-right">{itemPercentage < 1 && itemPercentage > 0 ? '<1' : Math.round(itemPercentage)}%</span>
+                                                                                        </div>
+                                                                                    </td>
+                                                                                </tr>
+                                                                            );
+                                                                        })
+                                                                    )}
+                                                                </>
                                                             )}
                                                         </React.Fragment>
                                                     );
