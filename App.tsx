@@ -124,11 +124,11 @@ const App: React.FC = () => {
 
           if (isFilteredList) {
               if (segmentFilter && (segmentFilter === 'Resultado da Busca' || segmentFilter.startsWith('Localização:'))) {
-                  // Lógica específica de busca já define blocks, mas aqui estamos generalizando
                   // Se for busca, não temos gr/sg normalmente, mas search/loc
-                  // NOTA: A lógica original de busca fazia um setBlocks direto. 
-                  // Para manter compatibilidade com polling, precisaríamos guardar o termo de busca no state.
-                  // Simplificação: Polling funciona melhor com filtros de categoria.
+                  // Nota: aqui segmentFilter guarda o estado visual, mas precisamos dos parametros reais
+                  if (segmentFilter.startsWith('Localização:')) {
+                      loc = segmentFilter.replace('Localização: ', '').trim();
+                  }
               } else {
                   gr = selectedGrCod;
                   sg = selectedSgCod;
@@ -141,7 +141,9 @@ const App: React.FC = () => {
               isListScreen ? 100 : BROWSE_LIMIT, 
               search, 
               gr, 
-              sg
+              sg,
+              !!loc, // isLocSearch
+              loc
           );
 
           // 2. Busca Contadores Totais (API nova)
