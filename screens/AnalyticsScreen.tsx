@@ -482,9 +482,9 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                         <div>
                             <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
                                 <Icon name="warning" className="text-red-500" />
-                                Maiores Divergências ({selectedYear})
+                                Divergências
                             </h2>
-                            <p className="text-xs text-gray-500">Filtrar e analisar impactos</p>
+                            <p className="text-xs text-gray-500">Filtrar e analisar impactos do ano {selectedYear}</p>
                         </div>
                         <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase">
                             <span className="flex items-center gap-1"><span className="size-2 rounded-full bg-red-500"></span> Perda</span>
@@ -501,7 +501,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                                 placeholder="Buscar SKU ou Produto..."
                                 value={divergenceSearch}
                                 onChange={(e) => setDivergenceSearch(e.target.value)}
-                                className="w-full bg-white dark:bg-white/10 border border-gray-200 dark:border-white/10 rounded-lg text-xs py-2 px-3 text-gray-800 dark:text-white focus:ring-1 focus:ring-primary outline-none"
+                                className="w-full bg-white dark:bg-white/10 border border-gray-200 dark:border-white/10 rounded-lg text-xs py-2 px-3 text-gray-800 dark:text-white focus:ring-1 focus:ring-primary outline-none placeholder:text-gray-400"
                             />
                         </div>
                         
@@ -511,13 +511,13 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                             <input 
                                 type="number" placeholder="Min" 
                                 value={diffMin} onChange={e => setDiffMin(e.target.value)}
-                                className="w-12 bg-transparent border-none text-xs p-1 text-center font-mono focus:ring-0" 
+                                className="w-12 bg-transparent border-none text-xs p-1 text-center font-mono focus:ring-0 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" 
                             />
                             <span className="text-gray-400">-</span>
                             <input 
                                 type="number" placeholder="Max" 
                                 value={diffMax} onChange={e => setDiffMax(e.target.value)}
-                                className="w-12 bg-transparent border-none text-xs p-1 text-center font-mono focus:ring-0" 
+                                className="w-12 bg-transparent border-none text-xs p-1 text-center font-mono focus:ring-0 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" 
                             />
                         </div>
 
@@ -527,27 +527,30 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                             <input 
                                 type="number" placeholder="Min" 
                                 value={impactMin} onChange={e => setImpactMin(e.target.value)}
-                                className="w-12 bg-transparent border-none text-xs p-1 text-center font-mono focus:ring-0" 
+                                className="w-12 bg-transparent border-none text-xs p-1 text-center font-mono focus:ring-0 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" 
                             />
                             <span className="text-gray-400">-</span>
                             <input 
                                 type="number" placeholder="Max" 
                                 value={impactMax} onChange={e => setImpactMax(e.target.value)}
-                                className="w-12 bg-transparent border-none text-xs p-1 text-center font-mono focus:ring-0" 
+                                className="w-12 bg-transparent border-none text-xs p-1 text-center font-mono focus:ring-0 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" 
                             />
                         </div>
 
                         {/* Type Select */}
-                        <div className="md:col-span-1">
+                        <div className="md:col-span-1 relative">
                             <select 
                                 value={divergenceType} 
                                 onChange={(e) => setDivergenceType(e.target.value as any)}
-                                className="w-full bg-white dark:bg-white/10 border border-gray-200 dark:border-white/10 rounded-lg text-xs py-2 px-3 text-gray-800 dark:text-white focus:ring-1 focus:ring-primary outline-none"
+                                className="w-full bg-white dark:bg-white/10 border border-gray-200 dark:border-white/10 rounded-lg text-xs py-2 px-3 text-gray-800 dark:text-white focus:ring-1 focus:ring-primary outline-none appearance-none"
                             >
                                 <option value="all">Todos os Tipos</option>
                                 <option value="loss">Apenas Perdas (-)</option>
                                 <option value="surplus">Apenas Sobras (+)</option>
                             </select>
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
+                                <Icon name="expand_more" size={16} />
+                            </div>
                         </div>
                     </div>
                 </div>
