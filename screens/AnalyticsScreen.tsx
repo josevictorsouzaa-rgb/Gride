@@ -235,11 +235,35 @@ const DivergenceResolutionModal: React.FC<DivergenceResolutionModalProps> = ({ i
 export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) => {
   const [divergenceList, setDivergenceList] = useState(initialDivergenceData);
   const [selectedDivergence, setSelectedDivergence] = useState<any | null>(null);
-  const [realKPIs, setRealKPIs] = useState({ totalValue: 0, totalCount: 0 });
+  const [realKPIs, setRealKPIs] = useState({ totalValue: 0, totalCount: 0, inactiveCount: 0 });
+  const [displayValue, setDisplayValue] = useState(0);
 
   useEffect(() => {
       api.getAnalyticsKPIs().then(setRealKPIs);
   }, []);
+
+  // ANIMATION LOGIC: COUNT UP
+  useEffect(() => {
+      if (realKPIs.totalValue > 0) {
+          const duration = 2500; // 2.5 seconds animation
+          const steps = 60; // 60 updates per second (approx)
+          const intervalTime = duration / steps;
+          const increment = realKPIs.totalValue / steps;
+          
+          let current = 0;
+          const timer = setInterval(() => {
+              current += increment;
+              if (current >= realKPIs.totalValue) {
+                  setDisplayValue(realKPIs.totalValue);
+                  clearInterval(timer);
+              } else {
+                  setDisplayValue(current);
+              }
+          }, intervalTime);
+
+          return () => clearInterval(timer);
+      }
+  }, [realKPIs.totalValue]);
 
   const handleAcceptDivergence = (item: any) => {
     // Remove the item from the list to simulate acceptance/resolution
@@ -280,9 +304,9 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
       <main className="flex-1 max-w-7xl mx-auto w-full p-4 md:p-8 space-y-6">
         
         {/* KPI CARDS - ENHANCED WITH MONETARY VALUE */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             
-            {/* Total Stock Value - REAL DATA */}
+            {/* Total Stock Value - REAL DATA WITH ANIMATION */}
             <div className="bg-gradient-to-br from-gray-900 to-gray-800 dark:from-surface-dark dark:to-black p-5 rounded-2xl shadow-lg border border-gray-700 relative overflow-hidden group">
                 <div className="absolute right-0 top-0 p-4 opacity-10">
                    <Icon name="payments" size={80} className="text-white" />
@@ -294,14 +318,14 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                 </div>
                 <div className="relative z-10">
                     <p className="text-sm text-gray-300 font-medium">Valor Total em Estoque</p>
-                    <h3 className="text-2xl font-bold text-white mt-1">R$ {realKPIs.totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+                    <h3 className="text-2xl font-bold text-white mt-1">R$ {displayValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
                     <p className="text-xs text-green-400 mt-2 flex items-center gap-1">
                        <Icon name="verified" size={14} /> Custo de Reposição (Ativos)
                     </p>
                 </div>
             </div>
 
-            {/* Total Active Items - REAL DATA */}
+            {/* Total Active Items - REAL DATA + INACTIVE */}
             <div className="bg-white dark:bg-surface-dark p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-card-border hover:border-primary/50 transition-colors group">
                 <div className="flex justify-between items-start mb-2">
                     <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-primary">
@@ -309,22 +333,16 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                     </div>
                 </div>
                 <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Itens Ativos</p>
-                <h3 className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{realKPIs.totalCount.toLocaleString()}</h3>
-                <p className="text-xs text-gray-400 mt-1">SKUs Cadastrados</p>
-            </div>
-
-            <div className="bg-white dark:bg-surface-dark p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-card-border hover:border-primary/50 transition-colors group">
-                <div className="flex justify-between items-start mb-2">
-                    <div className="p-2 bg-orange-50 dark:bg-orange-900/20 rounded-lg text-orange-600">
-                        <Icon name="rule" />
-                    </div>
-                    <span className="text-xs font-bold text-red-500 bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded">-0.3%</span>
+                <div className="flex items-end gap-3 mt-1">
+                    <h3 className="text-2xl font-bold text-gray-900 dark:text-white">{realKPIs.totalCount.toLocaleString()}</h3>
+                    <span className="text-xs font-bold bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-400 px-2 py-1 rounded mb-1">
+                        + {realKPIs.inactiveCount.toLocaleString()} Inativos
+                    </span>
                 </div>
-                <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Acuracidade Geral</p>
-                <h3 className="text-2xl font-bold text-gray-900 dark:text-white mt-1">98.2%</h3>
-                <p className="text-xs text-gray-400 mt-1">Meta: 99.0%</p>
+                <p className="text-xs text-gray-400 mt-1">SKUs Cadastrados no Sistema</p>
             </div>
 
+            {/* Perdas/Sobra */}
             <div className="bg-white dark:bg-surface-dark p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-card-border hover:border-primary/50 transition-colors group">
                 <div className="flex justify-between items-start mb-2">
                     <div className="p-2 bg-red-50 dark:bg-red-900/20 rounded-lg text-red-600">

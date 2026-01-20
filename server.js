@@ -129,24 +129,38 @@ const initDb = () => {
     });
 };
 
-// --- ROTAS (Todas as rotas restauradas e aprimoradas) ---
+// --- ROTAS ---
 
 app.get('/analytics/kpis', (req, res) => {
     Firebird.attach(options, async (err, db) => {
-        if (err) return res.status(500).json({ totalValue: 0, totalCount: 0 });
+        if (err) return res.status(500).json({ totalValue: 0, totalCount: 0, inactiveCount: 0 });
         try {
+            // Valor total (apenas ativos)
             const sqlValue = `SELECT SUM(COALESCE(PRO_PRECOULTCOMPRA, 0) * COALESCE(PRO_EST_ATUAL, 0)) as TOTAL_VALUE FROM PRODUTOS WHERE PRO_ATIVO = 'S'`;
             const resValue = await execute(db, sqlValue);
             const totalValue = resValue[0]?.TOTAL_VALUE || 0;
-            const sqlCount = `SELECT COUNT(*) as TOTAL_COUNT FROM PRODUTOS WHERE PRO_ATIVO = 'S'`;
+
+            // Contagens Ativos vs Inativos
+            const sqlCount = `
+                SELECT 
+                    SUM(CASE WHEN PRO_ATIVO = 'S' THEN 1 ELSE 0 END) as ACTIVE_COUNT,
+                    SUM(CASE WHEN PRO_ATIVO <> 'S' THEN 1 ELSE 0 END) as INACTIVE_COUNT
+                FROM PRODUTOS
+            `;
             const resCount = await execute(db, sqlCount);
-            const totalCount = resCount[0]?.TOTAL_COUNT || 0;
+            const totalCount = resCount[0]?.ACTIVE_COUNT || 0;
+            const inactiveCount = resCount[0]?.INACTIVE_COUNT || 0;
+
             db.detach();
-            res.json({ totalValue, totalCount });
-        } catch (e) { db.detach(); res.status(500).json({ totalValue: 0, totalCount: 0 }); }
+            res.json({ totalValue, totalCount, inactiveCount });
+        } catch (e) { 
+            db.detach(); 
+            res.status(500).json({ totalValue: 0, totalCount: 0, inactiveCount: 0 }); 
+        }
     });
 });
 
+// ... (Restante das rotas idênticas ao arquivo anterior, sem alterações)
 app.get('/block-counts', (req, res) => {
     const search = req.query.search || '';
     const gr_cod = req.query.gr_cod;
