@@ -55,6 +55,25 @@ export interface MetaStatus {
     mappedStock: number;
 }
 
+export interface RankingItem {
+    name: string;
+    counts: number;
+    accuracy: number;
+    id: number;
+}
+
+export interface TopDivergenceItem {
+    id: number;
+    sku: string;
+    name: string;
+    brand: string;
+    location: string;
+    expected: number;
+    counted: number;
+    diff: number;
+    diffValue: number;
+}
+
 // Alterado para usar Proxy do Vite via '/api'
 // Isso resolve problemas de CORS e Mixed Content (HTTPS frontend -> HTTP backend)
 const API_BASE_URL = '/api';
@@ -155,13 +174,40 @@ export const api = {
       }
   },
 
-  // NOVA ROTA: Get Heatmap Data
-  getHeatmapData: async (): Promise<{ month: number, day: number, count: number }[]> => {
+  getAvailableYears: async (): Promise<number[]> => {
       try {
-          const response = await fetch(`${API_BASE_URL}/analytics/heatmap`);
+          const response = await fetch(`${API_BASE_URL}/analytics/years`);
+          if (response.ok) return await response.json();
+          return [new Date().getFullYear()];
+      } catch(e) { return [new Date().getFullYear()]; }
+  },
+
+  // NOVA ROTA: Get Heatmap Data (With Year Filter)
+  getHeatmapData: async (year?: number): Promise<{ month: number, day: number, count: number }[]> => {
+      try {
+          const url = year ? `${API_BASE_URL}/analytics/heatmap?year=${year}` : `${API_BASE_URL}/analytics/heatmap`;
+          const response = await fetch(url);
           if (response.ok) return await response.json();
           return [];
       } catch (e) { return []; }
+  },
+
+  getUserRanking: async (year?: number): Promise<RankingItem[]> => {
+      try {
+          const url = year ? `${API_BASE_URL}/analytics/ranking?year=${year}` : `${API_BASE_URL}/analytics/ranking`;
+          const response = await fetch(url);
+          if (response.ok) return await response.json();
+          return [];
+      } catch(e) { return []; }
+  },
+
+  getTopDivergences: async (year?: number): Promise<TopDivergenceItem[]> => {
+      try {
+          const url = year ? `${API_BASE_URL}/analytics/top-divergences?year=${year}` : `${API_BASE_URL}/analytics/top-divergences`;
+          const response = await fetch(url);
+          if (response.ok) return await response.json();
+          return [];
+      } catch(e) { return []; }
   },
 
   // NOVA ROTA: Get Financial Categories

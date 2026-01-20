@@ -131,6 +131,27 @@ const initDb = () => {
 
 // --- ROTAS ---
 
+app.get('/analytics/years', (req, res) => {
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.json([]);
+        const sql = `
+            SELECT DISTINCT EXTRACT(YEAR FROM DATA_HORA) as ANO 
+            FROM GRIDE_INVENTARIO_LOG 
+            WHERE STATUS NOT IN ('RESERVADO', 'DEVOLVIDO', 'pending')
+            ORDER BY 1 DESC
+        `;
+        db.query(sql, [], (err, rows) => {
+            db.detach();
+            if (err) return res.json([new Date().getFullYear()]);
+            const years = rows.map(r => r.ANO).filter(y => y);
+            // Sempre garante o ano atual na lista se não existir
+            const currentYear = new Date().getFullYear();
+            if (!years.includes(currentYear)) years.unshift(currentYear);
+            res.json(years);
+        });
+    });
+});
+
 app.get('/analytics/kpis', (req, res) => {
     Firebird.attach(options, async (err, db) => {
         if (err) return res.status(500).json({ totalCost: 0, totalSales: 0, totalCount: 0, inactiveCount: 0 });
@@ -168,30 +189,113 @@ app.get('/analytics/kpis', (req, res) => {
 });
 
 app.get('/analytics/heatmap', (req, res) => {
+    const year = req.query.year || new Date().getFullYear();
     Firebird.attach(options, (err, db) => {
         if (err) return res.json([]);
         
-        // Pega atividade do ano atual
+        // Pega atividade do ano selecionado
         const sql = `
             SELECT 
                 EXTRACT(MONTH FROM DATA_HORA) as MES, 
                 EXTRACT(DAY FROM DATA_HORA) as DIA, 
                 COUNT(*) as QTD
             FROM GRIDE_INVENTARIO_LOG 
-            WHERE EXTRACT(YEAR FROM DATA_HORA) = EXTRACT(YEAR FROM CURRENT_DATE)
+            WHERE EXTRACT(YEAR FROM DATA_HORA) = ?
+            AND STATUS NOT IN ('RESERVADO', 'DEVOLVIDO', 'pending')
             GROUP BY 1, 2
         `;
         
-        db.query(sql, [], (err, rows) => {
+        db.query(sql, [year], (err, rows) => {
             db.detach();
             if (err) return res.json([]);
-            // Retorna array de objetos { month: 1, day: 15, count: 50 }
             const data = rows.map(r => ({
                 month: r.MES, // 1-12
                 day: r.DIA,
                 count: r.QTD
             }));
             res.json(data);
+        });
+    });
+});
+
+app.get('/analytics/ranking', (req, res) => {
+    const year = req.query.year || new Date().getFullYear();
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.json([]);
+        const sql = `
+            SELECT 
+                USU_COD,
+                USUARIO_NOME, 
+                COUNT(*) as TOTAL_CONTAGENS,
+                SUM(CASE WHEN (QTD_SISTEMA - QTD_CONTADA) <> 0 THEN 1 ELSE 0 END) as DIVERGENCIAS
+            FROM GRIDE_INVENTARIO_LOG 
+            WHERE EXTRACT(YEAR FROM DATA_HORA) = ?
+            AND STATUS IN ('Contado', 'Divergência', 'Concluído', 'EDIÇÃO')
+            GROUP BY USU_COD, USUARIO_NOME
+            ORDER BY 3 DESC
+        `;
+        db.query(sql, [year], (err, rows) => {
+            db.detach();
+            if(err) return res.json([]);
+            
+            const ranking = rows.map(r => {
+                const total = r.TOTAL_CONTAGENS || 0;
+                const errors = r.DIVERGENCIAS || 0;
+                // Acuracidade: (Total - Erros) / Total
+                const accuracy = total > 0 ? ((total - errors) / total) * 100 : 100;
+                return {
+                    name: safeString(r.USUARIO_NOME),
+                    counts: total,
+                    accuracy: parseFloat(accuracy.toFixed(1)),
+                    id: r.USU_COD
+                };
+            });
+            res.json(ranking);
+        });
+    });
+});
+
+app.get('/analytics/top-divergences', (req, res) => {
+    const year = req.query.year || new Date().getFullYear();
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.json([]);
+        // Pega as 50 maiores divergências (calculadas por valor estimado, usando preço de venda como base para impacto)
+        const sql = `
+            SELECT FIRST 50
+                L.ID,
+                L.PRO_NRFABRICANTE, 
+                L.NOME_PRODUTO, 
+                L.LOCALIZACAO, 
+                L.QTD_SISTEMA, 
+                L.QTD_CONTADA,
+                P.PRO_PRECOULTCOMPRA,
+                P.MAR_COD,
+                M.MAR_DESCRI,
+                (L.QTD_CONTADA - L.QTD_SISTEMA) as DIFF,
+                ((L.QTD_CONTADA - L.QTD_SISTEMA) * COALESCE(P.PRO_PRECOULTCOMPRA, 0)) as IMPACTO
+            FROM GRIDE_INVENTARIO_LOG L
+            JOIN PRODUTOS P ON L.PRO_COD = P.PRO_COD
+            LEFT JOIN MARCAS M ON P.MAR_COD = M.MAR_COD
+            WHERE EXTRACT(YEAR FROM L.DATA_HORA) = ?
+            AND (L.QTD_CONTADA - L.QTD_SISTEMA) <> 0
+            AND L.STATUS IN ('Contado', 'Divergência', 'Concluído')
+            ORDER BY ABS((L.QTD_CONTADA - L.QTD_SISTEMA) * COALESCE(P.PRO_PRECOULTCOMPRA, 0)) DESC
+        `;
+        db.query(sql, [year], (err, rows) => {
+            db.detach();
+            if(err) return res.json([]);
+            const result = rows.map(r => ({
+                id: r.ID,
+                sku: safeString(r.PRO_NRFABRICANTE),
+                name: safeString(r.NOME_PRODUTO),
+                brand: safeString(r.MAR_DESCRI),
+                location: safeString(r.LOCALIZACAO),
+                expected: r.QTD_SISTEMA,
+                counted: r.QTD_CONTADA,
+                diff: r.DIFF,
+                diffValue: r.IMPACTO
+            }));
+            res.json(result);
         });
     });
 });
