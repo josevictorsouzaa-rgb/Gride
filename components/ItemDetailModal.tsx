@@ -135,7 +135,7 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
   // Encontrar o último evento relevante (Contagem/Divergência/Edição) para exibir no card
   const lastEvent = useMemo(() => {
       if (history.length === 0) return null;
-      // Procura o primeiro evento que tenha uma quantidade registrada (newValue)
+      // Procura o primeiro evento que tenha uma quantidade registrada (newValue) definido
       return history.find(h => h.newValue !== undefined) || null;
   }, [history]);
 
@@ -184,8 +184,8 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
                 
                 {/* MOBILE LAYOUT: GRID 2x1 COMPACTO (Visível apenas mobile) */}
                 <div className="md:hidden grid grid-cols-2 gap-3 p-4 bg-gray-50/50 dark:bg-black/10">
-                    {/* Card 1: Estoque */}
-                    <div className="col-span-1 bg-gradient-to-br from-blue-600 to-blue-700 text-white p-4 rounded-2xl shadow-lg shadow-blue-900/20 relative overflow-hidden flex flex-col justify-between min-h-[140px]">
+                    {/* Card 1: Estoque + Info Última Contagem */}
+                    <div className="col-span-1 bg-gradient-to-br from-blue-600 to-blue-700 text-white p-4 rounded-2xl shadow-lg shadow-blue-900/20 relative overflow-hidden flex flex-col justify-between min-h-[150px]">
                          <div className="absolute -right-3 -top-3 text-white/10 rotate-12"><Icon name="inventory_2" size={90} /></div>
                          
                          <div>
@@ -199,41 +199,49 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
                             <p className="text-[10px] text-blue-200 relative z-10 opacity-80">{item.loc || 'Geral'}</p>
                          </div>
 
-                         {/* LAST COUNT INFO MOBILE */}
+                         {/* INFO ÚLTIMA CONTAGEM NO MOBILE */}
                          {lastEvent && (
-                             <div className="mt-2 pt-2 border-t border-white/20 flex items-center justify-between relative z-10">
-                                <div className="flex items-center gap-1.5">
-                                    <div className="size-5 rounded-full bg-white/20 flex items-center justify-center text-[8px] font-bold">
-                                        {lastEvent.user.charAt(0)}
+                             <div className="mt-2 pt-2 border-t border-white/20 relative z-10">
+                                <p className="text-[8px] font-bold uppercase text-blue-200 mb-1">Última Contagem</p>
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-1.5">
+                                        <div className="size-5 rounded-full bg-white/20 flex items-center justify-center text-[8px] font-bold">
+                                            {lastEvent.user.charAt(0)}
+                                        </div>
+                                        <div className="flex flex-col leading-none">
+                                            <span className="text-[9px] font-bold truncate max-w-[50px]">{lastEvent.user.split(' ')[0]}</span>
+                                            <span className="text-[8px] opacity-70">{getTimeAgo(lastEvent.DATA_HORA)}</span>
+                                        </div>
                                     </div>
-                                    <span className="text-[9px] font-bold truncate max-w-[50px]">{lastEvent.user.split(' ')[0]}</span>
-                                </div>
-                                <div className="flex flex-col items-end leading-none">
-                                    <span className="text-[10px] font-bold">{lastEvent.newValue} un</span>
-                                    <span className="text-[8px] opacity-70">{getTimeAgo(lastEvent.DATA_HORA)}</span>
+                                    <span className="text-[10px] font-black bg-white/10 px-1.5 py-0.5 rounded">
+                                        {lastEvent.newValue} un
+                                    </span>
                                 </div>
                              </div>
                          )}
                     </div>
 
-                    {/* Card 2: Financeiro */}
-                    <div className="col-span-1 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 p-4 rounded-2xl shadow-sm flex flex-col justify-center min-h-[140px] relative">
-                         <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">Valor Total</p>
-                         <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight leading-none mb-3">
-                            {formatCurrency(financialData.totalValue)}
-                         </p>
-                         <div className="w-full h-px bg-gray-100 dark:bg-white/10 mb-3"></div>
-                         <div className="flex flex-col gap-2">
+                    {/* Card 2: Financeiro (Com Custo e Venda) */}
+                    <div className="col-span-1 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 p-4 rounded-2xl shadow-sm flex flex-col justify-between min-h-[150px] relative">
+                         <div>
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">Valor Total</p>
+                            <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight leading-none">
+                                {formatCurrency(financialData.totalValue)}
+                            </p>
+                         </div>
+                         
+                         <div className="w-full h-px bg-gray-100 dark:bg-white/10 my-2"></div>
+                         
+                         {/* Grid Custo x Venda no Mobile */}
+                         <div className="grid grid-cols-1 gap-2">
+                            <div>
+                                <span className="text-[9px] uppercase text-gray-400 font-bold block">Custo Unit.</span>
+                                <span className="text-sm font-bold text-gray-600 dark:text-gray-300">{formatCurrency(financialData.cost)}</span>
+                            </div>
                             <div>
                                 <span className="text-[9px] uppercase text-gray-400 font-bold block">Venda Unit.</span>
                                 <span className="text-sm font-bold text-green-600 dark:text-green-400">{formatCurrency(financialData.price)}</span>
                             </div>
-                            {lastEvent && (
-                                <div className="text-[9px] text-gray-400 font-medium flex items-center gap-1">
-                                    <Icon name="event" size={10} />
-                                    <span>Atualizado: {lastEvent.displayDate}</span>
-                                </div>
-                            )}
                          </div>
                     </div>
                 </div>
@@ -265,9 +273,9 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
                                 </div>
                             </div>
 
-                            {/* LAST COUNT INFO DESKTOP - BOX DETALHADO */}
+                            {/* LAST COUNT INFO DESKTOP */}
                             {lastEvent && (
-                                <div className="mt-6 bg-black/20 rounded-xl p-3 border border-white/10 backdrop-blur-sm">
+                                <div className="mt-6 bg-black/20 rounded-xl p-3 border border-white/10 backdrop-blur-sm transition-colors hover:bg-black/30">
                                     <div className="flex justify-between items-start mb-2">
                                         <span className="text-[10px] font-bold uppercase text-blue-200 tracking-wider">Última Conferência</span>
                                         <span className="text-[10px] font-mono text-blue-100 opacity-80">{lastEvent.displayDate} • {lastEvent.displayTime}</span>
@@ -313,7 +321,6 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
             </div>
 
             {/* DIREITA (DESKTOP) / BAIXO (MOBILE) - TIMELINE */}
-            {/* Agora é um flex-col para ter header fixo e conteúdo rolável */}
             <div className="flex-1 flex flex-col min-h-0 bg-gray-50/50 dark:bg-black/20">
                 
                 {/* CABEÇALHO DA TIMELINE (FIXO) */}
@@ -330,8 +337,7 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
                 {/* CONTEÚDO DA TIMELINE (ROLÁVEL) */}
                 <div className="flex-1 overflow-y-auto p-4 md:p-8 pt-4">
                     <div className="relative space-y-0 pb-10">
-                        {/* Linha Vertical Contínua (Centralizada no DOT) */}
-                        {/* Left-6 = 24px. Dots também estão no Left-6. Perfeito alinhamento. */}
+                        {/* Linha Vertical Contínua */}
                         <div className="absolute top-2 bottom-0 left-6 w-0.5 bg-gray-200 dark:bg-gray-800 -translate-x-[1px]"></div>
 
                         {loadingHistory ? (
@@ -359,10 +365,8 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
 
                                 return (
                                     <div key={idx} className="relative pl-14 pb-6 group last:pb-0">
-                                        {/* Ponto na Linha */}
                                         <div className={`absolute top-4 left-6 -translate-x-1/2 size-3.5 rounded-full border-[2px] border-white dark:border-[#0d1116] shadow-sm z-10 ring-2 ring-opacity-20 ${theme.dot} ring-gray-400`} />
 
-                                        {/* Card do Evento */}
                                         <div className={`rounded-2xl p-4 border ${theme.bg} ${theme.border} relative transition-all hover:shadow-md`}>
                                             <div className="flex justify-between items-start mb-2 gap-2">
                                                 <div className="flex items-center gap-2 min-w-0">
@@ -388,7 +392,6 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
                                                 </span>
                                             </div>
 
-                                            {/* Detalhes de Quantidade */}
                                             {(h.newValue !== undefined || h.reason) && (
                                                 <div className="mt-3 pt-3 border-t border-dashed border-black/5 dark:border-white/10">
                                                     {h.newValue !== undefined && (
@@ -400,7 +403,6 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
                                                         </div>
                                                     )}
                                                     
-                                                    {/* Motivo (Se houver) */}
                                                     {h.reason && (
                                                         <div className="mt-3 text-xs font-medium text-orange-800 dark:text-orange-200 bg-orange-100 dark:bg-orange-900/30 p-2.5 rounded-lg border border-orange-200 dark:border-orange-800/50 flex items-start gap-2">
                                                             <Icon name="format_quote" size={14} className="shrink-0 opacity-50" />
@@ -419,7 +421,6 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
             </div>
         </div>
 
-        {/* Footer Action (Mobile Only Fixed, Desktop Included) */}
         {onAction && (
             <div className="p-4 bg-white dark:bg-[#181c22] border-t border-gray-200 dark:border-white/5 shrink-0 z-20 md:rounded-b-3xl">
                <button 
