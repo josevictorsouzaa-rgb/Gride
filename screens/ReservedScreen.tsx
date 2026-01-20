@@ -36,20 +36,22 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
   useEffect(() => {
       if (currentUser) {
           api.getReservedBlocks(currentUser.id).then(freshBlocks => {
+              if (!Array.isArray(freshBlocks)) {
+                  setLocalBlocks([]);
+                  return;
+              }
               // PROCESSAMENTO CRÍTICO: Garantir que o status vindo do JSON seja respeitado
               const initialized = freshBlocks.map(b => ({
                 ...b,
-                items: b.items.map(i => {
+                items: b.items ? b.items.map((i: any) => {
                     const hasStatus = i.status && i.status !== 'pending';
                     const savedQty = i.countedQty !== undefined ? i.countedQty : 0;
                     
-                    // Se o item tem status 'counted' mas não tem objeto lastCount (pode acontecer no JSON simplificado)
-                    // recriamos o lastCount para que a UI mostre "Em... por..."
                     let rebuiltLastCount = i.lastCount;
                     if (hasStatus && !rebuiltLastCount) {
                         rebuiltLastCount = {
                             user: currentUser.name || 'Você',
-                            date: 'Salvo', // Indica que veio do banco
+                            date: 'Salvo',
                             qty: savedQty,
                             location: i.location || ''
                         };
@@ -61,9 +63,12 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                         countedQty: savedQty,
                         lastCount: rebuiltLastCount
                     };
-                })
+                }) : []
               }));
               setLocalBlocks(initialized);
+          }).catch(err => {
+              console.error("Erro ao carregar blocos reservados:", err);
+              setLocalBlocks([]);
           });
       }
   }, [currentUser]);
@@ -117,7 +122,7 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
         
         return {
             ...block,
-            items: block.items.map(item => {
+            items: block.items.map((item: any) => {
                 if (item.ref === selectedItem.ref) { 
                     return {
                         ...item,
