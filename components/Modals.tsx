@@ -15,6 +15,7 @@ interface EntryModalProps extends ModalProps {
   itemSku?: string;
   itemBrand?: string;
   systemQuantity?: number; // Quantidade do Sistema
+  initialCount?: number; // Quantidade previamente contada (para edição)
   scannedLocation?: string; // Código vindo do Scanner da tela pai
   onRequestScan?: () => void; // Função para abrir o scanner da tela pai
   lastCountInfo?: {
@@ -75,6 +76,7 @@ export const EntryModal: React.FC<EntryModalProps> = ({
   itemSku,
   itemBrand,
   systemQuantity = 0,
+  initialCount,
   scannedLocation = '',
   onRequestScan,
   lastCountInfo, 
@@ -106,7 +108,17 @@ export const EntryModal: React.FC<EntryModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setMode('counting');
-      setQuantity(systemQuantity || 0);
+      
+      // Lógica de Inicialização da Quantidade:
+      // Se tiver initialCount (edição), usa ele.
+      // Se não, usa systemQuantity (sugestão).
+      // Se systemQuantity for null/undefined, usa 0.
+      if (typeof initialCount === 'number') {
+          setQuantity(initialCount);
+      } else {
+          setQuantity(systemQuantity || 0);
+      }
+
       setIsAdjustment(false);
       setAdjustmentReason('');
       setProblemReason('');
@@ -120,7 +132,7 @@ export const EntryModal: React.FC<EntryModalProps> = ({
           setLocPrateleira('');
       }
     }
-  }, [isOpen, systemQuantity, scannedLocation]);
+  }, [isOpen, systemQuantity, initialCount, scannedLocation]);
 
   const parseLocation = (code: string) => {
       const parts = code.split('-');

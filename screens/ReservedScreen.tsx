@@ -90,20 +90,20 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
   const handleConfirmCount = async (qty: number, status: 'counted' | 'not_located' | 'issue', reason?: string) => {
     if (!selectedItem || activeBlockId === null) return;
 
-    // LÓGICA CRÍTICA DE TRATAMENTO:
-    // Se 'issue' -> 'divergence_info' (Problema direto)
-    // Se 'counted' E tiver 'reason' -> 'divergence_info' (Apontamento com contagem)
-    // Se 'not_located' -> 'not_located'
+    // LÓGICA CRÍTICA DE TRATAMENTO E CONTAGEM:
     
     let finalStatus: 'counted' | 'not_located' | 'divergence_info' = 'counted';
-    
+    let finalQty = qty;
+
     if (status === 'not_located') {
         finalStatus = 'not_located';
+        finalQty = 0; // "Não Localizado" deve zerar a contagem para não gerar estoque fantasma.
     } else if (status === 'issue') {
         finalStatus = 'divergence_info';
+        // Mantém a quantidade inserida (se foi inserida 0 na modal de problema, será 0 aqui)
     } else if (status === 'counted' && reason && reason.trim().length > 0) {
-        // Se contou mas tem observação, é uma divergência que requer tratamento, 
-        // mas a quantidade será salva.
+        // Se contou mas tem observação (checkbox de erro de cadastro), é divergência.
+        // A quantidade contada DEVE SER MANTIDA e lançada.
         finalStatus = 'divergence_info';
     }
 
@@ -120,12 +120,12 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                     return {
                         ...item,
                         status: finalStatus,
-                        countedQty: qty,
+                        countedQty: finalQty, // Salva a quantidade processada (0 se não localizado)
                         divergenceReason: reason,
                         lastCount: {
                             user: currentUser?.name || 'Você',
                             date: 'Agora',
-                            qty: qty,
+                            qty: finalQty,
                             location: finalLocation
                         }
                     };
@@ -137,7 +137,7 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
 
     setLocalBlocks(updatedBlocks);
 
-    // 2. SALVA PROGRESSO NO BLOB JSON DA RESERVA (SEM LOGAR NO HISTORICO AINDA)
+    // 2. SALVA PROGRESSO NO BLOB JSON DA RESERVA
     const activeBlock = updatedBlocks.find(b => b.id === activeBlockId);
     if (activeBlock) {
         await api.updateReservationProgress(activeBlockId, activeBlock.items);
@@ -363,12 +363,14 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                                                             <span className="font-bold text-green-800 dark:text-green-300 text-sm">
                                                                 {item.countedQty} un
                                                             </span>
+                                                            {/* Botão de Ajustar (Editar) */}
                                                             <button 
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
                                                                     handleOpenCount(block.id, item);
                                                                 }}
-                                                                className="size-6 rounded bg-green-200 dark:bg-green-800 flex items-center justify-center text-green-800 dark:text-green-100 hover:bg-green-300"
+                                                                className="size-6 rounded bg-green-200 dark:bg-green-800 flex items-center justify-center text-green-800 dark:text-green-100 hover:bg-green-300 active:scale-95 transition-all shadow-sm"
+                                                                title="Ajustar Contagem"
                                                             >
                                                                 <Icon name="edit" size={14} />
                                                             </button>
@@ -443,7 +445,9 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
         itemBrand={selectedItem?.brand}
         
         systemQuantity={selectedItem?.balance || 0} // Quantidade do sistema
-        scannedLocation={scannedCode} // Local escaneado (se houver)
+        initialCount={selectedItem?.countedQty} // Passa a contagem atual para edição
+        
+        scannedLocation={scannedCode} 
         
         lastCountInfo={selectedItem?.lastCount}
       />
