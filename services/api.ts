@@ -145,15 +145,32 @@ export const api = {
   },
 
   // NOVA ROTA: Get KPIs para Analytics (Valor Total, etc)
-  // ATUALIZAÇÃO: Inclui inactiveCount
-  getAnalyticsKPIs: async (): Promise<{ totalValue: number, totalCount: number, inactiveCount: number }> => {
+  getAnalyticsKPIs: async (): Promise<{ totalCost: number, totalSales: number, totalCount: number, inactiveCount: number }> => {
       try {
           const response = await fetch(`${API_BASE_URL}/analytics/kpis`);
-          if (!response.ok) return { totalValue: 0, totalCount: 0, inactiveCount: 0 };
+          if (!response.ok) return { totalCost: 0, totalSales: 0, totalCount: 0, inactiveCount: 0 };
           return await response.json();
       } catch (e) {
-          return { totalValue: 0, totalCount: 0, inactiveCount: 0 };
+          return { totalCost: 0, totalSales: 0, totalCount: 0, inactiveCount: 0 };
       }
+  },
+
+  // NOVA ROTA: Get Heatmap Data
+  getHeatmapData: async (): Promise<{ month: number, day: number, count: number }[]> => {
+      try {
+          const response = await fetch(`${API_BASE_URL}/analytics/heatmap`);
+          if (response.ok) return await response.json();
+          return [];
+      } catch (e) { return []; }
+  },
+
+  // NOVA ROTA: Get Financial Categories
+  getFinancialCategories: async (): Promise<{ name: string, qty: number, value: number }[]> => {
+      try {
+          const response = await fetch(`${API_BASE_URL}/analytics/categories-financial`);
+          if (response.ok) return await response.json();
+          return [];
+      } catch (e) { return []; }
   },
 
   // NOVA ROTA: Get User Daily Stats

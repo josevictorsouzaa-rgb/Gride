@@ -133,12 +133,19 @@ const initDb = () => {
 
 app.get('/analytics/kpis', (req, res) => {
     Firebird.attach(options, async (err, db) => {
-        if (err) return res.status(500).json({ totalValue: 0, totalCount: 0, inactiveCount: 0 });
+        if (err) return res.status(500).json({ totalCost: 0, totalSales: 0, totalCount: 0, inactiveCount: 0 });
         try {
-            // Valor total (apenas ativos)
-            const sqlValue = `SELECT SUM(COALESCE(PRO_PRECOULTCOMPRA, 0) * COALESCE(PRO_EST_ATUAL, 0)) as TOTAL_VALUE FROM PRODUTOS WHERE PRO_ATIVO = 'S'`;
+            // Financeiro (Custo e Venda) dos Ativos
+            const sqlValue = `
+                SELECT 
+                    SUM(COALESCE(PRO_PRECOULTCOMPRA, 0) * COALESCE(PRO_EST_ATUAL, 0)) as TOTAL_COST,
+                    SUM(COALESCE(PRO_PRECOVENDA, 0) * COALESCE(PRO_EST_ATUAL, 0)) as TOTAL_SALES
+                FROM PRODUTOS 
+                WHERE PRO_ATIVO = 'S'
+            `;
             const resValue = await execute(db, sqlValue);
-            const totalValue = resValue[0]?.TOTAL_VALUE || 0;
+            const totalCost = resValue[0]?.TOTAL_COST || 0;
+            const totalSales = resValue[0]?.TOTAL_SALES || 0;
 
             // Contagens Ativos vs Inativos
             const sqlCount = `
@@ -152,11 +159,67 @@ app.get('/analytics/kpis', (req, res) => {
             const inactiveCount = resCount[0]?.INACTIVE_COUNT || 0;
 
             db.detach();
-            res.json({ totalValue, totalCount, inactiveCount });
+            res.json({ totalCost, totalSales, totalCount, inactiveCount });
         } catch (e) { 
             db.detach(); 
-            res.status(500).json({ totalValue: 0, totalCount: 0, inactiveCount: 0 }); 
+            res.status(500).json({ totalCost: 0, totalSales: 0, totalCount: 0, inactiveCount: 0 }); 
         }
+    });
+});
+
+app.get('/analytics/heatmap', (req, res) => {
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.json([]);
+        
+        // Pega atividade do ano atual
+        const sql = `
+            SELECT 
+                EXTRACT(MONTH FROM DATA_HORA) as MES, 
+                EXTRACT(DAY FROM DATA_HORA) as DIA, 
+                COUNT(*) as QTD
+            FROM GRIDE_INVENTARIO_LOG 
+            WHERE EXTRACT(YEAR FROM DATA_HORA) = EXTRACT(YEAR FROM CURRENT_DATE)
+            GROUP BY 1, 2
+        `;
+        
+        db.query(sql, [], (err, rows) => {
+            db.detach();
+            if (err) return res.json([]);
+            // Retorna array de objetos { month: 1, day: 15, count: 50 }
+            const data = rows.map(r => ({
+                month: r.MES, // 1-12
+                day: r.DIA,
+                count: r.QTD
+            }));
+            res.json(data);
+        });
+    });
+});
+
+app.get('/analytics/categories-financial', (req, res) => {
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.json([]);
+        const sql = `
+            SELECT 
+                G.GR_DESCRI,
+                COUNT(*) as QTD_FISICA,
+                SUM(P.PRO_PRECOULTCOMPRA * P.PRO_EST_ATUAL) as VALOR_TOTAL
+            FROM PRODUTOS P
+            JOIN GRUPOPRODUTOS G ON P.GR_COD = G.GR_COD
+            WHERE P.PRO_ATIVO = 'S'
+            GROUP BY G.GR_DESCRI
+            ORDER BY 3 DESC
+        `;
+        db.query(sql, [], (err, rows) => {
+            db.detach();
+            if (err) return res.json([]);
+            const result = rows.map(r => ({
+                name: safeString(r.GR_DESCRI),
+                qty: r.QTD_FISICA,
+                value: r.VALOR_TOTAL || 0
+            }));
+            res.json(result);
+        });
     });
 });
 

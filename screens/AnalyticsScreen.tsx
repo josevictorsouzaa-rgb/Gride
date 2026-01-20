@@ -5,12 +5,54 @@ import { Icon } from '../components/Icon';
 import { Screen } from '../types';
 import { ItemDetailModal } from '../components/ItemDetailModal';
 import { api } from '../services/api';
+import { GROUP_ICONS } from '../data/categories';
 
 interface AnalyticsScreenProps {
   onNavigate: (screen: Screen) => void;
 }
 
-// --- MOCK DATA GENERATORS ---
+// --- REUSABLE ANIMATED NUMBER COMPONENT ---
+const AnimatedNumber = ({ value, duration = 2000, prefix = '', suffix = '', decimals = 0 }: { value: number, duration?: number, prefix?: string, suffix?: string, decimals?: number }) => {
+    const [display, setDisplay] = useState(0);
+
+    useEffect(() => {
+        if (value > 0) {
+            let start = 0;
+            // Se já tiver um valor exibido (atualização), começa dele
+            if (display > 0 && Math.abs(display - value) < value) start = display;
+            
+            const end = value;
+            const range = end - start;
+            const startTime = Date.now();
+            
+            const timer = setInterval(() => {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                // Ease out function
+                const ease = 1 - Math.pow(1 - progress, 3);
+                
+                const current = start + (range * ease);
+                setDisplay(current);
+
+                if (progress === 1) clearInterval(timer);
+            }, 16); // ~60fps
+
+            return () => clearInterval(timer);
+        } else {
+            setDisplay(0);
+        }
+    }, [value]);
+
+    return (
+        <span>
+            {prefix}
+            {display.toLocaleString('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}
+            {suffix}
+        </span>
+    );
+};
+
+// --- MOCK DATA GENERATORS (Only for components not yet fully integrated with DB) ---
 
 const generateDivergences = (count: number) => {
   const items = [];
@@ -18,11 +60,11 @@ const generateDivergences = (count: number) => {
   const users = ['Carlos Silva', 'Mariana Santos', 'João Pedro', 'Ana Souza'];
   
   for (let i = 0; i < count; i++) {
-    const cost = Math.random() * 200 + 20; // R$ 20 to R$ 220
-    const margin = 1.6; // 60% markup
+    const cost = Math.random() * 200 + 20; 
+    const margin = 1.6; 
     const salesPrice = cost * margin;
     const stock = Math.floor(Math.random() * 50);
-    const diff = Math.floor(Math.random() * 10) - 5; // -5 to +5
+    const diff = Math.floor(Math.random() * 10) - 5; 
     const diffValue = diff * cost;
     const causer = users[Math.floor(Math.random() * users.length)];
 
@@ -37,34 +79,16 @@ const generateDivergences = (count: number) => {
       totalStockValue: stock * cost,
       expected: stock,
       counted: stock + diff,
-      diff: diff === 0 ? (Math.random() > 0.5 ? 1 : -1) : diff, // Ensure divergence
+      diff: diff === 0 ? (Math.random() > 0.5 ? 1 : -1) : diff, 
       diffValue: diffValue === 0 ? cost : diffValue,
       causer: causer,
-      history: [
-        { date: 'Hoje', user: causer, action: 'Contagem Cíclica', oldValue: stock, newValue: stock + diff },
-        { date: '15/10/2023', user: 'Mariana Santos', action: 'Entrada NFe', oldValue: stock - 10, newValue: stock },
-        { date: '10/09/2023', user: 'Sistema', action: 'Venda Balcão', oldValue: stock + 2, newValue: stock - 10 },
-      ]
+      history: []
     });
   }
-  return items.sort((a, b) => Math.abs(b.diffValue) - Math.abs(a.diffValue)); // Sort by impact
+  return items.sort((a, b) => Math.abs(b.diffValue) - Math.abs(a.diffValue)); 
 };
 
 const initialDivergenceData = generateDivergences(50);
-
-// Updated with icons and more specific data
-const categoryPerformance = [
-  { name: 'MOTOR', icon: 'car_repair', value: 850000, qty: 12500 },
-  { name: 'FREIOS', icon: 'motion_photos_on', value: 420000, qty: 8400 },
-  { name: 'SUSPENSÃO', icon: 'height', value: 380000, qty: 6200 },
-  { name: 'TRANSMISSÃO', icon: 'settings', value: 320000, qty: 2100 },
-  { name: 'ELÉTRICA', icon: 'bolt', value: 150000, qty: 15000 },
-  { name: 'ACESSÓRIOS', icon: 'extension', value: 80000, qty: 4500 },
-  { name: 'ALIMENTAÇÃO', icon: 'local_gas_station', value: 180000, qty: 3200 },
-  { name: 'REFRIGERAÇÃO', icon: 'mode_fan', value: 70320, qty: 1800 },
-].sort((a, b) => b.value - a.value); // Sort by Value desc
-
-const totalStockValueMock = categoryPerformance.reduce((acc, curr) => acc + curr.value, 0);
 
 const userRankData = [
   { name: 'Carlos Silva', counts: 1450, accuracy: 99.2, avatar: '849201' },
@@ -73,55 +97,83 @@ const userRankData = [
   { name: 'Ana Souza', counts: 850, accuracy: 96.5, avatar: 'Ana' },
 ];
 
-// --- HEATMAP LOGIC ---
-const generateHeatmapData = () => {
-  const data = [];
-  const now = new Date();
-  const oneYearAgo = new Date();
-  oneYearAgo.setFullYear(now.getFullYear() - 1);
+// --- HEATMAP COMPONENT (YEARLY - REAL DATA) ---
+const YearlyHeatmap = ({ data }: { data: { month: number, day: number, count: number }[] }) => {
+    // Generate full year grid
+    const today = new Date();
+    const currentYear = today.getFullYear();
+    const daysInYear = [];
+    const startOfYear = new Date(currentYear, 0, 1);
+    const endOfYear = new Date(currentYear, 11, 31);
 
-  for (let d = new Date(oneYearAgo); d <= now; d.setDate(d.getDate() + 1)) {
-    const probability = Math.random();
-    let level = 0;
-    if (probability > 0.8) level = 3; 
-    else if (probability > 0.5) level = 2; 
-    else if (probability > 0.2) level = 1; 
+    // Create a map for quick lookup
+    const countMap = new Map();
+    data.forEach(d => countMap.set(`${d.month}-${d.day}`, d.count));
 
-    data.push({
-      date: new Date(d),
-      level: level, 
-      count: level === 0 ? 0 : Math.floor(Math.random() * 50 * level)
-    });
-  }
-  return data;
-};
-
-const heatmapData = generateHeatmapData();
-
-// --- COMPONENTS ---
-
-const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-white dark:bg-surface-dark p-3 border border-gray-200 dark:border-card-border rounded-xl shadow-xl text-xs z-50">
-          <p className="font-bold text-gray-900 dark:text-white mb-2">{label}</p>
-          {payload.map((entry: any, index: number) => (
-             <p key={index} style={{ color: entry.color }} className="flex justify-between gap-4 font-medium mb-1">
-                <span>{entry.name === 'value' ? 'Valor (R$)' : 'Qtd (un)'}:</span>
-                <span>
-                    {entry.name === 'value' 
-                        ? `R$ ${entry.value.toLocaleString('pt-BR')}` 
-                        : entry.value.toLocaleString('pt-BR')}
-                </span>
-             </p>
-          ))}
-        </div>
-      );
+    for (let d = new Date(startOfYear); d <= endOfYear; d.setDate(d.getDate() + 1)) {
+        daysInYear.push(new Date(d));
     }
-    return null;
+
+    // Determine weeks (columns)
+    const weeks = [];
+    let currentWeek: any[] = [];
+    
+    // Pad first week if year doesn't start on Sunday
+    for(let i=0; i<startOfYear.getDay(); i++) currentWeek.push(null);
+
+    daysInYear.forEach(date => {
+        currentWeek.push(date);
+        if (currentWeek.length === 7) {
+            weeks.push(currentWeek);
+            currentWeek = [];
+        }
+    });
+    if (currentWeek.length > 0) {
+        while(currentWeek.length < 7) currentWeek.push(null);
+        weeks.push(currentWeek);
+    }
+
+    return (
+        <div className="overflow-x-auto pb-2 no-scrollbar">
+            <div className="flex gap-1 min-w-max">
+                {weeks.map((week, wIdx) => (
+                    <div key={wIdx} className="flex flex-col gap-1">
+                        {week.map((date, dIdx) => {
+                            if (!date) return <div key={dIdx} className="size-3" />;
+                            
+                            const key = `${date.getMonth() + 1}-${date.getDate()}`;
+                            const count = countMap.get(key) || 0;
+                            const isFuture = date > today;
+
+                            let bgColor = 'bg-gray-100 dark:bg-white/5';
+                            if (!isFuture) {
+                                if (count > 50) bgColor = 'bg-green-600 dark:bg-green-500';
+                                else if (count > 20) bgColor = 'bg-green-400 dark:bg-green-600';
+                                else if (count > 0) bgColor = 'bg-green-200 dark:bg-green-900/40';
+                            } else {
+                                bgColor = 'bg-transparent border border-gray-100 dark:border-white/5'; // Future style
+                            }
+
+                            return (
+                                <div 
+                                    key={dIdx} 
+                                    className={`size-3 rounded-[2px] ${bgColor} transition-all hover:ring-2 hover:ring-offset-1 hover:ring-primary/50 relative group`}
+                                >
+                                    {/* Tooltip */}
+                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block bg-black text-white text-[10px] p-1 rounded whitespace-nowrap z-50">
+                                        {date.toLocaleDateString()}: {count} itens
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
 };
 
-// --- DIVERGENCE RESOLUTION MODAL (Specialized) ---
+// --- DIVERGENCE RESOLUTION MODAL ---
 interface DivergenceResolutionModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -155,7 +207,7 @@ const DivergenceResolutionModal: React.FC<DivergenceResolutionModalProps> = ({ i
         </div>
 
         <div className="p-6 space-y-6">
-           {/* Item Details - Enhanced for Identification */}
+           {/* Item Details */}
            <div className="flex items-start gap-4 bg-gray-50 dark:bg-white/5 p-4 rounded-2xl border border-gray-100 dark:border-white/5">
               <div className="size-14 rounded-xl bg-white dark:bg-surface-dark border border-gray-200 dark:border-white/10 flex items-center justify-center shrink-0 text-primary shadow-sm">
                  <Icon name="extension" size={32} />
@@ -194,19 +246,6 @@ const DivergenceResolutionModal: React.FC<DivergenceResolutionModalProps> = ({ i
                  {item.diff > 0 ? '+' : ''}{item.diff}
               </div>
            </div>
-
-           {/* Responsibility */}
-           <div className="flex items-center gap-3 p-3 rounded-xl bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-100 dark:border-yellow-900/30">
-              <div className="size-10 rounded-full bg-yellow-100 dark:bg-yellow-900/40 text-yellow-600 flex items-center justify-center shrink-0">
-                 <Icon name="history_edu" size={20} />
-              </div>
-              <div className="flex-1">
-                 <p className="text-xs font-bold uppercase text-yellow-700 dark:text-yellow-500">Origem da Divergência</p>
-                 <p className="text-sm text-gray-800 dark:text-gray-200">
-                    Apontado por <strong>{item.causer}</strong> na última contagem cíclica.
-                 </p>
-              </div>
-           </div>
         </div>
 
         {/* Actions */}
@@ -235,38 +274,34 @@ const DivergenceResolutionModal: React.FC<DivergenceResolutionModalProps> = ({ i
 export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) => {
   const [divergenceList, setDivergenceList] = useState(initialDivergenceData);
   const [selectedDivergence, setSelectedDivergence] = useState<any | null>(null);
-  const [realKPIs, setRealKPIs] = useState({ totalValue: 0, totalCount: 0, inactiveCount: 0 });
-  const [displayValue, setDisplayValue] = useState(0);
+  
+  // Real Data States
+  const [realKPIs, setRealKPIs] = useState({ totalCost: 0, totalSales: 0, totalCount: 0, inactiveCount: 0 });
+  const [heatmapData, setHeatmapData] = useState<{ month: number, day: number, count: number }[]>([]);
+  const [categoriesData, setCategoriesData] = useState<{ name: string, qty: number, value: number, icon: string }[]>([]);
 
   useEffect(() => {
+      // 1. Fetch KPIs
       api.getAnalyticsKPIs().then(setRealKPIs);
+      
+      // 2. Fetch Heatmap
+      api.getHeatmapData().then(setHeatmapData);
+
+      // 3. Fetch Categories Financials
+      api.getFinancialCategories().then(data => {
+          // Add icons roughly mapped or default
+          const mapped = data.map(cat => ({
+              ...cat,
+              icon: 'category' // Fallback icon, could map if GR_COD was available or by name
+          }));
+          setCategoriesData(mapped);
+      });
   }, []);
 
-  // ANIMATION LOGIC: COUNT UP
-  useEffect(() => {
-      if (realKPIs.totalValue > 0) {
-          const duration = 2500; // 2.5 seconds animation
-          const steps = 60; // 60 updates per second (approx)
-          const intervalTime = duration / steps;
-          const increment = realKPIs.totalValue / steps;
-          
-          let current = 0;
-          const timer = setInterval(() => {
-              current += increment;
-              if (current >= realKPIs.totalValue) {
-                  setDisplayValue(realKPIs.totalValue);
-                  clearInterval(timer);
-              } else {
-                  setDisplayValue(current);
-              }
-          }, intervalTime);
-
-          return () => clearInterval(timer);
-      }
-  }, [realKPIs.totalValue]);
+  const ticketMedio = realKPIs.totalCount > 0 ? (realKPIs.totalSales / realKPIs.totalCount) : 0;
+  const totalCategoryValue = categoriesData.reduce((acc, curr) => acc + curr.value, 0);
 
   const handleAcceptDivergence = (item: any) => {
-    // Remove the item from the list to simulate acceptance/resolution
     setDivergenceList(prev => prev.filter(i => i.id !== item.id));
     setSelectedDivergence(null);
   };
@@ -274,7 +309,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
   return (
     <div className="flex flex-col w-full min-h-screen bg-background-light dark:bg-background-dark pb-20 md:pb-6">
       
-      {/* HEADER & FILTERS */}
+      {/* HEADER */}
       <header className="sticky top-0 z-20 bg-white/95 dark:bg-background-dark/95 backdrop-blur-md border-b border-gray-200 dark:border-card-border p-4 md:px-8">
          <div className="max-w-7xl mx-auto w-full">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
@@ -284,7 +319,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                         Dashboard Gerencial
                     </h1>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
-                        Análise financeira, acuracidade e controle de perdas.
+                        Análise financeira e controle de perdas.
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -303,10 +338,10 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
 
       <main className="flex-1 max-w-7xl mx-auto w-full p-4 md:p-8 space-y-6">
         
-        {/* KPI CARDS - ENHANCED WITH MONETARY VALUE */}
+        {/* KPI CARDS ROW */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             
-            {/* Total Stock Value - REAL DATA WITH ANIMATION */}
+            {/* 1. Total Stock Value (Double Value: Cost & Sales) */}
             <div className="bg-gradient-to-br from-gray-900 to-gray-800 dark:from-surface-dark dark:to-black p-5 rounded-2xl shadow-lg border border-gray-700 relative overflow-hidden group">
                 <div className="absolute right-0 top-0 p-4 opacity-10">
                    <Icon name="payments" size={80} className="text-white" />
@@ -317,95 +352,85 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                     </div>
                 </div>
                 <div className="relative z-10">
-                    <p className="text-sm text-gray-300 font-medium">Valor Total em Estoque</p>
-                    <h3 className="text-2xl font-bold text-white mt-1">R$ {displayValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
-                    <p className="text-xs text-green-400 mt-2 flex items-center gap-1">
-                       <Icon name="verified" size={14} /> Custo de Reposição (Ativos)
-                    </p>
+                    <p className="text-sm text-gray-300 font-medium">Valor em Estoque (Custo)</p>
+                    <h3 className="text-2xl font-bold text-white mt-1">
+                        <AnimatedNumber value={realKPIs.totalCost} prefix="R$ " decimals={2} />
+                    </h3>
+                    
+                    <div className="mt-3 pt-3 border-t border-white/10 flex justify-between items-end">
+                        <div>
+                            <p className="text-[10px] text-gray-400 font-bold uppercase">Valor de Venda</p>
+                            <p className="text-sm font-bold text-green-400">
+                                <AnimatedNumber value={realKPIs.totalSales} prefix="R$ " decimals={2} />
+                            </p>
+                        </div>
+                        <Icon name="trending_up" className="text-green-400 opacity-50" />
+                    </div>
                 </div>
             </div>
 
-            {/* Total Active Items - REAL DATA + INACTIVE */}
+            {/* 2. Total Items (Active & Inactive Animated) */}
             <div className="bg-white dark:bg-surface-dark p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-card-border hover:border-primary/50 transition-colors group">
                 <div className="flex justify-between items-start mb-2">
                     <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-primary">
                         <Icon name="inventory_2" />
                     </div>
                 </div>
-                <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Itens Ativos</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Itens no Sistema</p>
                 <div className="flex items-end gap-3 mt-1">
-                    <h3 className="text-2xl font-bold text-gray-900 dark:text-white">{realKPIs.totalCount.toLocaleString()}</h3>
+                    <h3 className="text-2xl font-bold text-gray-900 dark:text-white">
+                        <AnimatedNumber value={realKPIs.totalCount} duration={1500} />
+                    </h3>
                     <span className="text-xs font-bold bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-400 px-2 py-1 rounded mb-1">
-                        + {realKPIs.inactiveCount.toLocaleString()} Inativos
+                        + <AnimatedNumber value={realKPIs.inactiveCount} duration={1500} /> Inativos
                     </span>
                 </div>
-                <p className="text-xs text-gray-400 mt-1">SKUs Cadastrados no Sistema</p>
+                <p className="text-xs text-gray-400 mt-1">SKUs Únicos Cadastrados</p>
             </div>
 
-            {/* Perdas/Sobra */}
-            <div className="bg-white dark:bg-surface-dark p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-card-border hover:border-primary/50 transition-colors group">
+            {/* 3. Ticket Médio (Average Unit Price) */}
+            <div className="bg-white dark:bg-surface-dark p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-card-border hover:border-purple-500/50 transition-colors group">
                 <div className="flex justify-between items-start mb-2">
-                    <div className="p-2 bg-red-50 dark:bg-red-900/20 rounded-lg text-red-600">
-                        <Icon name="currency_exchange" />
+                    <div className="p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg text-purple-600">
+                        <Icon name="sell" />
                     </div>
                 </div>
-                <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Perdas/Sobra (Mês)</p>
-                <h3 className="text-2xl font-bold text-gray-900 dark:text-white mt-1 text-red-500">-R$ 840,00</h3>
-                <p className="text-xs text-gray-400 mt-1">Ajustes Líquidos</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Ticket Médio (Venda)</p>
+                <h3 className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+                    <AnimatedNumber value={ticketMedio} prefix="R$ " decimals={2} duration={2500} />
+                </h3>
+                <p className="text-xs text-gray-400 mt-1">Preço médio por item em estoque</p>
             </div>
         </div>
 
-        {/* HEATMAP - EXPANDED FULL WIDTH */}
+        {/* HEATMAP - ANNUAL & REAL DATA */}
         <div className="bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border p-6 overflow-hidden">
             <div className="flex items-center justify-between mb-6">
                 <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
                     <Icon name="calendar_month" className="text-gray-400" />
-                    Atividade de Inventário (365 dias)
+                    Atividade de Inventário ({new Date().getFullYear()})
                 </h2>
                 
                 {/* Intensity Legend */}
                 <div className="flex items-center gap-2 text-xs text-gray-500 font-medium bg-gray-50 dark:bg-white/5 px-3 py-1.5 rounded-lg">
                     <span>Menos</span>
                     <div className="flex gap-1 mx-1">
-                        <div className="size-3 rounded-sm bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10" title="0 itens" />
-                        <div className="size-3 rounded-sm bg-green-200 dark:bg-green-900/40" title="Baixa atividade" />
-                        <div className="size-3 rounded-sm bg-green-400 dark:bg-green-600" title="Média atividade" />
-                        <div className="size-3 rounded-sm bg-green-600 dark:bg-green-500" title="Alta atividade" />
+                        <div className="size-3 rounded-sm bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10" />
+                        <div className="size-3 rounded-sm bg-green-200 dark:bg-green-900/40" />
+                        <div className="size-3 rounded-sm bg-green-400 dark:bg-green-600" />
+                        <div className="size-3 rounded-sm bg-green-600 dark:bg-green-500" />
                     </div>
                     <span>Mais</span>
                 </div>
             </div>
             
-            <div className="overflow-x-auto pb-2 no-scrollbar">
-                <div className="flex gap-1 min-w-max">
-                    {Array.from({ length: 53 }).map((_, colIndex) => (
-                        <div key={colIndex} className="flex flex-col gap-1">
-                            {Array.from({ length: 7 }).map((_, rowIndex) => {
-                                const dayIndex = colIndex * 7 + rowIndex;
-                                if (dayIndex >= heatmapData.length) return null;
-                                const day = heatmapData[dayIndex];
-                                let bgColor = 'bg-gray-100 dark:bg-white/5';
-                                if (day.level === 1) bgColor = 'bg-green-200 dark:bg-green-900/40';
-                                if (day.level === 2) bgColor = 'bg-green-400 dark:bg-green-600';
-                                if (day.level === 3) bgColor = 'bg-green-600 dark:bg-green-500';
-                                return (
-                                    <div 
-                                        key={rowIndex} 
-                                        className={`size-3 rounded-[2px] ${bgColor} transition-all hover:ring-2 hover:ring-offset-1 hover:ring-primary/50`}
-                                        title={`${day.date.toLocaleDateString()}: ${day.count} itens`}
-                                    />
-                                );
-                            })}
-                        </div>
-                    ))}
-                </div>
-            </div>
+            <YearlyHeatmap data={heatmapData} />
         </div>
 
         {/* MIDDLE SECTION: Category Breakdown & Ranking */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-            {/* CATEGORY BREAKDOWN TABLE (Takes 2/3 of space on desktop) */}
+            {/* CATEGORY BREAKDOWN TABLE (REAL DATA) */}
             <div className="lg:col-span-2 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border flex flex-col overflow-hidden h-[400px]">
                <div className="p-6 border-b border-gray-100 dark:border-white/5 flex justify-between items-center bg-gray-50/50 dark:bg-white/5">
                   <h2 className="text-lg font-bold text-gray-900 dark:text-white">Detalhamento Financeiro por Categoria</h2>
@@ -422,50 +447,54 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                         </tr>
                      </thead>
                      <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-                        {categoryPerformance.map((cat, idx) => {
-                           const percentage = (cat.value / totalStockValueMock) * 100;
-                           return (
-                              <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-white/5 transition-colors group">
-                                 <td className="py-4 px-6">
-                                    <div className="flex items-center gap-3">
-                                       <div className="size-8 rounded-lg bg-gray-100 dark:bg-white/10 flex items-center justify-center text-gray-500 dark:text-gray-400 group-hover:text-primary transition-colors">
-                                          <Icon name={cat.icon} size={18} />
-                                       </div>
-                                       <span className="font-bold text-sm text-gray-700 dark:text-gray-200">{cat.name}</span>
-                                    </div>
-                                 </td>
-                                 <td className="py-4 px-6 text-right">
-                                    <span className="font-mono text-sm text-gray-600 dark:text-gray-300 font-medium">
-                                       {cat.qty.toLocaleString()}
-                                    </span>
-                                 </td>
-                                 <td className="py-4 px-6 text-right">
-                                    <span className="font-bold text-sm text-gray-900 dark:text-white">
-                                       R$ {cat.value.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                    </span>
-                                 </td>
-                                 <td className="py-4 px-6">
-                                    <div className="flex items-center gap-3">
-                                       <div className="flex-1 h-2 bg-gray-100 dark:bg-white/10 rounded-full overflow-hidden">
-                                          <div 
-                                             className="h-full bg-primary rounded-full relative" 
-                                             style={{ width: `${percentage}%` }} 
-                                          />
-                                       </div>
-                                       <span className="text-xs font-bold text-gray-600 dark:text-gray-300 w-10 text-right">
-                                          {percentage.toFixed(1)}%
-                                       </span>
-                                    </div>
-                                 </td>
-                              </tr>
-                           );
-                        })}
+                        {categoriesData.length === 0 ? (
+                            <tr><td colSpan={4} className="p-8 text-center text-gray-400">Nenhum dado encontrado</td></tr>
+                        ) : (
+                            categoriesData.map((cat, idx) => {
+                            const percentage = totalCategoryValue > 0 ? (cat.value / totalCategoryValue) * 100 : 0;
+                            return (
+                                <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-white/5 transition-colors group">
+                                    <td className="py-4 px-6">
+                                        <div className="flex items-center gap-3">
+                                        <div className="size-8 rounded-lg bg-gray-100 dark:bg-white/10 flex items-center justify-center text-gray-500 dark:text-gray-400 group-hover:text-primary transition-colors">
+                                            <Icon name={cat.icon} size={18} />
+                                        </div>
+                                        <span className="font-bold text-sm text-gray-700 dark:text-gray-200">{cat.name}</span>
+                                        </div>
+                                    </td>
+                                    <td className="py-4 px-6 text-right">
+                                        <span className="font-mono text-sm text-gray-600 dark:text-gray-300 font-medium">
+                                        {cat.qty.toLocaleString()}
+                                        </span>
+                                    </td>
+                                    <td className="py-4 px-6 text-right">
+                                        <span className="font-bold text-sm text-gray-900 dark:text-white">
+                                        R$ {cat.value.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                        </span>
+                                    </td>
+                                    <td className="py-4 px-6">
+                                        <div className="flex items-center gap-3">
+                                        <div className="flex-1 h-2 bg-gray-100 dark:bg-white/10 rounded-full overflow-hidden">
+                                            <div 
+                                                className="h-full bg-primary rounded-full relative" 
+                                                style={{ width: `${percentage}%` }} 
+                                            />
+                                        </div>
+                                        <span className="text-xs font-bold text-gray-600 dark:text-gray-300 w-10 text-right">
+                                            {percentage.toFixed(1)}%
+                                        </span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            );
+                            })
+                        )}
                      </tbody>
                   </table>
                </div>
             </div>
 
-            {/* PRODUCTIVITY RANKING (Takes 1/3 of space on desktop) */}
+            {/* PRODUCTIVITY RANKING */}
             <div className="lg:col-span-1 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border p-6 flex flex-col h-[400px]">
                 <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
                     <Icon name="leaderboard" className="text-yellow-500" />
@@ -502,7 +531,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
             </div>
         </div>
 
-        {/* TOP DIVERGENCES - SCROLLABLE & DETAILED */}
+        {/* TOP DIVERGENCES */}
         <div className="bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border flex flex-col h-[500px]">
             <div className="p-6 border-b border-gray-100 dark:border-white/5 flex justify-between items-center bg-gray-50/50 dark:bg-white/5 rounded-t-2xl">
                 <div>
