@@ -68,8 +68,11 @@ export interface TopDivergenceItem {
     name: string;
     brand: string;
     location: string;
+    user: string; // Adicionado
     expected: number;
     counted: number;
+    costPrice?: number;
+    salesPrice?: number;
     diff: number;
     diffValue: number;
 }

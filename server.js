@@ -259,16 +259,18 @@ app.get('/analytics/top-divergences', (req, res) => {
     const year = req.query.year || new Date().getFullYear();
     Firebird.attach(options, (err, db) => {
         if (err) return res.json([]);
-        // Pega as 50 maiores divergências (calculadas por valor estimado, usando preço de venda como base para impacto)
+        // Pega as 100 maiores divergências do ano
         const sql = `
-            SELECT FIRST 50
+            SELECT FIRST 100
                 L.ID,
                 L.PRO_NRFABRICANTE, 
                 L.NOME_PRODUTO, 
                 L.LOCALIZACAO, 
+                L.USUARIO_NOME,
                 L.QTD_SISTEMA, 
                 L.QTD_CONTADA,
                 P.PRO_PRECOULTCOMPRA,
+                P.PRO_PRECOVENDA,
                 P.MAR_COD,
                 M.MAR_DESCRI,
                 (L.QTD_CONTADA - L.QTD_SISTEMA) as DIFF,
@@ -290,8 +292,11 @@ app.get('/analytics/top-divergences', (req, res) => {
                 name: safeString(r.NOME_PRODUTO),
                 brand: safeString(r.MAR_DESCRI),
                 location: safeString(r.LOCALIZACAO),
+                user: safeString(r.USUARIO_NOME),
                 expected: r.QTD_SISTEMA,
                 counted: r.QTD_CONTADA,
+                costPrice: r.PRO_PRECOULTCOMPRA,
+                salesPrice: r.PRO_PRECOVENDA,
                 diff: r.DIFF,
                 diffValue: r.IMPACTO
             }));

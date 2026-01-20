@@ -1,11 +1,9 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ComposedChart, Line, CartesianGrid, Legend } from 'recharts';
 import { Icon } from '../components/Icon';
 import { Screen } from '../types';
 import { ItemDetailModal } from '../components/ItemDetailModal';
 import { api, RankingItem, TopDivergenceItem } from '../services/api';
-import { GROUP_ICONS } from '../data/categories';
 
 interface AnalyticsScreenProps {
   onNavigate: (screen: Screen) => void;
@@ -133,104 +131,6 @@ const YearlyHeatmap = ({ data, year }: { data: { month: number, day: number, cou
     );
 };
 
-// --- DIVERGENCE RESOLUTION MODAL ---
-interface DivergenceResolutionModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  item: any | null;
-  onAccept: (item: any) => void;
-}
-
-const DivergenceResolutionModal: React.FC<DivergenceResolutionModalProps> = ({ isOpen, onClose, item, onAccept }) => {
-  if (!isOpen || !item) return null;
-
-  const isLoss = item.diffValue < 0;
-  const impactColor = isLoss ? 'text-red-500' : 'text-blue-500';
-  const impactBg = isLoss ? 'bg-red-50 dark:bg-red-900/20' : 'bg-blue-50 dark:bg-blue-900/20';
-  const impactBorder = isLoss ? 'border-red-100 dark:border-red-900/40' : 'border-blue-100 dark:border-blue-900/40';
-
-  return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
-      
-      <div className="relative z-10 w-full max-w-lg bg-white dark:bg-surface-dark rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-scale-up border border-gray-200 dark:border-card-border">
-        
-        {/* Impact Header */}
-        <div className={`p-8 flex flex-col items-center justify-center text-center border-b ${impactBorder} ${impactBg}`}>
-            <div className={`text-4xl font-extrabold tracking-tight ${impactColor} mb-2`}>
-               {isLoss ? '-' : '+'} R$ {Math.abs(item.diffValue).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-            </div>
-            <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide opacity-70 text-gray-700 dark:text-gray-200">
-               {isLoss ? <Icon name="trending_down" size={20} /> : <Icon name="trending_up" size={20} />}
-               {isLoss ? 'Perda Financeira' : 'Sobra de Estoque'}
-            </div>
-        </div>
-
-        <div className="p-6 space-y-6">
-           {/* Item Details */}
-           <div className="flex items-start gap-4 bg-gray-50 dark:bg-white/5 p-4 rounded-2xl border border-gray-100 dark:border-white/5">
-              <div className="size-14 rounded-xl bg-white dark:bg-surface-dark border border-gray-200 dark:border-white/10 flex items-center justify-center shrink-0 text-primary shadow-sm">
-                 <Icon name="extension" size={32} />
-              </div>
-              <div className="flex-1 min-w-0">
-                 <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[10px] font-bold uppercase bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-800">
-                        {item.brand}
-                    </span>
-                    <span className="text-[10px] font-mono font-medium text-gray-500 dark:text-gray-400 bg-white dark:bg-white/10 px-2 py-0.5 rounded border border-gray-200 dark:border-white/10">
-                        REF: {item.sku}
-                    </span>
-                 </div>
-                 <h3 className="text-lg font-bold text-gray-900 dark:text-white leading-tight break-words">
-                    {item.name}
-                 </h3>
-                 <div className="flex items-center gap-1 mt-2 text-xs text-gray-500 dark:text-gray-400">
-                    <Icon name="place" size={16} />
-                    <span className="font-medium">{item.location}</span>
-                 </div>
-              </div>
-           </div>
-
-           {/* Count Comparison */}
-           <div className="flex items-center justify-between p-4 rounded-xl border border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-black/20">
-              <div className="text-center">
-                 <span className="text-xs font-bold uppercase text-gray-400">Sistema</span>
-                 <p className="text-xl font-bold text-gray-900 dark:text-white">{item.expected}</p>
-              </div>
-              <Icon name="arrow_forward" className="text-gray-300" />
-              <div className="text-center">
-                 <span className="text-xs font-bold uppercase text-gray-400">Contagem</span>
-                 <p className="text-xl font-bold text-gray-900 dark:text-white">{item.counted}</p>
-              </div>
-              <div className={`px-3 py-1 rounded-lg font-bold text-lg ${isLoss ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>
-                 {item.diff > 0 ? '+' : ''}{item.diff}
-              </div>
-           </div>
-        </div>
-
-        {/* Actions */}
-        <div className="p-6 pt-2 flex flex-col gap-3">
-           <button 
-             onClick={() => onAccept(item)}
-             className="w-full h-14 rounded-xl bg-gray-900 dark:bg-white dark:text-black text-white font-bold text-lg shadow-xl hover:scale-[1.01] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
-           >
-             <Icon name="check_circle" size={24} />
-             Acatar Divergência
-           </button>
-           
-           <button 
-             onClick={onClose}
-             className="w-full py-3 text-sm font-bold text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
-           >
-             Cancelar / Investigar Mais
-           </button>
-        </div>
-
-      </div>
-    </div>
-  );
-};
-
 export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) => {
   const [selectedDivergence, setSelectedDivergence] = useState<any | null>(null);
   
@@ -244,6 +144,14 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [rankingData, setRankingData] = useState<RankingItem[]>([]);
   const [topDivergences, setTopDivergences] = useState<TopDivergenceItem[]>([]);
+
+  // Filtros de Divergência
+  const [divergenceSearch, setDivergenceSearch] = useState('');
+  const [diffMin, setDiffMin] = useState('');
+  const [diffMax, setDiffMax] = useState('');
+  const [impactMin, setImpactMin] = useState('');
+  const [impactMax, setImpactMax] = useState('');
+  const [divergenceType, setDivergenceType] = useState<'all' | 'loss' | 'surplus'>('all');
 
   useEffect(() => {
       // 1. Fetch Static KPIs (Snapshot)
@@ -277,10 +185,42 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
   const ticketMedio = realKPIs.totalCount > 0 ? (realKPIs.totalSales / realKPIs.totalCount) : 0;
   const totalCategoryValue = categoriesData.reduce((acc, curr) => acc + curr.value, 0);
 
-  const handleAcceptDivergence = (item: any) => {
-    // Logic to handle resolution would go here (API call)
-    setTopDivergences(prev => prev.filter(i => i.id !== item.id));
-    setSelectedDivergence(null);
+  // --- FILTRAGEM AVANÇADA ---
+  const filteredDivergences = useMemo(() => {
+      return topDivergences.filter(item => {
+          // 1. Text Search (SKU or Name)
+          const searchLower = divergenceSearch.toLowerCase();
+          if (searchLower && !item.name.toLowerCase().includes(searchLower) && !item.sku.toLowerCase().includes(searchLower)) {
+              return false;
+          }
+
+          // 2. Diff Range
+          const diffAbs = Math.abs(item.diff);
+          if (diffMin && diffAbs < Number(diffMin)) return false;
+          if (diffMax && diffAbs > Number(diffMax)) return false;
+
+          // 3. Impact Range
+          const impactAbs = Math.abs(item.diffValue);
+          if (impactMin && impactAbs < Number(impactMin)) return false;
+          if (impactMax && impactAbs > Number(impactMax)) return false;
+
+          // 4. Type
+          if (divergenceType === 'loss' && item.diff > 0) return false; // Perda é diff negativo (mas o filtro 'loss' deve pegar diff < 0)
+          if (divergenceType === 'surplus' && item.diff < 0) return false;
+
+          return true;
+      });
+  }, [topDivergences, divergenceSearch, diffMin, diffMax, impactMin, impactMax, divergenceType]);
+
+  const handleOpenDetails = (item: any) => {
+      // Map TopDivergenceItem to ItemDetailModal format
+      setSelectedDivergence({
+          ...item,
+          ref: item.sku, // ItemDetailModal usa 'ref' ou 'sku'
+          costPrice: item.costPrice,
+          salesPrice: item.salesPrice,
+          loc: item.location
+      });
   };
 
   const getInitials = (name: string) => name ? name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() : 'US';
@@ -317,7 +257,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
 
       <main className="flex-1 max-w-7xl mx-auto w-full p-4 md:p-8 space-y-8">
         
-        {/* SECTION 1: STATIC SNAPSHOTS (Current Stock State) */}
+        {/* SECTION 1: STATIC SNAPSHOTS */}
         <div>
             <h2 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
                 <Icon name="camera_alt" size={16} />
@@ -388,7 +328,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
             </div>
         </div>
 
-        {/* SECTION 2: HISTORICAL PERFORMANCE (Volatile Data) */}
+        {/* SECTION 2: HISTORICAL PERFORMANCE */}
         <div>
             <div className="flex items-center justify-between mb-4">
                 <h2 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest flex items-center gap-2">
@@ -436,7 +376,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
             {/* MIDDLE SECTION: Ranking & Breakdown */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-                {/* PRODUCTIVITY RANKING (REAL DATA) */}
+                {/* PRODUCTIVITY RANKING (NO ACCURACY) */}
                 <div className="lg:col-span-1 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border p-6 flex flex-col h-[400px]">
                     <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
                         <Icon name="leaderboard" className="text-yellow-500" />
@@ -457,16 +397,11 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                                             <span className="font-bold text-sm text-gray-900 dark:text-white truncate">{user.name}</span>
                                             <span className="text-xs font-bold text-primary">{user.counts}</span>
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                            <div className="flex-1 h-1.5 bg-gray-100 dark:bg-white/5 rounded-full overflow-hidden">
-                                                <div 
-                                                    className="h-full bg-primary rounded-full transition-all duration-1000" 
-                                                    style={{ width: `${(user.counts / (rankingData[0]?.counts || 1)) * 100}%` }}
-                                                />
-                                            </div>
-                                            <span className={`text-[10px] font-bold ${user.accuracy >= 98 ? 'text-green-500' : 'text-orange-500'}`}>
-                                                {user.accuracy}% Ac.
-                                            </span>
+                                        <div className="flex-1 h-1.5 bg-gray-100 dark:bg-white/5 rounded-full overflow-hidden">
+                                            <div 
+                                                className="h-full bg-primary rounded-full transition-all duration-1000" 
+                                                style={{ width: `${(user.counts / (rankingData[0]?.counts || 1)) * 100}%` }}
+                                            />
                                         </div>
                                     </div>
                                 </div>
@@ -475,7 +410,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                     </div>
                 </div>
 
-                {/* CATEGORY BREAKDOWN TABLE (REAL DATA - SNAPSHOT) */}
+                {/* CATEGORY BREAKDOWN TABLE */}
                 <div className="lg:col-span-2 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border flex flex-col overflow-hidden h-[400px]">
                     <div className="p-6 border-b border-gray-100 dark:border-white/5 flex justify-between items-center bg-gray-50/50 dark:bg-white/5">
                         <h2 className="text-lg font-bold text-gray-900 dark:text-white">Detalhamento Financeiro (Atual)</h2>
@@ -540,28 +475,90 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                 </div>
             </div>
 
-            {/* TOP DIVERGENCES (REAL DATA) */}
-            <div className="bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border flex flex-col h-[500px]">
-                <div className="p-6 border-b border-gray-100 dark:border-white/5 flex justify-between items-center bg-gray-50/50 dark:bg-white/5 rounded-t-2xl">
-                    <div>
-                    <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                        <Icon name="warning" className="text-red-500" />
-                        Maiores Divergências ({selectedYear})
-                    </h2>
-                    <p className="text-xs text-gray-500">Ordenado por impacto financeiro</p>
+            {/* TOP DIVERGENCES WITH FILTERS (SPACED) */}
+            <div className="mt-8 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border flex flex-col h-[600px]">
+                <div className="p-6 border-b border-gray-100 dark:border-white/5">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+                        <div>
+                            <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                                <Icon name="warning" className="text-red-500" />
+                                Maiores Divergências ({selectedYear})
+                            </h2>
+                            <p className="text-xs text-gray-500">Filtrar e analisar impactos</p>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase">
+                            <span className="flex items-center gap-1"><span className="size-2 rounded-full bg-red-500"></span> Perda</span>
+                            <span className="flex items-center gap-1"><span className="size-2 rounded-full bg-blue-500"></span> Sobra</span>
+                        </div>
                     </div>
-                    <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase">
-                        <span className="flex items-center gap-1"><span className="size-2 rounded-full bg-red-500"></span> Perda</span>
-                        <span className="flex items-center gap-1"><span className="size-2 rounded-full bg-blue-500"></span> Sobra</span>
+
+                    {/* FILTERS BAR */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-gray-50 dark:bg-black/20 p-3 rounded-xl border border-gray-200 dark:border-white/5">
+                        {/* Search */}
+                        <div className="md:col-span-1">
+                            <input 
+                                type="text"
+                                placeholder="Buscar SKU ou Produto..."
+                                value={divergenceSearch}
+                                onChange={(e) => setDivergenceSearch(e.target.value)}
+                                className="w-full bg-white dark:bg-white/10 border border-gray-200 dark:border-white/10 rounded-lg text-xs py-2 px-3 text-gray-800 dark:text-white focus:ring-1 focus:ring-primary outline-none"
+                            />
+                        </div>
+                        
+                        {/* Diff Range */}
+                        <div className="md:col-span-1 flex items-center gap-2 bg-white dark:bg-white/10 border border-gray-200 dark:border-white/10 rounded-lg px-2">
+                            <span className="text-[10px] font-bold text-gray-400 uppercase">Diff</span>
+                            <input 
+                                type="number" placeholder="Min" 
+                                value={diffMin} onChange={e => setDiffMin(e.target.value)}
+                                className="w-12 bg-transparent border-none text-xs p-1 text-center font-mono focus:ring-0" 
+                            />
+                            <span className="text-gray-400">-</span>
+                            <input 
+                                type="number" placeholder="Max" 
+                                value={diffMax} onChange={e => setDiffMax(e.target.value)}
+                                className="w-12 bg-transparent border-none text-xs p-1 text-center font-mono focus:ring-0" 
+                            />
+                        </div>
+
+                        {/* Impact Range */}
+                        <div className="md:col-span-1 flex items-center gap-2 bg-white dark:bg-white/10 border border-gray-200 dark:border-white/10 rounded-lg px-2">
+                            <span className="text-[10px] font-bold text-gray-400 uppercase">R$</span>
+                            <input 
+                                type="number" placeholder="Min" 
+                                value={impactMin} onChange={e => setImpactMin(e.target.value)}
+                                className="w-12 bg-transparent border-none text-xs p-1 text-center font-mono focus:ring-0" 
+                            />
+                            <span className="text-gray-400">-</span>
+                            <input 
+                                type="number" placeholder="Max" 
+                                value={impactMax} onChange={e => setImpactMax(e.target.value)}
+                                className="w-12 bg-transparent border-none text-xs p-1 text-center font-mono focus:ring-0" 
+                            />
+                        </div>
+
+                        {/* Type Select */}
+                        <div className="md:col-span-1">
+                            <select 
+                                value={divergenceType} 
+                                onChange={(e) => setDivergenceType(e.target.value as any)}
+                                className="w-full bg-white dark:bg-white/10 border border-gray-200 dark:border-white/10 rounded-lg text-xs py-2 px-3 text-gray-800 dark:text-white focus:ring-1 focus:ring-primary outline-none"
+                            >
+                                <option value="all">Todos os Tipos</option>
+                                <option value="loss">Apenas Perdas (-)</option>
+                                <option value="surplus">Apenas Sobras (+)</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
                 
                 <div className="flex-1 overflow-y-auto no-scrollbar">
-                    <table className="w-full text-left border-collapse">
+                    <table className="w-full text-left border-collapse min-w-[800px]">
                         <thead className="bg-white dark:bg-surface-dark sticky top-0 z-10 shadow-sm">
                             <tr className="text-xs text-gray-400 uppercase border-b border-gray-100 dark:border-white/5">
                                 <th className="py-3 px-6 font-medium">SKU / Produto</th>
                                 <th className="py-3 px-4 font-medium text-center">Local</th>
+                                <th className="py-3 px-4 font-medium text-left">Responsável</th>
                                 <th className="py-3 px-4 font-medium text-center">Contagem</th>
                                 <th className="py-3 px-4 font-medium text-center">Diff</th>
                                 <th className="py-3 px-6 font-medium text-right">Impacto (R$)</th>
@@ -569,21 +566,31 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                             </tr>
                         </thead>
                         <tbody className="text-sm">
-                            {topDivergences.length === 0 ? (
-                                <tr><td colSpan={6} className="text-center py-10 text-gray-400">Nenhuma divergência registrada neste ano.</td></tr>
+                            {filteredDivergences.length === 0 ? (
+                                <tr><td colSpan={7} className="text-center py-10 text-gray-400">Nenhuma divergência encontrada com estes filtros.</td></tr>
                             ) : (
-                                topDivergences.map((item) => (
+                                filteredDivergences.map((item) => (
                                 <tr 
                                 key={item.id} 
-                                onClick={() => setSelectedDivergence(item)}
+                                onClick={() => handleOpenDetails(item)}
                                 className="border-b border-gray-50 dark:border-white/5 last:border-0 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors cursor-pointer group"
                                 >
                                     <td className="py-3 px-6">
                                         <div className="font-bold text-gray-900 dark:text-white">{item.sku}</div>
-                                        <div className="text-xs text-gray-500 line-clamp-1">{item.name}</div>
+                                        <div className="text-xs text-gray-500 line-clamp-1 max-w-[200px]">{item.name}</div>
                                     </td>
                                     <td className="py-3 px-4 text-center text-xs text-gray-400">
                                         {item.location || 'Geral'}
+                                    </td>
+                                    <td className="py-3 px-4">
+                                        <div className="flex items-center gap-2">
+                                            <div className="size-6 rounded-full bg-gray-200 dark:bg-white/10 flex items-center justify-center text-[9px] font-bold">
+                                                {getInitials(item.user)}
+                                            </div>
+                                            <span className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate max-w-[100px]">
+                                                {item.user ? item.user.split(' ')[0] : 'Sistema'}
+                                            </span>
+                                        </div>
                                     </td>
                                     <td className="py-3 px-4 text-center">
                                         <div className="flex flex-col items-center leading-none">
@@ -613,12 +620,11 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
 
       </main>
 
-      {/* NEW DIVERGENCE MODAL */}
-      <DivergenceResolutionModal 
+      {/* REUSED DETAIL MODAL */}
+      <ItemDetailModal 
         isOpen={!!selectedDivergence} 
         onClose={() => setSelectedDivergence(null)} 
         item={selectedDivergence} 
-        onAccept={handleAcceptDivergence}
       />
 
     </div>
