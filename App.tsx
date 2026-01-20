@@ -123,7 +123,7 @@ const App: React.FC = () => {
           let loc = undefined;
 
           if (isFilteredList) {
-              if (segmentFilter === 'Resultado da Busca') {
+              if (segmentFilter && (segmentFilter === 'Resultado da Busca' || segmentFilter.startsWith('Localização:'))) {
                   // Lógica específica de busca já define blocks, mas aqui estamos generalizando
                   // Se for busca, não temos gr/sg normalmente, mas search/loc
                   // NOTA: A lógica original de busca fazia um setBlocks direto. 
@@ -271,7 +271,8 @@ const App: React.FC = () => {
             if (results.length > 0) {
                 setBlocks(results);
                 setListCounts(counts); // Seta counts corretos
-                setSegmentFilter('Resultado da Busca');
+                // MUDANÇA: Nome específico para ativar a aba "Todos" na ListScreen
+                setSegmentFilter(`Localização: ${rawLocation}`);
                 setBrowsePage(1);
                 setSelectedGrCod(undefined);
                 setSelectedSgCod(undefined);

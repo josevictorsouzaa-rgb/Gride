@@ -13,7 +13,7 @@ interface ListScreenProps {
   mode?: 'browse'; 
   page?: number;
   onPageChange?: (newPage: number) => void;
-  externalCounts?: { pending: number, progress: number, completed: number }; // Tipagem ajustada
+  externalCounts?: { pending: number, progress: number, completed: number }; 
 }
 
 const getInitials = (name: string) => name ? name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() : 'US';
@@ -49,7 +49,8 @@ export const ListScreen: React.FC<ListScreenProps> = ({
   onPageChange,
   externalCounts
 }) => {
-  const [activeTab, setActiveTab] = useState<'pending' | 'progress' | 'completed'>('pending');
+  // ADICIONADO: Estado 'all' para visualização completa
+  const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'progress' | 'completed'>('pending');
   const [expandedBlocks, setExpandedBlocks] = useState<number[]>([]);
   const [selectedItem, setSelectedItem] = useState<any | null>(null);
   const [searchText, setSearchText] = useState('');
@@ -59,7 +60,22 @@ export const ListScreen: React.FC<ListScreenProps> = ({
   // Limite definido para paginação
   const PAGE_LIMIT = 30;
 
+  // Lógica para detectar se é um modo de visualização especial (Busca ou Localização)
+  const isSpecialView = segmentFilter && (segmentFilter.startsWith('Localização:') || segmentFilter === 'Resultado da Busca');
+
+  // Efeito para setar a aba padrão correta
   useEffect(() => {
+    if (isSpecialView) {
+        setActiveTab('all');
+    } else {
+        setActiveTab('pending');
+    }
+    const el = document.getElementById('main-scroll-container');
+    if(el) el.scrollTo({top: 0, behavior: 'smooth'});
+  }, [segmentFilter, isSpecialView]);
+
+  useEffect(() => {
+    // Reset scroll on normal tab change or page change
     const el = document.getElementById('main-scroll-container');
     if(el) el.scrollTo({top: 0, behavior: 'smooth'});
   }, [page, activeTab]);
@@ -84,8 +100,9 @@ export const ListScreen: React.FC<ListScreenProps> = ({
   const filteredBlocks = useMemo(() => {
     return blocks.filter(block => {
       // Filtragem por Tab
-      // OBS: 'treatment_pending' deve aparecer em 'pending' mas bloqueado
-      if (activeTab === 'pending') {
+      if (activeTab === 'all') {
+          // Mostra tudo
+      } else if (activeTab === 'pending') {
           if (block.status === 'completed' || block.status === 'progress') return false;
       } else if (activeTab === 'progress') {
           if (block.status !== 'progress') return false;
@@ -111,18 +128,21 @@ export const ListScreen: React.FC<ListScreenProps> = ({
   // Contadores Reais (Usando ExternalCounts se disponível)
   const counts = useMemo(() => {
       if (externalCounts) {
-          return externalCounts;
+          const total = externalCounts.pending + externalCounts.progress + externalCounts.completed;
+          return { ...externalCounts, total };
       }
       
-      // Fallback para contagem local (apenas página atual) caso a API não retorne
+      // Fallback para contagem local
       const localProgress = blocks.filter(b => b.status === 'progress').length;
       const localPending = blocks.filter(b => b.status !== 'completed' && b.status !== 'progress').length;
       const localCompleted = blocks.filter(b => b.status === 'completed').length;
+      const localTotal = blocks.length;
 
       return { 
           pending: localPending, 
           progress: localProgress,
-          completed: localCompleted 
+          completed: localCompleted,
+          total: localTotal
       };
   }, [blocks, externalCounts]);
 
@@ -141,16 +161,31 @@ export const ListScreen: React.FC<ListScreenProps> = ({
           <div className="flex-1 text-center pr-10">
             <h2 className="text-base font-bold leading-tight line-clamp-1">{segmentFilter || 'Explorar Estoque'}</h2>
             <p className="text-xs text-gray-500">
-               {activeTab === 'pending' ? 'Disponíveis para Contagem' : (activeTab === 'progress' ? 'Sendo Contados' : 'Itens Finalizados')}
+               {activeTab === 'all' ? 'Todos os Itens' : (activeTab === 'pending' ? 'Disponíveis' : (activeTab === 'progress' ? 'Em Andamento' : 'Concluídos'))}
             </p>
           </div>
         </div>
 
-        {/* TABS (Com Totais Reais) */}
-        <div className="px-4 pb-2 flex gap-2">
+        {/* TABS (Adaptativo: Mostra 'Todos' se estiver em modo especial) */}
+        <div className="px-4 pb-2 flex gap-2 overflow-x-auto no-scrollbar">
+            {/* Aba TODOS - Só aparece em modo especial ou se selecionada */}
+            {(isSpecialView || activeTab === 'all') && (
+                <button 
+                onClick={() => setActiveTab('all')}
+                className={`min-w-[70px] flex-1 py-2 text-[10px] sm:text-xs font-bold rounded-lg transition-colors border flex flex-col items-center justify-center ${
+                    activeTab === 'all' 
+                    ? 'bg-gray-800 text-white dark:bg-white dark:text-black shadow-sm' 
+                    : 'bg-transparent border-transparent text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5'
+                }`}
+                >
+                    <span>Todos</span>
+                    <span className="opacity-70">({counts.total})</span>
+                </button>
+            )}
+
             <button 
               onClick={() => setActiveTab('pending')}
-              className={`flex-1 py-2 text-[10px] sm:text-xs font-bold rounded-lg transition-colors border flex flex-col items-center justify-center ${
+              className={`min-w-[70px] flex-1 py-2 text-[10px] sm:text-xs font-bold rounded-lg transition-colors border flex flex-col items-center justify-center ${
                   activeTab === 'pending' 
                   ? 'bg-white dark:bg-surface-dark border-gray-200 dark:border-card-border text-primary shadow-sm' 
                   : 'bg-transparent border-transparent text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5'
@@ -162,19 +197,19 @@ export const ListScreen: React.FC<ListScreenProps> = ({
             
             <button 
               onClick={() => setActiveTab('progress')}
-              className={`flex-1 py-2 text-[10px] sm:text-xs font-bold rounded-lg transition-colors border flex flex-col items-center justify-center ${
+              className={`min-w-[70px] flex-1 py-2 text-[10px] sm:text-xs font-bold rounded-lg transition-colors border flex flex-col items-center justify-center ${
                   activeTab === 'progress' 
                   ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-900/30 text-blue-700 dark:text-blue-300 shadow-sm' 
                   : 'bg-transparent border-transparent text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5'
               }`}
             >
-                <span>Em Andamento</span>
+                <span>Andamento</span>
                 <span className="opacity-70">({counts.progress})</span>
             </button>
 
             <button 
               onClick={() => setActiveTab('completed')}
-              className={`flex-1 py-2 text-[10px] sm:text-xs font-bold rounded-lg transition-colors border flex flex-col items-center justify-center ${
+              className={`min-w-[70px] flex-1 py-2 text-[10px] sm:text-xs font-bold rounded-lg transition-colors border flex flex-col items-center justify-center ${
                   activeTab === 'completed' 
                   ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-900/30 text-green-700 dark:text-green-300 shadow-sm' 
                   : 'bg-transparent border-transparent text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5'
@@ -206,9 +241,10 @@ export const ListScreen: React.FC<ListScreenProps> = ({
       <main className="flex flex-col gap-3 p-4">
         {filteredBlocks.length === 0 ? (
             <div className="text-center py-20 text-gray-400">
-                <Icon name={activeTab === 'pending' ? "playlist_add_check" : (activeTab === 'progress' ? "hourglass_empty" : "search_off")} size={48} className="mb-2 opacity-50" />
+                <Icon name={activeTab === 'pending' ? "playlist_add_check" : (activeTab === 'progress' ? "hourglass_empty" : (activeTab === 'all' ? "folder_off" : "search_off"))} size={48} className="mb-2 opacity-50" />
                 <p>
-                    {activeTab === 'pending' && "Nada encontrado nesta página."}
+                    {activeTab === 'all' && "Nenhum item encontrado nesta visualização."}
+                    {activeTab === 'pending' && "Nada pendente encontrado nesta página."}
                     {activeTab === 'progress' && "Nenhum bloco em andamento nesta página."}
                     {activeTab === 'completed' && "Nenhum item concluído nesta página."}
                 </p>
