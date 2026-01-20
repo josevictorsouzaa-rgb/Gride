@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Icon } from '../components/Icon';
 import { ApiCategory } from '../services/api';
@@ -53,7 +54,10 @@ export const SubcategoriesScreen: React.FC<SubcategoriesScreenProps> = ({
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3">
-            {items.map((sub, idx) => (
+            {items.map((sub, idx) => {
+              const progress = sub.count > 0 ? (sub.mappedCount / sub.count) * 100 : 0;
+              
+              return (
               <button 
                 key={sub.id || idx}
                 onClick={() => onSelectSegment(sub.name, sub.db_id)}
@@ -62,13 +66,26 @@ export const SubcategoriesScreen: React.FC<SubcategoriesScreenProps> = ({
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 group-hover:bg-primary/10 group-hover:text-primary transition-colors">
                   <Icon name={sub.icon} size={24} />
                 </div>
-                <div className="flex flex-col items-start ml-4 flex-1">
-                   <h3 className="text-base font-semibold text-gray-900 dark:text-white">{sub.name}</h3>
-                   <p className="text-xs text-gray-500 dark:text-gray-400">{sub.count} itens cadastrados</p>
+                <div className="flex flex-col items-start ml-4 flex-1 min-w-0 pr-2">
+                   <h3 className="text-base font-semibold text-gray-900 dark:text-white truncate w-full text-left">{sub.name}</h3>
+                   
+                   {/* Barra de Progresso */}
+                   <div className="w-full mt-2">
+                        <div className="flex justify-between items-center text-[10px] text-gray-500 dark:text-gray-400 mb-1 font-medium w-full">
+                            <span>{sub.mappedCount} de {sub.count} contados</span>
+                            <span className="font-bold">{Math.round(progress)}%</span>
+                        </div>
+                        <div className="h-1.5 w-full bg-gray-100 dark:bg-white/5 rounded-full overflow-hidden">
+                            <div 
+                                className={`h-full rounded-full transition-all duration-500 ${progress >= 100 ? 'bg-green-500' : 'bg-primary'}`} 
+                                style={{ width: `${progress}%` }} 
+                            />
+                        </div>
+                   </div>
                 </div>
-                <Icon name="chevron_right" className="text-gray-300 dark:text-gray-600 group-hover:text-primary" size={24} />
+                <Icon name="chevron_right" className="text-gray-300 dark:text-gray-600 group-hover:text-primary shrink-0" size={24} />
               </button>
-            ))}
+            )})}
           </div>
         )}
       </main>

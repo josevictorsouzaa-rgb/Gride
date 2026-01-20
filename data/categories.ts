@@ -175,9 +175,9 @@ export const getIconByTerm = (term: string): string => {
     
     // -- Motor --
     if (t.includes('ANEIS')) return 'circle'; // Anéis
-    if (t.includes('PISTAO') || t.includes('PISTOES')) return 'memory'; // Pistões
+    if (t.includes('PISTAO') || t.includes('PISTOES')) return 'hardware'; // Pistões
     if (t.includes('JUNTA') || t.includes('RETENTOR')) return 'layers'; // Juntas e Retentores
-    if (t.includes('VALVULA') && t.includes('CABECOTE')) return 'valve'; // Válvulas
+    if (t.includes('VALVULA') && t.includes('CABECOTE')) return 'heat_pump'; // Válvulas (Parece uma válvula)
     if (t.includes('BOMBA') && t.includes('OLEO')) return 'oil_barrel'; // Bomba Óleo
     if (t.includes('FILTRO') && t.includes('OLEO')) return 'filter_alt'; // Filtro Óleo
     if (t.includes('CORREIA')) return 'all_inclusive'; // Correias
@@ -206,10 +206,10 @@ export const getIconByTerm = (term: string): string => {
     if (t.includes('BOMBA') && t.includes('COMBUSTIVEL')) return 'local_gas_station';
 
     // -- Freios --
-    if (t.includes('PASTILHA')) return 'rectangle';
+    if (t.includes('PASTILHA')) return 'rectangle'; // Retângulo da pastilha
     if (t.includes('DISCO')) return 'disc_full';
-    if (t.includes('CILINDRO')) return 'cylinder'; // Cilindro mestre/roda
-    if (t.includes('SAPATA') || t.includes('LONA')) return 'incomplete_circle'; 
+    if (t.includes('CILINDRO')) return 'adjust'; // Círculo concêntrico (melhor que cylinder)
+    if (t.includes('SAPATA') || t.includes('LONA')) return 'change_history'; // Formato curvo/triangular
     if (t.includes('TAMBOR')) return 'radio_button_unchecked';
     if (t.includes('SERVO')) return 'power_input';
     if (t.includes('FLEXIVEL')) return 'cable'; // Flexível de freio
@@ -255,7 +255,7 @@ export const getIconByTerm = (term: string): string => {
     if (t.includes('REPARO')) return 'build';
     if (t.includes('KIT')) return 'inventory';
     
-    return 'circle'; // Default final
+    return 'circle'; // Default final mais limpo
 };
 
 // Mapa manual apenas para os Grupos Principais (Ícones das Categorias)
@@ -282,27 +282,37 @@ export interface Category {
   label: string;
   icon: string;
   count: number;
-  subcategories: { id: string; name: string; count: number; icon: string }[];
+  mappedCount: number; // Agora obrigatório
+  subcategories: { 
+      id: string; 
+      name: string; 
+      count: number; 
+      mappedCount: number; // Agora obrigatório
+      icon: string 
+  }[];
 }
 
-// --- GERAÇÃO DOS DADOS COMBINADOS (JOIN) ---
+// --- GERAÇÃO DOS DADOS COMBINADOS (MOCK FALLBACK) ---
 export const CATEGORIES_DATA: Category[] = DB_CATEGORIES.map(group => {
-  // 1. Encontrar todos os subgrupos que pertencem a este grupo (SQL: WHERE GR_COD = x)
+  // 1. Encontrar todos os subgrupos
   const subItems = DB_SUBGROUPS.filter(sg => sg.GR_COD === group.GR_COD);
   
-  // 2. Calcular contagem total (soma simulada)
-  // No mundo real, isso viria de uma query count(products).
-  // Aqui geramos um número determinístico baseado no ID para parecer real mas fixo.
+  // 2. Calcular contagem total
   const totalCount = subItems.reduce((acc, curr) => acc + ((curr.SG_COD * 15) % 100) + 5, 0);
+  const totalMapped = Math.floor(totalCount * 0.4); // Simula 40% concluído para mock
 
-  // 3. Mapear subgrupos para o formato da UI
-  const mappedSubcategories = subItems.map(sg => ({
-      id: sg.SG_COD.toString(),
-      name: sg.SG_DESCRI,
-      // Simula quantidade de itens no estoque para este subgrupo
-      count: ((sg.SG_COD * 23) % 200) + 10, 
-      icon: getIconByTerm(sg.SG_DESCRI)
-  }));
+  // 3. Mapear subgrupos
+  const mappedSubcategories = subItems.map(sg => {
+      const count = ((sg.SG_COD * 23) % 200) + 10;
+      const mapped = Math.floor(count * (Math.random() * 0.8)); // Random progress
+      return {
+          id: sg.SG_COD.toString(),
+          name: sg.SG_DESCRI,
+          count: count,
+          mappedCount: mapped,
+          icon: getIconByTerm(sg.SG_DESCRI)
+      };
+  });
 
   return {
     id: group.GR_COD.toString(),
@@ -310,6 +320,7 @@ export const CATEGORIES_DATA: Category[] = DB_CATEGORIES.map(group => {
     label: group.GR_DESCRI,
     icon: GROUP_ICONS[group.GR_COD] || 'inventory_2',
     count: totalCount || 0,
+    mappedCount: totalMapped || 0,
     subcategories: mappedSubcategories
   };
 });
