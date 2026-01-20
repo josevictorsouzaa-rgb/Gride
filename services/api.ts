@@ -1,5 +1,6 @@
 
 import { User, Block, WarehouseLayout, WMSAddress, TreatmentItem } from '../types';
+import { getIconByTerm, GROUP_ICONS } from '../data/categories';
 
 export interface ApiCategory {
   id: string;
@@ -120,7 +121,17 @@ export const api = {
 
   getCategories: async (): Promise<ApiCategory[]> => {
       const res = await fetchJson('/categories');
-      return res || [];
+      if (!res) return [];
+      
+      // Mapeamento de ícones (Frontend decoration)
+      return res.map((cat: any) => ({
+          ...cat,
+          icon: GROUP_ICONS[cat.db_id] || 'inventory_2',
+          subcategories: cat.subcategories.map((sub: any) => ({
+              ...sub,
+              icon: getIconByTerm(sub.name)
+          }))
+      }));
   },
 
   getHistory: async (page: number, limit: number): Promise<any[]> => {
