@@ -17,6 +17,20 @@ const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 };
 
+// Helper Tempo Relativo
+const getTimeAgo = (dateStr: string) => {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+    
+    if (diffInSeconds < 60) return 'Agora';
+    if (diffInSeconds < 3600) return `Há ${Math.floor(diffInSeconds / 60)} min`;
+    if (diffInSeconds < 86400) return `Há ${Math.floor(diffInSeconds / 3600)} h`;
+    if (diffInSeconds < 2592000) return `Há ${Math.floor(diffInSeconds / 86400)} d`;
+    return 'Há +1 mês';
+};
+
 // Formata Histórico com Visuais Profissionais
 const formatHistoryEntry = (entry: any) => {
     let actionLabel = entry.STATUS;
@@ -118,6 +132,13 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
       return { cost, price, stock, totalValue };
   }, [item]);
 
+  // Encontrar o último evento relevante (Contagem/Divergência/Edição) para exibir no card
+  const lastEvent = useMemo(() => {
+      if (history.length === 0) return null;
+      // Procura o primeiro evento que tenha uma quantidade registrada (newValue)
+      return history.find(h => h.newValue !== undefined) || null;
+  }, [history]);
+
   if (!isOpen || !item || !financialData) return null;
 
   return createPortal(
@@ -164,28 +185,55 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
                 {/* MOBILE LAYOUT: GRID 2x1 COMPACTO (Visível apenas mobile) */}
                 <div className="md:hidden grid grid-cols-2 gap-3 p-4 bg-gray-50/50 dark:bg-black/10">
                     {/* Card 1: Estoque */}
-                    <div className="col-span-1 bg-gradient-to-br from-blue-600 to-blue-700 text-white p-4 rounded-2xl shadow-lg shadow-blue-900/20 relative overflow-hidden flex flex-col justify-center h-28">
-                         <div className="absolute -right-3 -bottom-3 text-white/10 rotate-12"><Icon name="inventory_2" size={80} /></div>
-                         <p className="text-[10px] font-bold uppercase tracking-wider text-blue-100 mb-1 flex items-center gap-1">
-                            <Icon name="check_circle" size={12} /> Saldo
-                         </p>
-                         <div className="flex items-baseline gap-1 relative z-10">
-                             <span className="text-4xl font-black tracking-tighter">{financialData.stock}</span>
-                             <span className="text-sm font-medium text-blue-200">un</span>
+                    <div className="col-span-1 bg-gradient-to-br from-blue-600 to-blue-700 text-white p-4 rounded-2xl shadow-lg shadow-blue-900/20 relative overflow-hidden flex flex-col justify-between min-h-[140px]">
+                         <div className="absolute -right-3 -top-3 text-white/10 rotate-12"><Icon name="inventory_2" size={90} /></div>
+                         
+                         <div>
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-blue-100 mb-1 flex items-center gap-1">
+                                <Icon name="check_circle" size={12} /> Saldo
+                            </p>
+                            <div className="flex items-baseline gap-1 relative z-10">
+                                <span className="text-4xl font-black tracking-tighter">{financialData.stock}</span>
+                                <span className="text-sm font-medium text-blue-200">un</span>
+                            </div>
+                            <p className="text-[10px] text-blue-200 relative z-10 opacity-80">{item.loc || 'Geral'}</p>
                          </div>
-                         <p className="text-[10px] text-blue-200 mt-1 relative z-10 opacity-80">{item.loc || 'Geral'}</p>
+
+                         {/* LAST COUNT INFO MOBILE */}
+                         {lastEvent && (
+                             <div className="mt-2 pt-2 border-t border-white/20 flex items-center justify-between relative z-10">
+                                <div className="flex items-center gap-1.5">
+                                    <div className="size-5 rounded-full bg-white/20 flex items-center justify-center text-[8px] font-bold">
+                                        {lastEvent.user.charAt(0)}
+                                    </div>
+                                    <span className="text-[9px] font-bold truncate max-w-[50px]">{lastEvent.user.split(' ')[0]}</span>
+                                </div>
+                                <div className="flex flex-col items-end leading-none">
+                                    <span className="text-[10px] font-bold">{lastEvent.newValue} un</span>
+                                    <span className="text-[8px] opacity-70">{getTimeAgo(lastEvent.DATA_HORA)}</span>
+                                </div>
+                             </div>
+                         )}
                     </div>
 
                     {/* Card 2: Financeiro */}
-                    <div className="col-span-1 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 p-4 rounded-2xl shadow-sm flex flex-col justify-center h-28 relative">
+                    <div className="col-span-1 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 p-4 rounded-2xl shadow-sm flex flex-col justify-center min-h-[140px] relative">
                          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">Valor Total</p>
-                         <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight leading-none mb-2">
+                         <p className="text-lg font-black text-gray-900 dark:text-white tracking-tight leading-none mb-3">
                             {formatCurrency(financialData.totalValue)}
                          </p>
-                         <div className="w-full h-px bg-gray-100 dark:bg-white/10 mb-2"></div>
-                         <div className="flex flex-col">
-                            <span className="text-[9px] uppercase text-gray-400 font-bold">Venda Unit.</span>
-                            <span className="text-sm font-bold text-green-600 dark:text-green-400">{formatCurrency(financialData.price)}</span>
+                         <div className="w-full h-px bg-gray-100 dark:bg-white/10 mb-3"></div>
+                         <div className="flex flex-col gap-2">
+                            <div>
+                                <span className="text-[9px] uppercase text-gray-400 font-bold block">Venda Unit.</span>
+                                <span className="text-sm font-bold text-green-600 dark:text-green-400">{formatCurrency(financialData.price)}</span>
+                            </div>
+                            {lastEvent && (
+                                <div className="text-[9px] text-gray-400 font-medium flex items-center gap-1">
+                                    <Icon name="event" size={10} />
+                                    <span>Atualizado: {lastEvent.displayDate}</span>
+                                </div>
+                            )}
                          </div>
                     </div>
                 </div>
@@ -195,23 +243,52 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
                     {/* Card 1: Estoque Desktop */}
                     <div className="p-6 rounded-3xl bg-gradient-to-br from-blue-600 to-blue-700 text-white shadow-xl shadow-blue-900/20 relative overflow-hidden group">
                         <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
-                            <Icon name="inventory_2" size={100} />
+                            <Icon name="inventory_2" size={120} />
                         </div>
-                        <p className="text-xs font-bold uppercase tracking-widest text-blue-100 mb-3 flex items-center gap-2">
-                            <Icon name="check_circle" size={18} /> Saldo Físico
-                        </p>
-                        <div className="flex items-baseline gap-2">
-                            <span className="text-6xl font-black tracking-tighter">{financialData.stock}</span>
-                            <span className="text-2xl font-medium text-blue-200">un</span>
-                        </div>
-                        <div className="mt-6 pt-4 border-t border-white/20 flex items-center gap-3">
-                            <div className="p-2 bg-white/20 rounded-lg">
-                                <Icon name="place" size={20} className="text-white" />
+                        
+                        <div className="relative z-10">
+                            <p className="text-xs font-bold uppercase tracking-widest text-blue-100 mb-3 flex items-center gap-2">
+                                <Icon name="check_circle" size={18} /> Saldo Físico
+                            </p>
+                            <div className="flex items-baseline gap-2">
+                                <span className="text-6xl font-black tracking-tighter">{financialData.stock}</span>
+                                <span className="text-2xl font-medium text-blue-200">un</span>
                             </div>
-                            <div>
-                                <p className="text-[10px] uppercase text-blue-200 font-bold">Localização</p>
-                                <p className="font-bold text-lg leading-none">{item.loc || item.location || 'Geral'}</p>
+                            
+                            <div className="mt-4 flex items-center gap-3">
+                                <div className="p-1.5 bg-white/20 rounded-lg">
+                                    <Icon name="place" size={18} className="text-white" />
+                                </div>
+                                <div>
+                                    <p className="text-[10px] uppercase text-blue-200 font-bold">Localização</p>
+                                    <p className="font-bold text-lg leading-none">{item.loc || item.location || 'Geral'}</p>
+                                </div>
                             </div>
+
+                            {/* LAST COUNT INFO DESKTOP - BOX DETALHADO */}
+                            {lastEvent && (
+                                <div className="mt-6 bg-black/20 rounded-xl p-3 border border-white/10 backdrop-blur-sm">
+                                    <div className="flex justify-between items-start mb-2">
+                                        <span className="text-[10px] font-bold uppercase text-blue-200 tracking-wider">Última Conferência</span>
+                                        <span className="text-[10px] font-mono text-blue-100 opacity-80">{lastEvent.displayDate} • {lastEvent.displayTime}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <div className="size-8 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold border border-white/20 shadow-sm">
+                                                {lastEvent.user.charAt(0)}
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className="text-sm font-bold leading-none">{lastEvent.user.split(' ')[0]}</span>
+                                                <span className="text-[10px] text-blue-200 opacity-80">{getTimeAgo(lastEvent.DATA_HORA)}</span>
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <span className="block text-xl font-bold leading-none">{lastEvent.newValue}</span>
+                                            <span className="text-[9px] uppercase font-bold text-blue-300">Apurado</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
 
