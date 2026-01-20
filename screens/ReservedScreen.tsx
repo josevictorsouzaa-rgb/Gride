@@ -37,7 +37,7 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
   const [showScanner, setShowScanner] = useState(false);
   const [scannedCode, setScannedCode] = useState('');
 
-  // Fetch fresco ao montar para garantir dados atualizados
+  // Fetch fresco ao montar para garantir dados atualizados e persistentes
   useEffect(() => {
       if (currentUser) {
           api.getReservedBlocks(currentUser.id).then(freshBlocks => {
@@ -45,8 +45,16 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                 ...b,
                 items: b.items.map(i => ({
                     ...i,
+                    // Garante que o status e quantidade venham do backend (ITEMS_JSON)
                     status: (i.status && i.status !== 'pending') ? i.status : 'pending',
-                    countedQty: i.countedQty !== undefined ? i.countedQty : 0
+                    countedQty: i.countedQty !== undefined ? i.countedQty : 0,
+                    // Se houver dados de contagem anterior, garante que o lastCount reflete isso
+                    lastCount: i.lastCount || (i.status !== 'pending' ? {
+                        user: 'Você',
+                        date: 'Salvo',
+                        qty: i.countedQty || 0,
+                        location: i.location
+                    } : null)
                 }))
               }));
               setLocalBlocks(initialized);
@@ -57,7 +65,8 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
   const handleOpenCount = (blockId: number, item: any) => {
     setActiveBlockId(blockId);
     setSelectedItem(item);
-    setScannedCode(''); // Reset previous scan
+    // Limpa código escaneado anterior para não interferir
+    setScannedCode(''); 
     setShowEntryModal(true);
   };
 
@@ -103,11 +112,11 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
         // Mantém a quantidade inserida (se foi inserida 0 na modal de problema, será 0 aqui)
     } else if (status === 'counted' && reason && reason.trim().length > 0) {
         // Se contou mas tem observação (checkbox de erro de cadastro), é divergência.
-        // A quantidade contada DEVE SER MANTIDA e lançada.
         finalStatus = 'divergence_info';
     }
 
-    const finalLocation = scannedCode || selectedItem.location || 'GERAL';
+    // Localização Final: Ou escaneou agora, ou já tinha salvo (lastCount), ou usa o cadastro
+    const finalLocation = scannedCode || selectedItem.lastCount?.location || selectedItem.location || 'GERAL';
 
     // 1. ATUALIZA ESTADO LOCAL
     const updatedBlocks = localBlocks.map(block => {
@@ -122,6 +131,7 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                         status: finalStatus,
                         countedQty: finalQty, // Salva a quantidade processada (0 se não localizado)
                         divergenceReason: reason,
+                        // Atualiza o objeto lastCount para que, ao reabrir, os dados estejam lá
                         lastCount: {
                             user: currentUser?.name || 'Você',
                             date: 'Agora',
@@ -137,7 +147,7 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
 
     setLocalBlocks(updatedBlocks);
 
-    // 2. SALVA PROGRESSO NO BLOB JSON DA RESERVA
+    // 2. SALVA PROGRESSO NO BLOB JSON DA RESERVA (Persistência)
     const activeBlock = updatedBlocks.find(b => b.id === activeBlockId);
     if (activeBlock) {
         await api.updateReservationProgress(activeBlockId, activeBlock.items);
@@ -288,6 +298,7 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                                 const isProcessed = isCounted || isIssue;
                                 const hasDivergenceReason = !!item.divergenceReason;
                                 
+                                // Localização a exibir: Do lastCount (inserido) ou padrão do item
                                 const displayLocation = item.lastCount?.location || item.location || block.location;
 
                                 return (
@@ -337,10 +348,10 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                                         <Icon name="history" size={16} className="text-gray-400" />
                                         {item.lastCount ? (
                                             <p className="text-xs text-gray-500 dark:text-gray-400">
-                                                Em <strong className="text-gray-700 dark:text-gray-300">{item.lastCount.date}</strong> por {item.lastCount.user} ({item.lastCount.qty} un)
+                                                Em <strong className="text-gray-700 dark:text-gray-300">{item.lastCount.date}</strong> por {item.lastCount.user} ({item.lastCount.qty} unid.)
                                             </p>
                                         ) : (
-                                            <p className="text-xs text-orange-500 font-medium">Nunca contado</p>
+                                            <p className="text-xs text-orange-500 font-medium">Nunca foi contado</p>
                                         )}
                                     </div>
 
@@ -353,15 +364,27 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
                                         {isProcessed ? (
                                             <div className="flex flex-col items-end">
                                                 {isIssue ? (
-                                                    <span className="text-xs font-bold text-red-600 bg-red-100 dark:bg-red-900/40 px-2 py-1 rounded">
-                                                        Aguardando Tratamento
-                                                    </span>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-xs font-bold text-red-600 bg-red-100 dark:bg-red-900/40 px-2 py-1 rounded">
+                                                            Problema
+                                                        </span>
+                                                        <button 
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleOpenCount(block.id, item);
+                                                            }}
+                                                            className="size-6 rounded bg-red-200 dark:bg-red-800 flex items-center justify-center text-red-800 dark:text-red-100 hover:bg-red-300 active:scale-95 transition-all shadow-sm"
+                                                            title="Editar Apontamento"
+                                                        >
+                                                            <Icon name="edit" size={14} />
+                                                        </button>
+                                                    </div>
                                                 ) : (
                                                     <>
                                                         <span className="text-[10px] font-bold text-green-600 uppercase mb-0.5">Qtd Contada</span>
                                                         <div className="flex items-center gap-2 px-3 py-1.5 bg-green-100 dark:bg-green-900/40 rounded-lg border border-green-200 dark:border-green-800">
                                                             <span className="font-bold text-green-800 dark:text-green-300 text-sm">
-                                                                {item.countedQty} un
+                                                                {item.countedQty} unid.
                                                             </span>
                                                             {/* Botão de Ajustar (Editar) */}
                                                             <button 
@@ -446,6 +469,7 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
         
         systemQuantity={selectedItem?.balance || 0} // Quantidade do sistema
         initialCount={selectedItem?.countedQty} // Passa a contagem atual para edição
+        initialLocation={selectedItem?.lastCount?.location || selectedItem?.location} // Passa localização existente para pre-fill
         
         scannedLocation={scannedCode} 
         
