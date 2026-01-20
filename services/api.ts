@@ -27,6 +27,28 @@ export interface InventoryLogEntry {
   divergencia_motivo?: string;
 }
 
+export interface ApiFinancialItem {
+    sku: string;
+    name: string;
+    qty: number;
+    value: number;
+}
+
+export interface ApiFinancialSubgroup {
+    id: number;
+    name: string;
+    qty: number;
+    value: number;
+}
+
+export interface ApiFinancialGroup {
+    id: number;
+    name: string;
+    qty: number;
+    value: number;
+    subgroups: ApiFinancialSubgroup[];
+}
+
 export interface ApiCategory {
   id: string;
   db_id: number;
@@ -213,10 +235,20 @@ export const api = {
       } catch(e) { return []; }
   },
 
-  // NOVA ROTA: Get Financial Categories
-  getFinancialCategories: async (): Promise<{ name: string, qty: number, value: number }[]> => {
+  // NOVA ROTA: Get Financial Categories (Hierarchical)
+  getFinancialCategories: async (): Promise<ApiFinancialGroup[]> => {
       try {
           const response = await fetch(`${API_BASE_URL}/analytics/categories-financial`);
+          if (response.ok) return await response.json();
+          return [];
+      } catch (e) { return []; }
+  },
+
+  // NOVA ROTA: Get Financial Items for a Subgroup
+  getFinancialItems: async (grId: number, sgId: number): Promise<ApiFinancialItem[]> => {
+      try {
+          const params = new URLSearchParams({ gr_cod: grId.toString(), sg_cod: sgId.toString() });
+          const response = await fetch(`${API_BASE_URL}/analytics/financial-items?${params}`);
           if (response.ok) return await response.json();
           return [];
       } catch (e) { return []; }

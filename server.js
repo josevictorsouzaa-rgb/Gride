@@ -310,24 +310,86 @@ app.get('/analytics/categories-financial', (req, res) => {
         if (err) return res.json([]);
         const sql = `
             SELECT 
+                G.GR_COD,
                 G.GR_DESCRI,
+                S.SG_COD,
+                S.SG_DESCRI,
                 COUNT(*) as QTD_FISICA,
                 SUM(P.PRO_PRECOULTCOMPRA * P.PRO_EST_ATUAL) as VALOR_TOTAL
             FROM PRODUTOS P
             JOIN GRUPOPRODUTOS G ON P.GR_COD = G.GR_COD
+            JOIN SUBGRUPOPRODUTOS S ON P.SG_COD = S.SG_COD AND P.GR_COD = S.GR_COD
             WHERE P.PRO_ATIVO = 'S'
-            GROUP BY G.GR_DESCRI
-            ORDER BY 3 DESC
+            GROUP BY G.GR_COD, G.GR_DESCRI, S.SG_COD, S.SG_DESCRI
+            ORDER BY 1, 6 DESC
         `;
         db.query(sql, [], (err, rows) => {
             db.detach();
             if (err) return res.json([]);
-            const result = rows.map(r => ({
-                name: safeString(r.GR_DESCRI),
-                qty: r.QTD_FISICA,
+            
+            // Agrupar no Node para estrutura hierárquica
+            const groupsMap = new Map();
+
+            rows.forEach(r => {
+                const grKey = r.GR_COD;
+                if (!groupsMap.has(grKey)) {
+                    groupsMap.set(grKey, {
+                        id: r.GR_COD,
+                        name: safeString(r.GR_DESCRI),
+                        qty: 0,
+                        value: 0,
+                        subgroups: []
+                    });
+                }
+                const group = groupsMap.get(grKey);
+                
+                // Add totals to group
+                group.qty += r.QTD_FISICA;
+                group.value += (r.VALOR_TOTAL || 0);
+
+                // Add subgroup
+                group.subgroups.push({
+                    id: r.SG_COD,
+                    name: safeString(r.SG_DESCRI),
+                    qty: r.QTD_FISICA,
+                    value: r.VALOR_TOTAL || 0
+                });
+            });
+
+            // Ordenar Grupos por Valor Total
+            const result = Array.from(groupsMap.values()).sort((a, b) => b.value - a.value);
+            res.json(result);
+        });
+    });
+});
+
+app.get('/analytics/financial-items', (req, res) => {
+    const { gr_cod, sg_cod } = req.query;
+    if (!gr_cod || !sg_cod) return res.json([]);
+
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.json([]);
+        const sql = `
+            SELECT FIRST 200
+                P.PRO_NRFABRICANTE,
+                P.PRO_DESCRI,
+                P.PRO_EST_ATUAL,
+                P.PRO_PRECOULTCOMPRA,
+                (P.PRO_EST_ATUAL * COALESCE(P.PRO_PRECOULTCOMPRA, 0)) as VALOR_TOTAL
+            FROM PRODUTOS P
+            WHERE P.GR_COD = ? AND P.SG_COD = ? AND P.PRO_ATIVO = 'S'
+            ORDER BY 5 DESC
+        `;
+        db.query(sql, [gr_cod, sg_cod], (err, rows) => {
+            db.detach();
+            if (err) return res.json([]);
+            const items = rows.map(r => ({
+                sku: safeString(r.PRO_NRFABRICANTE),
+                name: safeString(r.PRO_DESCRI),
+                qty: r.PRO_EST_ATUAL,
                 value: r.VALOR_TOTAL || 0
             }));
-            res.json(result);
+            res.json(items);
         });
     });
 });

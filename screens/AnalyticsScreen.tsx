@@ -3,7 +3,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Icon } from '../components/Icon';
 import { Screen } from '../types';
 import { ItemDetailModal } from '../components/ItemDetailModal';
-import { api, RankingItem, TopDivergenceItem } from '../services/api';
+import { api, RankingItem, TopDivergenceItem, ApiFinancialGroup, ApiFinancialItem } from '../services/api';
+import { GROUP_ICONS } from '../data/categories';
 
 interface AnalyticsScreenProps {
   onNavigate: (screen: Screen) => void;
@@ -16,7 +17,6 @@ const AnimatedNumber = ({ value, duration = 2000, prefix = '', suffix = '', deci
     useEffect(() => {
         if (value > 0) {
             let start = 0;
-            // Se já tiver um valor exibido (atualização), começa dele
             if (display > 0 && Math.abs(display - value) < value) start = display;
             
             const end = value;
@@ -26,14 +26,13 @@ const AnimatedNumber = ({ value, duration = 2000, prefix = '', suffix = '', deci
             const timer = setInterval(() => {
                 const elapsed = Date.now() - startTime;
                 const progress = Math.min(elapsed / duration, 1);
-                // Ease out function
                 const ease = 1 - Math.pow(1 - progress, 3);
                 
                 const current = start + (range * ease);
                 setDisplay(current);
 
                 if (progress === 1) clearInterval(timer);
-            }, 16); // ~60fps
+            }, 16); 
 
             return () => clearInterval(timer);
         } else {
@@ -50,7 +49,7 @@ const AnimatedNumber = ({ value, duration = 2000, prefix = '', suffix = '', deci
     );
 };
 
-// --- HEATMAP COMPONENT (YEARLY - REAL DATA) ---
+// --- HEATMAP COMPONENT ---
 const YearlyHeatmap = ({ data, year }: { data: { month: number, day: number, count: number }[], year: number }) => {
     const countMap = useMemo(() => {
         const map = new Map();
@@ -66,7 +65,6 @@ const YearlyHeatmap = ({ data, year }: { data: { month: number, day: number, cou
         const weeksArray = [];
         let currentWeek: any[] = [];
         
-        // Pad first week
         for(let i=0; i<startOfYear.getDay(); i++) currentWeek.push(null);
 
         for (let d = new Date(startOfYear); d <= endOfYear; d.setDate(d.getDate() + 1)) {
@@ -114,7 +112,6 @@ const YearlyHeatmap = ({ data, year }: { data: { month: number, day: number, cou
                                     className={`size-4 rounded-[3px] ${bgColor} transition-all hover:scale-125 relative group`}
                                     title={`${item.date.toLocaleDateString()}: ${count} itens`}
                                 >
-                                    {/* Tooltip */}
                                     {count > 0 && (
                                         <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block bg-black text-white text-[10px] p-2 rounded whitespace-nowrap z-50 font-bold shadow-xl">
                                             {item.date.toLocaleDateString()}<br/>
@@ -134,12 +131,10 @@ const YearlyHeatmap = ({ data, year }: { data: { month: number, day: number, cou
 export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) => {
   const [selectedDivergence, setSelectedDivergence] = useState<any | null>(null);
   
-  // Real Data States
   const [realKPIs, setRealKPIs] = useState({ totalCost: 0, totalSales: 0, totalCount: 0, inactiveCount: 0 });
   const [heatmapData, setHeatmapData] = useState<{ month: number, day: number, count: number }[]>([]);
-  const [categoriesData, setCategoriesData] = useState<{ name: string, qty: number, value: number, icon: string }[]>([]);
+  const [financialGroups, setFinancialGroups] = useState<ApiFinancialGroup[]>([]);
   
-  // Volatile Data States (Historical)
   const [availableYears, setAvailableYears] = useState<number[]>([]);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [rankingData, setRankingData] = useState<RankingItem[]>([]);
@@ -153,27 +148,22 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
   const [impactMax, setImpactMax] = useState('');
   const [divergenceType, setDivergenceType] = useState<'all' | 'loss' | 'surplus'>('all');
 
-  useEffect(() => {
-      // 1. Fetch Static KPIs (Snapshot)
-      api.getAnalyticsKPIs().then(setRealKPIs);
-      
-      // 2. Fetch Categories Financials (Snapshot)
-      api.getFinancialCategories().then(data => {
-          const mapped = data.map(cat => ({
-              ...cat,
-              icon: 'category'
-          }));
-          setCategoriesData(mapped);
-      });
+  // Estado para Tabela Hierárquica
+  const [expandedGroup, setExpandedGroup] = useState<number | null>(null);
+  const [expandedSubgroup, setExpandedSubgroup] = useState<{ grId: number, sgId: number } | null>(null);
+  const [subgroupItems, setSubgroupItems] = useState<ApiFinancialItem[]>([]);
+  const [loadingItems, setLoadingItems] = useState(false);
+  const [itemSort, setItemSort] = useState<{ field: 'value' | 'qty', direction: 'desc' | 'asc' }>({ field: 'value', direction: 'desc' });
 
-      // 3. Initialize Years
+  useEffect(() => {
+      api.getAnalyticsKPIs().then(setRealKPIs);
+      api.getFinancialCategories().then(setFinancialGroups);
       api.getAvailableYears().then(years => {
           setAvailableYears(years);
           if (years.length > 0) setSelectedYear(years[0]);
       });
   }, []);
 
-  // Fetch Volatile Data when Year Changes
   useEffect(() => {
       if (selectedYear) {
           api.getHeatmapData(selectedYear).then(setHeatmapData);
@@ -183,40 +173,29 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
   }, [selectedYear]);
 
   const ticketMedio = realKPIs.totalCount > 0 ? (realKPIs.totalSales / realKPIs.totalCount) : 0;
-  const totalCategoryValue = categoriesData.reduce((acc, curr) => acc + curr.value, 0);
+  const totalCategoryValue = financialGroups.reduce((acc, curr) => acc + curr.value, 0);
 
   // --- FILTRAGEM AVANÇADA ---
   const filteredDivergences = useMemo(() => {
       return topDivergences.filter(item => {
-          // 1. Text Search (SKU or Name)
           const searchLower = divergenceSearch.toLowerCase();
-          if (searchLower && !item.name.toLowerCase().includes(searchLower) && !item.sku.toLowerCase().includes(searchLower)) {
-              return false;
-          }
-
-          // 2. Diff Range
+          if (searchLower && !item.name.toLowerCase().includes(searchLower) && !item.sku.toLowerCase().includes(searchLower)) return false;
           const diffAbs = Math.abs(item.diff);
           if (diffMin && diffAbs < Number(diffMin)) return false;
           if (diffMax && diffAbs > Number(diffMax)) return false;
-
-          // 3. Impact Range
           const impactAbs = Math.abs(item.diffValue);
           if (impactMin && impactAbs < Number(impactMin)) return false;
           if (impactMax && impactAbs > Number(impactMax)) return false;
-
-          // 4. Type
-          if (divergenceType === 'loss' && item.diff > 0) return false; // Perda é diff negativo (mas o filtro 'loss' deve pegar diff < 0)
+          if (divergenceType === 'loss' && item.diff > 0) return false;
           if (divergenceType === 'surplus' && item.diff < 0) return false;
-
           return true;
       });
   }, [topDivergences, divergenceSearch, diffMin, diffMax, impactMin, impactMax, divergenceType]);
 
   const handleOpenDetails = (item: any) => {
-      // Map TopDivergenceItem to ItemDetailModal format
       setSelectedDivergence({
           ...item,
-          ref: item.sku, // ItemDetailModal usa 'ref' ou 'sku'
+          ref: item.sku, 
           costPrice: item.costPrice,
           salesPrice: item.salesPrice,
           loc: item.location
@@ -224,6 +203,48 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
   };
 
   const getInitials = (name: string) => name ? name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() : 'US';
+
+  // --- HIERARCHICAL TABLE LOGIC ---
+  const handleToggleGroup = (grId: number) => {
+      if (expandedGroup === grId) {
+          setExpandedGroup(null);
+          setExpandedSubgroup(null);
+      } else {
+          setExpandedGroup(grId);
+      }
+  };
+
+  const handleToggleSubgroup = async (grId: number, sgId: number) => {
+      const isSame = expandedSubgroup?.grId === grId && expandedSubgroup?.sgId === sgId;
+      if (isSame) {
+          setExpandedSubgroup(null);
+          setSubgroupItems([]);
+      } else {
+          setExpandedSubgroup({ grId, sgId });
+          setLoadingItems(true);
+          try {
+              const items = await api.getFinancialItems(grId, sgId);
+              setSubgroupItems(items);
+          } catch(e) { console.error(e); }
+          setLoadingItems(false);
+      }
+  };
+
+  const handleSortItems = (field: 'value' | 'qty') => {
+      if (itemSort.field === field) {
+          setItemSort(prev => ({ ...prev, direction: prev.direction === 'desc' ? 'asc' : 'desc' }));
+      } else {
+          setItemSort({ field, direction: 'desc' });
+      }
+  };
+
+  const sortedSubgroupItems = useMemo(() => {
+      return [...subgroupItems].sort((a, b) => {
+          const valA = itemSort.field === 'value' ? a.value : a.qty;
+          const valB = itemSort.field === 'value' ? b.value : b.qty;
+          return itemSort.direction === 'asc' ? valA - valB : valB - valA;
+      });
+  }, [subgroupItems, itemSort]);
 
   return (
     <div className="flex flex-col w-full min-h-screen bg-background-light dark:bg-background-dark pb-20 md:pb-6">
@@ -264,8 +285,6 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                 Snapshot Atual do Estoque
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                
-                {/* 1. Total Stock Value */}
                 <div className="bg-gradient-to-br from-gray-900 to-gray-800 dark:from-surface-dark dark:to-black p-5 rounded-2xl shadow-lg border border-gray-700 relative overflow-hidden group">
                     <div className="absolute right-0 top-0 p-4 opacity-10">
                     <Icon name="payments" size={80} className="text-white" />
@@ -280,7 +299,6 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                         <h3 className="text-2xl font-bold text-white mt-1">
                             <AnimatedNumber value={realKPIs.totalCost} prefix="R$ " decimals={2} />
                         </h3>
-                        
                         <div className="mt-3 pt-3 border-t border-white/10 flex justify-between items-end">
                             <div>
                                 <p className="text-[10px] text-gray-400 font-bold uppercase">Valor de Venda</p>
@@ -293,7 +311,6 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                     </div>
                 </div>
 
-                {/* 2. Total Items */}
                 <div className="bg-white dark:bg-surface-dark p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-card-border hover:border-primary/50 transition-colors group">
                     <div className="flex justify-between items-start mb-2">
                         <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-primary">
@@ -312,7 +329,6 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                     <p className="text-xs text-gray-400 mt-1">SKUs Únicos Cadastrados</p>
                 </div>
 
-                {/* 3. Ticket Médio */}
                 <div className="bg-white dark:bg-surface-dark p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-card-border hover:border-purple-500/50 transition-colors group">
                     <div className="flex justify-between items-start mb-2">
                         <div className="p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg text-purple-600">
@@ -336,7 +352,6 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                     Histórico e Performance
                 </h2>
                 
-                {/* YEAR SELECTOR */}
                 <div className="flex items-center gap-2 bg-white dark:bg-surface-dark border border-gray-200 dark:border-card-border rounded-lg p-1">
                     <span className="text-xs font-bold text-gray-500 pl-2">Ano:</span>
                     <select 
@@ -351,7 +366,6 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                 </div>
             </div>
 
-            {/* HEATMAP */}
             <div className="bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border p-6 overflow-hidden mb-6">
                 <div className="flex items-center justify-between mb-6">
                     <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
@@ -373,11 +387,9 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                 <YearlyHeatmap data={heatmapData} year={selectedYear} />
             </div>
 
-            {/* MIDDLE SECTION: Ranking & Breakdown */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-                {/* PRODUCTIVITY RANKING (NO ACCURACY) */}
-                <div className="lg:col-span-1 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border p-6 flex flex-col h-[400px]">
+                <div className="lg:col-span-1 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border p-6 flex flex-col h-[600px]">
                     <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
                         <Icon name="leaderboard" className="text-yellow-500" />
                         Ranking ({selectedYear})
@@ -410,8 +422,8 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                     </div>
                 </div>
 
-                {/* CATEGORY BREAKDOWN TABLE */}
-                <div className="lg:col-span-2 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border flex flex-col overflow-hidden h-[400px]">
+                {/* HIERARCHICAL CATEGORY TABLE */}
+                <div className="lg:col-span-2 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border flex flex-col overflow-hidden h-[600px]">
                     <div className="p-6 border-b border-gray-100 dark:border-white/5 flex justify-between items-center bg-gray-50/50 dark:bg-white/5">
                         <h2 className="text-lg font-bold text-gray-900 dark:text-white">Detalhamento Financeiro (Atual)</h2>
                     </div>
@@ -420,53 +432,127 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                         <table className="w-full text-left border-collapse min-w-[600px]">
                             <thead className="bg-gray-50 dark:bg-surface-dark sticky top-0 z-10">
                                 <tr className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider font-semibold shadow-sm">
-                                <th className="py-4 px-6 border-b border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-surface-dark">Categoria</th>
-                                <th className="py-4 px-6 border-b border-gray-100 dark:border-white/5 text-right bg-gray-50 dark:bg-surface-dark">Qtd Física</th>
-                                <th className="py-4 px-6 border-b border-gray-100 dark:border-white/5 text-right bg-gray-50 dark:bg-surface-dark">Valor Total</th>
-                                <th className="py-4 px-6 border-b border-gray-100 dark:border-white/5 w-1/3 bg-gray-50 dark:bg-surface-dark">% Share</th>
+                                    <th className="py-4 px-6 border-b border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-surface-dark w-1/3">Categoria</th>
+                                    <th className="py-4 px-6 border-b border-gray-100 dark:border-white/5 text-right bg-gray-50 dark:bg-surface-dark">Qtd Física</th>
+                                    <th className="py-4 px-6 border-b border-gray-100 dark:border-white/5 text-right bg-gray-50 dark:bg-surface-dark">Valor Total</th>
+                                    <th className="py-4 px-6 border-b border-gray-100 dark:border-white/5 w-1/4 bg-gray-50 dark:bg-surface-dark">% Share</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-                                {categoriesData.length === 0 ? (
+                                {financialGroups.length === 0 ? (
                                     <tr><td colSpan={4} className="p-8 text-center text-gray-400">Nenhum dado encontrado</td></tr>
                                 ) : (
-                                    categoriesData.map((cat, idx) => {
-                                    const percentage = totalCategoryValue > 0 ? (cat.value / totalCategoryValue) * 100 : 0;
-                                    return (
-                                        <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-white/5 transition-colors group">
-                                            <td className="py-4 px-6">
-                                                <div className="flex items-center gap-3">
-                                                <div className="size-8 rounded-lg bg-gray-100 dark:bg-white/10 flex items-center justify-center text-gray-500 dark:text-gray-400 group-hover:text-primary transition-colors">
-                                                    <Icon name={cat.icon} size={18} />
-                                                </div>
-                                                <span className="font-bold text-sm text-gray-700 dark:text-gray-200">{cat.name}</span>
-                                                </div>
-                                            </td>
-                                            <td className="py-4 px-6 text-right">
-                                                <span className="font-mono text-sm text-gray-600 dark:text-gray-300 font-medium">
-                                                {cat.qty.toLocaleString()}
-                                                </span>
-                                            </td>
-                                            <td className="py-4 px-6 text-right">
-                                                <span className="font-bold text-sm text-gray-900 dark:text-white">
-                                                R$ {cat.value.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                                </span>
-                                            </td>
-                                            <td className="py-4 px-6">
-                                                <div className="flex items-center gap-3">
-                                                <div className="flex-1 h-2 bg-gray-100 dark:bg-white/10 rounded-full overflow-hidden">
-                                                    <div 
-                                                        className="h-full bg-primary rounded-full relative" 
-                                                        style={{ width: `${percentage}%` }} 
-                                                    />
-                                                </div>
-                                                <span className="text-xs font-bold text-gray-600 dark:text-gray-300 w-10 text-right">
-                                                    {percentage.toFixed(1)}%
-                                                </span>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    );
+                                    financialGroups.map((group) => {
+                                        const percentage = totalCategoryValue > 0 ? (group.value / totalCategoryValue) * 100 : 0;
+                                        const isExpanded = expandedGroup === group.id;
+                                        const icon = GROUP_ICONS[group.id] || 'inventory_2';
+
+                                        return (
+                                            <React.Fragment key={group.id}>
+                                                {/* GROUP ROW */}
+                                                <tr onClick={() => handleToggleGroup(group.id)} className="hover:bg-gray-50 dark:hover:bg-white/5 transition-colors cursor-pointer group select-none">
+                                                    <td className="py-4 px-6">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className={`p-1 text-gray-400 group-hover:text-primary transition-colors ${isExpanded ? 'rotate-90' : ''}`}>
+                                                                <Icon name="chevron_right" size={20} />
+                                                            </div>
+                                                            <div className="size-8 rounded-lg bg-gray-100 dark:bg-white/10 flex items-center justify-center text-gray-500 dark:text-gray-400 group-hover:text-primary transition-colors">
+                                                                <Icon name={icon} size={18} />
+                                                            </div>
+                                                            <span className="font-bold text-sm text-gray-700 dark:text-gray-200">{group.name}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="py-4 px-6 text-right font-mono text-sm text-gray-600 dark:text-gray-300 font-medium">
+                                                        {group.qty.toLocaleString()}
+                                                    </td>
+                                                    <td className="py-4 px-6 text-right font-bold text-sm text-gray-900 dark:text-white">
+                                                        R$ {group.value.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                                    </td>
+                                                    <td className="py-4 px-6">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="flex-1 h-2 bg-gray-100 dark:bg-white/10 rounded-full overflow-hidden">
+                                                                <div className="h-full bg-primary rounded-full" style={{ width: `${percentage}%` }} />
+                                                            </div>
+                                                            <span className="text-xs font-bold text-gray-600 dark:text-gray-300 w-10 text-right">{percentage.toFixed(1)}%</span>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+
+                                                {/* SUBGROUPS */}
+                                                {isExpanded && group.subgroups.map(sub => {
+                                                    const subIsExpanded = expandedSubgroup?.grId === group.id && expandedSubgroup?.sgId === sub.id;
+                                                    const subPercentage = group.value > 0 ? (sub.value / group.value) * 100 : 0;
+
+                                                    return (
+                                                        <React.Fragment key={`${group.id}-${sub.id}`}>
+                                                            <tr onClick={() => handleToggleSubgroup(group.id, sub.id)} className="bg-gray-50/50 dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors cursor-pointer select-none">
+                                                                <td className="py-3 px-6 pl-20 border-l-4 border-transparent hover:border-primary">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <Icon name={subIsExpanded ? "expand_more" : "chevron_right"} size={16} className="text-gray-400" />
+                                                                        <span className="text-xs font-bold text-gray-600 dark:text-gray-300 uppercase">{sub.name}</span>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="py-3 px-6 text-right font-mono text-xs text-gray-500">
+                                                                    {sub.qty.toLocaleString()}
+                                                                </td>
+                                                                <td className="py-3 px-6 text-right font-bold text-xs text-gray-700 dark:text-gray-300">
+                                                                    R$ {sub.value.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                                                </td>
+                                                                <td className="py-3 px-6">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <div className="flex-1 h-1.5 bg-gray-200 dark:bg-white/10 rounded-full overflow-hidden">
+                                                                            <div className="h-full bg-blue-400 rounded-full" style={{ width: `${subPercentage}%` }} />
+                                                                        </div>
+                                                                        <span className="text-[10px] text-gray-400">{subPercentage.toFixed(0)}%</span>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+
+                                                            {/* ITEMS LIST (LEVEL 3) */}
+                                                            {subIsExpanded && (
+                                                                <tr>
+                                                                    <td colSpan={4} className="p-0 bg-gray-100 dark:bg-black/20 shadow-inner">
+                                                                        <div className="p-4 pl-20">
+                                                                            {loadingItems ? (
+                                                                                <div className="flex justify-center py-4"><Icon name="sync" className="animate-spin text-primary" /></div>
+                                                                            ) : (
+                                                                                <div className="rounded-lg overflow-hidden border border-gray-200 dark:border-white/10">
+                                                                                    {/* HEADER ITEMS */}
+                                                                                    <div className="grid grid-cols-12 bg-white dark:bg-surface-dark border-b border-gray-200 dark:border-white/10 text-[10px] font-bold text-gray-500 uppercase py-2 px-4">
+                                                                                        <div className="col-span-6">Produto</div>
+                                                                                        <div className="col-span-2 text-right cursor-pointer hover:text-primary flex items-center justify-end gap-1" onClick={() => handleSortItems('qty')}>
+                                                                                            Qtd {itemSort.field === 'qty' && <Icon name={itemSort.direction === 'desc' ? "arrow_drop_down" : "arrow_drop_up"} size={14} />}
+                                                                                        </div>
+                                                                                        <div className="col-span-4 text-right cursor-pointer hover:text-primary flex items-center justify-end gap-1" onClick={() => handleSortItems('value')}>
+                                                                                            Valor Total {itemSort.field === 'value' && <Icon name={itemSort.direction === 'desc' ? "arrow_drop_down" : "arrow_drop_up"} size={14} />}
+                                                                                        </div>
+                                                                                    </div>
+                                                                                    {/* LIST ITEMS */}
+                                                                                    <div className="max-h-60 overflow-y-auto bg-white dark:bg-surface-dark">
+                                                                                        {sortedSubgroupItems.map((item, idx) => (
+                                                                                            <div key={idx} className="grid grid-cols-12 py-2 px-4 border-b border-gray-100 dark:border-white/5 last:border-0 hover:bg-gray-50 dark:hover:bg-white/5 text-xs text-gray-700 dark:text-gray-300">
+                                                                                                <div className="col-span-6 truncate pr-2" title={item.name}>
+                                                                                                    <span className="font-mono text-[10px] text-gray-400 mr-2">{item.sku}</span>
+                                                                                                    {item.name}
+                                                                                                </div>
+                                                                                                <div className="col-span-2 text-right font-mono">{item.qty}</div>
+                                                                                                <div className="col-span-4 text-right font-bold">
+                                                                                                    R$ {item.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                                                                </div>
+                                                                                            </div>
+                                                                                        ))}
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    </td>
+                                                                </tr>
+                                                            )}
+                                                        </React.Fragment>
+                                                    );
+                                                })}
+                                            </React.Fragment>
+                                        );
                                     })
                                 )}
                             </tbody>
