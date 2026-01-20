@@ -85,6 +85,7 @@ const safeString = (value) => {
 };
 
 // CORREÇÃO CRÍTICA: Conversão robusta de BLOB para String JSON
+// O Firebird pode retornar Blobs como Buffers ou Streams. Para JSON, queremos String.
 const blobToString = (blob) => {
     if (blob === null || blob === undefined) return null;
     

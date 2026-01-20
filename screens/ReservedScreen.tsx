@@ -41,23 +41,8 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
   useEffect(() => {
       if (currentUser) {
           api.getReservedBlocks(currentUser.id).then(freshBlocks => {
-              const initialized = freshBlocks.map(b => ({
-                ...b,
-                items: b.items.map(i => ({
-                    ...i,
-                    // Garante que o status e quantidade venham do backend (ITEMS_JSON)
-                    status: (i.status && i.status !== 'pending') ? i.status : 'pending',
-                    countedQty: i.countedQty !== undefined ? i.countedQty : 0,
-                    // Se houver dados de contagem anterior, garante que o lastCount reflete isso
-                    lastCount: i.lastCount || (i.status !== 'pending' ? {
-                        user: 'Você',
-                        date: 'Salvo',
-                        qty: i.countedQty || 0,
-                        location: i.location || ''
-                    } : null)
-                }))
-              }));
-              setLocalBlocks(initialized);
+              // AQUI: Confiamos no que vem do backend. Se o backend mandou status 'counted' pelo JSON, respeitamos.
+              setLocalBlocks(freshBlocks);
           });
       }
   }, [currentUser]);
@@ -149,10 +134,12 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
     setLocalBlocks(updatedBlocks);
 
     // 2. SALVA PROGRESSO NO BLOB JSON DA RESERVA (Persistência)
-    // Busca novamente com cast para string para garantir
+    // CORREÇÃO CRÍTICA: NÃO usar Number() no activeBlockId, pois pode ser string (ex: códigos similares)
     const activeBlock = updatedBlocks.find(b => String(b.id) === String(activeBlockId));
+    
     if (activeBlock) {
-        await api.updateReservationProgress(Number(activeBlockId), activeBlock.items);
+        // Envia o array de itens atualizado para ser salvo no campo JSON da reserva
+        await api.updateReservationProgress(activeBlock.id, activeBlock.items);
     }
 
     setShowEntryModal(false);
