@@ -489,7 +489,8 @@ app.get('/blocks', (req, res) => {
                                     ref: safeString(p.PRO_NRFABRICANTE),
                                     brand: p.MAR_DESCRI ? safeString(p.MAR_DESCRI) : 'GENÉRICO',
                                     balance: parseFloat(p.PRO_EST_ATUAL || 0),
-                                    location: safeString(p.PRO_PRATELEIRA) || '', // REMOVIDO "GERAL"
+                                    // CORREÇÃO: Removido || 'GERAL' para que venha vazio se não houver
+                                    location: safeString(p.PRO_PRATELEIRA),
                                     costPrice: parseFloat(p.PRO_PRECOULTCOMPRA || 0),
                                     salesPrice: parseFloat(p.PRO_PRECOVENDA || 0),
                                     isCounted: isCounted,
@@ -603,7 +604,8 @@ app.get('/reserved-blocks/:userId', (req, res) => {
                         ref: safeString(p.PRO_NRFABRICANTE),
                         brand: p.MAR_DESCRI ? safeString(p.MAR_DESCRI) : 'GENÉRICO',
                         balance: parseFloat(p.PRO_EST_ATUAL || 0),
-                        location: safeString(p.PRO_PRATELEIRA) || '', // REMOVIDO "GERAL"
+                        // CORREÇÃO: Removido || 'GERAL' para que venha vazio se não houver
+                        location: safeString(p.PRO_PRATELEIRA),
                         costPrice: parseFloat(p.PRO_PRECOULTCOMPRA || 0),
                         salesPrice: parseFloat(p.PRO_PRECOVENDA || 0),
                         isCounted: countedSet.has(p.PRO_COD),
@@ -689,13 +691,30 @@ app.post('/reserve-block', (req, res) => {
 
 app.post('/update-reservation-progress', (req, res) => {
     const { block_id, items } = req.body;
-    // Buffer garante que string longa seja gravada como BLOB
-    const buffer = Buffer.from(JSON.stringify(items), 'utf8');
+    // CORREÇÃO: Enviando string JSON direto em vez de Buffer para evitar problemas de BLOB binário
+    const jsonStr = JSON.stringify(items);
     
     Firebird.attach(options, (err, db) => {
-        db.query('UPDATE GRIDE_RESERVAS SET ITEMS_JSON = ? WHERE BLOCK_ID = ?', [buffer, block_id], (err) => {
-            db.detach(); 
-            res.json({success: !err});
+        if(err) return res.status(500).json({success:false});
+        
+        // Uso de transação para garantir que a escrita ocorra
+        db.transaction(Firebird.ISOLATION_READ_COMMITTED, async (err, transaction) => {
+            if(err) { db.detach(); return res.json({success:false}); }
+
+            transaction.query('UPDATE GRIDE_RESERVAS SET ITEMS_JSON = ? WHERE BLOCK_ID = ?', [jsonStr, block_id], (err, result) => {
+                if(err) {
+                    console.error("Erro Update Blob:", err);
+                    transaction.rollback();
+                    db.detach();
+                    return res.json({success:false});
+                }
+
+                transaction.commit((err) => {
+                    db.detach();
+                    if(err) console.error("Erro Commit Blob:", err);
+                    res.json({success: !err});
+                });
+            });
         });
     });
 });

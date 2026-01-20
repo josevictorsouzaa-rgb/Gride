@@ -63,7 +63,8 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
               blockGroups.set(uniqueBlockId, {
                   id: uniqueBlockId,
                   parentRef: parentRef,
-                  location: entry.LOCALIZACAO || 'GERAL',
+                  // CORREÇÃO: Remove fallback 'GERAL'
+                  location: entry.LOCALIZACAO || '',
                   latestDate: entry.DATA_HORA, 
                   user: entry.USUARIO_NOME,
                   items: []
@@ -80,7 +81,8 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
               qty: entry.QTD_CONTADA,
               countedBy: entry.USUARIO_NOME,
               countedAt: entry.DATA_HORA,
-              location: entry.LOCALIZACAO || 'GERAL',
+              // CORREÇÃO: Remove fallback 'GERAL'
+              location: entry.LOCALIZACAO || '',
               status: entry.STATUS,
               treatmentStatus: entry.TREATMENT_STATUS, // Novo campo do JOIN
               isEdited: entry.STATUS === 'EDIÇÃO'
@@ -280,7 +282,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
                             
                             <div className={`flex items-center gap-1 mt-1 text-xs md:text-sm ${headerTextSub}`}>
                                 <Icon name="place" size={14} /> 
-                                <span className="font-medium">{block.location}</span>
+                                <span className="font-medium">{block.location || 'Sem Local'}</span>
                             </div>
                         </div>
 

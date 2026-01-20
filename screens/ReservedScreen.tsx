@@ -18,7 +18,7 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
   const [localBlocks, setLocalBlocks] = useState<Block[]>([]);
   
   const [selectedItem, setSelectedItem] = useState<any | null>(null);
-  const [activeBlockId, setActiveBlockId] = useState<number | null>(null);
+  const [activeBlockId, setActiveBlockId] = useState<string | number | null>(null);
   
   // Modals States
   const [showEntryModal, setShowEntryModal] = useState(false);
@@ -31,7 +31,7 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
   const [blockToGiveUp, setBlockToGiveUp] = useState<Block | null>(null);
   
   // State for Animation
-  const [exitingBlockId, setExitingBlockId] = useState<number | null>(null);
+  const [exitingBlockId, setExitingBlockId] = useState<number | string | null>(null);
 
   // States for Scanning within Count Flow
   const [showScanner, setShowScanner] = useState(false);
@@ -62,7 +62,7 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
       }
   }, [currentUser]);
 
-  const handleOpenCount = (blockId: number, item: any) => {
+  const handleOpenCount = (blockId: string | number, item: any) => {
     setActiveBlockId(blockId);
     setSelectedItem(item);
     // Limpa código escaneado anterior para não interferir
@@ -116,12 +116,12 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
     }
 
     // Localização Final: Ou escaneou agora, ou já tinha salvo (lastCount), ou usa o cadastro
-    // MODIFICADO: Removemos o fallback || 'GERAL'
     const finalLocation = scannedCode || selectedItem.lastCount?.location || selectedItem.location || '';
 
     // 1. ATUALIZA ESTADO LOCAL
+    // Usa String(block.id) para garantir que comparações funcionem mesmo se um for numero e outro string
     const updatedBlocks = localBlocks.map(block => {
-        if (block.id !== activeBlockId) return block;
+        if (String(block.id) !== String(activeBlockId)) return block;
         
         return {
             ...block,
@@ -149,9 +149,10 @@ export const ReservedScreen: React.FC<ReservedScreenProps> = ({ onNavigate, bloc
     setLocalBlocks(updatedBlocks);
 
     // 2. SALVA PROGRESSO NO BLOB JSON DA RESERVA (Persistência)
-    const activeBlock = updatedBlocks.find(b => b.id === activeBlockId);
+    // Busca novamente com cast para string para garantir
+    const activeBlock = updatedBlocks.find(b => String(b.id) === String(activeBlockId));
     if (activeBlock) {
-        await api.updateReservationProgress(activeBlockId, activeBlock.items);
+        await api.updateReservationProgress(Number(activeBlockId), activeBlock.items);
     }
 
     setShowEntryModal(false);
