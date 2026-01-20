@@ -143,6 +143,17 @@ export const api = {
       }
   },
 
+  // NOVA ROTA: Get KPIs para Analytics (Valor Total, etc)
+  getAnalyticsKPIs: async (): Promise<{ totalValue: number, totalCount: number }> => {
+      try {
+          const response = await fetch(`${API_BASE_URL}/analytics/kpis`);
+          if (!response.ok) return { totalValue: 0, totalCount: 0 };
+          return await response.json();
+      } catch (e) {
+          return { totalValue: 0, totalCount: 0 };
+      }
+  },
+
   // NOVA ROTA: Get User Daily Stats
   getDailyStats: async (userId: string): Promise<{ countedToday: number }> => {
       try {

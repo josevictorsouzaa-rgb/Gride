@@ -1,8 +1,10 @@
-import React, { useState, useMemo } from 'react';
+
+import React, { useState, useMemo, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ComposedChart, Line, CartesianGrid, Legend } from 'recharts';
 import { Icon } from '../components/Icon';
 import { Screen } from '../types';
 import { ItemDetailModal } from '../components/ItemDetailModal';
+import { api } from '../services/api';
 
 interface AnalyticsScreenProps {
   onNavigate: (screen: Screen) => void;
@@ -62,8 +64,7 @@ const categoryPerformance = [
   { name: 'REFRIGERAÇÃO', icon: 'mode_fan', value: 70320, qty: 1800 },
 ].sort((a, b) => b.value - a.value); // Sort by Value desc
 
-const totalStockValue = categoryPerformance.reduce((acc, curr) => acc + curr.value, 0);
-const totalStockQty = categoryPerformance.reduce((acc, curr) => acc + curr.qty, 0);
+const totalStockValueMock = categoryPerformance.reduce((acc, curr) => acc + curr.value, 0);
 
 const userRankData = [
   { name: 'Carlos Silva', counts: 1450, accuracy: 99.2, avatar: '849201' },
@@ -234,6 +235,11 @@ const DivergenceResolutionModal: React.FC<DivergenceResolutionModalProps> = ({ i
 export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) => {
   const [divergenceList, setDivergenceList] = useState(initialDivergenceData);
   const [selectedDivergence, setSelectedDivergence] = useState<any | null>(null);
+  const [realKPIs, setRealKPIs] = useState({ totalValue: 0, totalCount: 0 });
+
+  useEffect(() => {
+      api.getAnalyticsKPIs().then(setRealKPIs);
+  }, []);
 
   const handleAcceptDivergence = (item: any) => {
     // Remove the item from the list to simulate acceptance/resolution
@@ -276,7 +282,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
         {/* KPI CARDS - ENHANCED WITH MONETARY VALUE */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             
-            {/* Total Stock Value */}
+            {/* Total Stock Value - REAL DATA */}
             <div className="bg-gradient-to-br from-gray-900 to-gray-800 dark:from-surface-dark dark:to-black p-5 rounded-2xl shadow-lg border border-gray-700 relative overflow-hidden group">
                 <div className="absolute right-0 top-0 p-4 opacity-10">
                    <Icon name="payments" size={80} className="text-white" />
@@ -288,13 +294,14 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                 </div>
                 <div className="relative z-10">
                     <p className="text-sm text-gray-300 font-medium">Valor Total em Estoque</p>
-                    <h3 className="text-2xl font-bold text-white mt-1">R$ {totalStockValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
+                    <h3 className="text-2xl font-bold text-white mt-1">R$ {realKPIs.totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h3>
                     <p className="text-xs text-green-400 mt-2 flex items-center gap-1">
-                       <Icon name="trending_up" size={14} /> +R$ 120k este mês
+                       <Icon name="verified" size={14} /> Custo de Reposição (Ativos)
                     </p>
                 </div>
             </div>
 
+            {/* Total Active Items - REAL DATA */}
             <div className="bg-white dark:bg-surface-dark p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-card-border hover:border-primary/50 transition-colors group">
                 <div className="flex justify-between items-start mb-2">
                     <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-primary">
@@ -302,7 +309,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                     </div>
                 </div>
                 <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Itens Ativos</p>
-                <h3 className="text-2xl font-bold text-gray-900 dark:text-white mt-1">12.450</h3>
+                <h3 className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{realKPIs.totalCount.toLocaleString()}</h3>
                 <p className="text-xs text-gray-400 mt-1">SKUs Cadastrados</p>
             </div>
 
@@ -398,7 +405,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                      </thead>
                      <tbody className="divide-y divide-gray-100 dark:divide-white/5">
                         {categoryPerformance.map((cat, idx) => {
-                           const percentage = (cat.value / totalStockValue) * 100;
+                           const percentage = (cat.value / totalStockValueMock) * 100;
                            return (
                               <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-white/5 transition-colors group">
                                  <td className="py-4 px-6">

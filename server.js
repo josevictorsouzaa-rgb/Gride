@@ -130,6 +130,35 @@ const initDb = () => {
 
 // --- ROTAS ---
 
+// NOVA ROTA: KPIs Gerenciais Reais
+app.get('/analytics/kpis', (req, res) => {
+    Firebird.attach(options, async (err, db) => {
+        if (err) return res.status(500).json({ totalValue: 0, totalCount: 0 });
+        try {
+            // 1. Valor Total em Estoque (Custo Unit * Saldo) apenas Ativos
+            const sqlValue = `
+                SELECT SUM(COALESCE(PRO_PRECOULTCOMPRA, 0) * COALESCE(PRO_EST_ATUAL, 0)) as TOTAL_VALUE 
+                FROM PRODUTOS 
+                WHERE PRO_ATIVO = 'S'
+            `;
+            const resValue = await execute(db, sqlValue);
+            const totalValue = resValue[0]?.TOTAL_VALUE || 0;
+
+            // 2. Contagem de Itens Ativos
+            const sqlCount = `SELECT COUNT(*) as TOTAL_COUNT FROM PRODUTOS WHERE PRO_ATIVO = 'S'`;
+            const resCount = await execute(db, sqlCount);
+            const totalCount = resCount[0]?.TOTAL_COUNT || 0;
+
+            db.detach();
+            res.json({ totalValue, totalCount });
+        } catch (e) {
+            db.detach();
+            console.error("Erro KPIs:", e);
+            res.status(500).json({ totalValue: 0, totalCount: 0 });
+        }
+    });
+});
+
 // NOVA ROTA: Contagem de status (Totais)
 app.get('/block-counts', (req, res) => {
     const search = req.query.search || '';
