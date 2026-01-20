@@ -1,217 +1,76 @@
-
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Icon } from '../components/Icon';
 import { Screen } from '../types';
-import { ItemDetailModal } from '../components/ItemDetailModal';
-import { api, RankingItem, TopDivergenceItem, ApiFinancialGroup, ApiFinancialItem } from '../services/api';
-import { GROUP_ICONS } from '../data/categories';
+import { api, ApiFinancialGroup, ApiFinancialItem, RankingItem, TopDivergenceItem } from '../services/api';
+import { AutoPartsLoader } from '../components/AutoPartsLoader';
+import { ResponsiveContainer, BarChart, Bar, XAxis, Tooltip } from 'recharts';
 
 interface AnalyticsScreenProps {
   onNavigate: (screen: Screen) => void;
 }
 
-// --- REUSABLE ANIMATED NUMBER COMPONENT ---
-const AnimatedNumber = ({ value, duration = 2000, prefix = '', suffix = '', decimals = 0 }: { value: number, duration?: number, prefix?: string, suffix?: string, decimals?: number }) => {
-    const [display, setDisplay] = useState(0);
-
-    useEffect(() => {
-        if (value > 0) {
-            let start = 0;
-            if (display > 0 && Math.abs(display - value) < value) start = display;
-            
-            const end = value;
-            const range = end - start;
-            const startTime = Date.now();
-            
-            const timer = setInterval(() => {
-                const elapsed = Date.now() - startTime;
-                const progress = Math.min(elapsed / duration, 1);
-                const ease = 1 - Math.pow(1 - progress, 3);
-                
-                const current = start + (range * ease);
-                setDisplay(current);
-
-                if (progress === 1) clearInterval(timer);
-            }, 16); 
-
-            return () => clearInterval(timer);
-        } else {
-            setDisplay(0);
-        }
-    }, [value]);
-
-    return (
-        <span>
-            {prefix}
-            {display.toLocaleString('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}
-            {suffix}
-        </span>
-    );
-};
-
-// --- HEATMAP COMPONENT ---
-const YearlyHeatmap = ({ data, year }: { data: { month: number, day: number, count: number }[], year: number }) => {
-    const countMap = useMemo(() => {
-        const map = new Map();
-        data.forEach(d => map.set(`${d.month}-${d.day}`, d.count));
-        return map;
-    }, [data]);
-
-    const weeks = useMemo(() => {
-        const startOfYear = new Date(year, 0, 1);
-        const endOfYear = new Date(year, 11, 31);
-        const today = new Date();
-        
-        const weeksArray = [];
-        let currentWeek: any[] = [];
-        
-        for(let i=0; i<startOfYear.getDay(); i++) currentWeek.push(null);
-
-        for (let d = new Date(startOfYear); d <= endOfYear; d.setDate(d.getDate() + 1)) {
-            const currentDate = new Date(d);
-            currentWeek.push({
-                date: currentDate,
-                key: `${currentDate.getMonth() + 1}-${currentDate.getDate()}`,
-                isFuture: currentDate > today
-            });
-
-            if (currentWeek.length === 7) {
-                weeksArray.push(currentWeek);
-                currentWeek = [];
-            }
-        }
-        if (currentWeek.length > 0) {
-            while(currentWeek.length < 7) currentWeek.push(null);
-            weeksArray.push(currentWeek);
-        }
-        return weeksArray;
-    }, [year]);
-
-    return (
-        <div className="overflow-x-auto pb-4 no-scrollbar">
-            <div className="flex gap-1.5 min-w-max">
-                {weeks.map((week, wIdx) => (
-                    <div key={wIdx} className="flex flex-col gap-1.5">
-                        {week.map((item, dIdx) => {
-                            if (!item) return <div key={dIdx} className="size-4" />;
-                            
-                            const count = countMap.get(item.key) || 0;
-                            let bgColor = 'bg-gray-100 dark:bg-white/5';
-                            
-                            if (!item.isFuture) {
-                                if (count > 50) bgColor = 'bg-green-600 dark:bg-green-500';
-                                else if (count > 20) bgColor = 'bg-green-400 dark:bg-green-600';
-                                else if (count > 0) bgColor = 'bg-green-200 dark:bg-green-900/40';
-                            } else {
-                                bgColor = 'bg-transparent border border-gray-100 dark:border-white/5'; 
-                            }
-
-                            return (
-                                <div 
-                                    key={dIdx} 
-                                    className={`size-4 rounded-[3px] ${bgColor} transition-all hover:scale-125 relative group`}
-                                    title={`${item.date.toLocaleDateString()}: ${count} itens`}
-                                >
-                                    {count > 0 && (
-                                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block bg-black text-white text-[10px] p-2 rounded whitespace-nowrap z-50 font-bold shadow-xl">
-                                            {item.date.toLocaleDateString()}<br/>
-                                            {count} itens contados
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-};
-
 export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) => {
-  const [selectedDivergence, setSelectedDivergence] = useState<any | null>(null);
+  const [activeTab, setActiveTab] = useState<'overview' | 'financial' | 'divergences'>('overview');
+  const [loading, setLoading] = useState(true);
   
-  const [realKPIs, setRealKPIs] = useState({ totalCost: 0, totalSales: 0, totalCount: 0, inactiveCount: 0 });
-  const [heatmapData, setHeatmapData] = useState<{ month: number, day: number, count: number }[]>([]);
-  const [financialGroups, setFinancialGroups] = useState<ApiFinancialGroup[]>([]);
-  
-  const [availableYears, setAvailableYears] = useState<number[]>([]);
+  // Overview Data
+  const [years, setYears] = useState<number[]>([]);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
-  const [rankingData, setRankingData] = useState<RankingItem[]>([]);
-  const [topDivergences, setTopDivergences] = useState<TopDivergenceItem[]>([]);
+  const [kpis, setKpis] = useState<any>(null);
+  const [heatmap, setHeatmap] = useState<any[]>([]);
+  const [ranking, setRanking] = useState<RankingItem[]>([]);
 
-  // Filtros de Divergência
-  const [divergenceSearch, setDivergenceSearch] = useState('');
-  const [diffMin, setDiffMin] = useState('');
-  const [diffMax, setDiffMax] = useState('');
-  const [impactMin, setImpactMin] = useState('');
-  const [impactMax, setImpactMax] = useState('');
-  const [divergenceType, setDivergenceType] = useState<'all' | 'loss' | 'surplus'>('all');
-
-  // Estado para Tabela Hierárquica
-  const [expandedGroup, setExpandedGroup] = useState<number | null>(null);
+  // Financial Data
+  const [financialGroups, setFinancialGroups] = useState<ApiFinancialGroup[]>([]);
+  const [expandedGroupId, setExpandedGroupId] = useState<number | null>(null);
   const [expandedSubgroup, setExpandedSubgroup] = useState<{ grId: number, sgId: number } | null>(null);
   const [subgroupItems, setSubgroupItems] = useState<ApiFinancialItem[]>([]);
   const [loadingItems, setLoadingItems] = useState(false);
-  const [itemSort, setItemSort] = useState<{ field: 'value' | 'qty' | 'unit', direction: 'desc' | 'asc' }>({ field: 'value', direction: 'desc' });
+  const [itemSort, setItemSort] = useState<{ field: 'qty' | 'unit' | 'value', direction: 'asc' | 'desc' }>({ field: 'value', direction: 'desc' });
+
+  // Divergences Data
+  const [divergences, setDivergences] = useState<TopDivergenceItem[]>([]);
 
   useEffect(() => {
-      api.getAnalyticsKPIs().then(setRealKPIs);
-      api.getFinancialCategories().then(setFinancialGroups);
-      api.getAvailableYears().then(years => {
-          setAvailableYears(years);
-          if (years.length > 0) setSelectedYear(years[0]);
-      });
+    loadInitialData();
   }, []);
 
   useEffect(() => {
-      if (selectedYear) {
-          api.getHeatmapData(selectedYear).then(setHeatmapData);
-          api.getUserRanking(selectedYear).then(setRankingData);
-          api.getTopDivergences(selectedYear).then(setTopDivergences);
-      }
-  }, [selectedYear]);
+    if (activeTab === 'overview') loadYearData();
+    if (activeTab === 'divergences') loadDivergences();
+  }, [selectedYear, activeTab]);
 
-  const ticketMedio = realKPIs.totalCount > 0 ? (realKPIs.totalSales / realKPIs.totalCount) : 0;
-  const totalCategoryValue = financialGroups.reduce((acc, curr) => acc + curr.value, 0);
-
-  // --- FILTRAGEM AVANÇADA ---
-  const filteredDivergences = useMemo(() => {
-      return topDivergences.filter(item => {
-          const searchLower = divergenceSearch.toLowerCase();
-          if (searchLower && !item.name.toLowerCase().includes(searchLower) && !item.sku.toLowerCase().includes(searchLower)) return false;
-          const diffAbs = Math.abs(item.diff);
-          if (diffMin && diffAbs < Number(diffMin)) return false;
-          if (diffMax && diffAbs > Number(diffMax)) return false;
-          const impactAbs = Math.abs(item.diffValue);
-          if (impactMin && impactAbs < Number(impactMin)) return false;
-          if (impactMax && impactAbs > Number(impactMax)) return false;
-          if (divergenceType === 'loss' && item.diff > 0) return false;
-          if (divergenceType === 'surplus' && item.diff < 0) return false;
-          return true;
-      });
-  }, [topDivergences, divergenceSearch, diffMin, diffMax, impactMin, impactMax, divergenceType]);
-
-  const handleOpenDetails = (item: any) => {
-      setSelectedDivergence({
-          ...item,
-          ref: item.sku, 
-          costPrice: item.costPrice,
-          salesPrice: item.salesPrice,
-          loc: item.location
-      });
+  const loadInitialData = async () => {
+    setLoading(true);
+    const [yrs, kpiData, finData] = await Promise.all([
+        api.getAvailableYears(),
+        api.getAnalyticsKPIs(),
+        api.getFinancialCategories()
+    ]);
+    setYears(yrs);
+    setKpis(kpiData);
+    setFinancialGroups(finData);
+    setLoading(false);
   };
 
-  const getInitials = (name: string) => name ? name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() : 'US';
+  const loadYearData = async () => {
+     const [hm, rnk] = await Promise.all([
+         api.getHeatmapData(selectedYear),
+         api.getUserRanking(selectedYear)
+     ]);
+     setHeatmap(hm);
+     setRanking(rnk);
+  };
 
-  // --- HIERARCHICAL TABLE LOGIC ---
+  const loadDivergences = async () => {
+      const data = await api.getTopDivergences(selectedYear);
+      setDivergences(data);
+  };
+
   const handleToggleGroup = (grId: number) => {
-      if (expandedGroup === grId) {
-          setExpandedGroup(null);
-          setExpandedSubgroup(null);
-      } else {
-          setExpandedGroup(grId);
-      }
+      setExpandedGroupId(prev => prev === grId ? null : grId);
+      setExpandedSubgroup(null);
+      setSubgroupItems([]);
   };
 
   const handleToggleSubgroup = async (grId: number, sgId: number) => {
@@ -222,276 +81,213 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
       } else {
           setExpandedSubgroup({ grId, sgId });
           setLoadingItems(true);
-          try {
-              const items = await api.getFinancialItems(grId, sgId);
-              setSubgroupItems(items);
-          } catch(e) { console.error(e); }
+          const items = await api.getFinancialItems(grId, sgId);
+          setSubgroupItems(items);
           setLoadingItems(false);
       }
   };
 
-  const handleSortItems = (field: 'value' | 'qty' | 'unit') => {
-      if (itemSort.field === field) {
-          setItemSort(prev => ({ ...prev, direction: prev.direction === 'desc' ? 'asc' : 'desc' }));
-      } else {
-          setItemSort({ field, direction: 'desc' });
-      }
+  const handleSortItems = (field: 'qty' | 'unit' | 'value') => {
+      setItemSort(prev => ({
+          field,
+          direction: prev.field === field && prev.direction === 'desc' ? 'asc' : 'desc'
+      }));
   };
 
   const sortedSubgroupItems = useMemo(() => {
       return [...subgroupItems].sort((a, b) => {
-          let valA = 0;
-          let valB = 0;
-          
-          if (itemSort.field === 'value') { valA = a.value; valB = b.value; }
-          else if (itemSort.field === 'qty') { valA = a.qty; valB = b.qty; }
+          let valA: number, valB: number;
+          if (itemSort.field === 'qty') { valA = a.qty; valB = b.qty; }
           else if (itemSort.field === 'unit') { valA = a.unitPrice; valB = b.unitPrice; }
-
+          else { valA = a.value; valB = b.value; }
+          
           return itemSort.direction === 'asc' ? valA - valB : valB - valA;
       });
   }, [subgroupItems, itemSort]);
 
+  const renderHeatmap = () => {
+      // Activity chart using counts per month
+      const monthlyData = Array.from({ length: 12 }, (_, i) => ({ name: new Date(0, i).toLocaleString('default', { month: 'short' }), count: 0 }));
+      heatmap.forEach(h => {
+          if(h.month >= 1 && h.month <= 12) monthlyData[h.month - 1].count += h.count;
+      });
+
+      return (
+         <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={monthlyData}>
+                <XAxis dataKey="name" fontSize={10} tickLine={false} axisLine={false} />
+                <Tooltip 
+                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} 
+                    cursor={{ fill: 'transparent' }}
+                />
+                <Bar dataKey="count" fill="#137fec" radius={[4, 4, 0, 0]} />
+            </BarChart>
+         </ResponsiveContainer>
+      );
+  };
+
+  if (loading) return <AutoPartsLoader message="Carregando Indicadores..." />;
+
   return (
-    <div className="flex flex-col w-full min-h-screen bg-background-light dark:bg-background-dark pb-20 md:pb-6">
-      
-      {/* HEADER */}
-      <header className="sticky top-0 z-20 bg-white/95 dark:bg-background-dark/95 backdrop-blur-md border-b border-gray-200 dark:border-card-border p-4 md:px-8">
-         <div className="max-w-7xl mx-auto w-full">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                        <Icon name="insights" className="text-primary" />
-                        Dashboard Gerencial
-                    </h1>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                        Análise financeira e controle de perdas.
-                    </p>
-                </div>
-                <div className="flex items-center gap-2">
-                   <div className="hidden md:flex flex-col items-end mr-4">
-                      <p className="text-[10px] text-gray-400 uppercase font-bold">Última Atualização</p>
-                      <p className="text-xs font-bold text-gray-700 dark:text-white">Agora</p>
-                   </div>
-                   <button className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-surface-dark border border-gray-200 dark:border-card-border rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-white/5 transition-colors shadow-sm">
-                        <Icon name="download" size={18} />
-                        Relatório
-                    </button>
-                </div>
+    <div className="flex flex-col w-full min-h-screen bg-background-light dark:bg-background-dark pb-24 md:pb-0">
+        <header className="sticky top-0 z-20 bg-white/95 dark:bg-surface-dark/95 backdrop-blur-sm border-b border-gray-200 dark:border-white/5 px-4 py-3 flex items-center gap-3">
+            <button onClick={() => onNavigate('dashboard')} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">
+                <Icon name="arrow_back" />
+            </button>
+            <div className="flex-1">
+                <h2 className="text-lg font-bold">Analytics</h2>
+                <p className="text-xs text-gray-500">Indicadores de Performance</p>
             </div>
-         </div>
-      </header>
+            <div className="flex bg-gray-100 dark:bg-white/5 p-1 rounded-lg">
+                <button onClick={() => setActiveTab('overview')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${activeTab === 'overview' ? 'bg-white dark:bg-white/10 shadow text-primary' : 'text-gray-500'}`}>Geral</button>
+                <button onClick={() => setActiveTab('financial')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${activeTab === 'financial' ? 'bg-white dark:bg-white/10 shadow text-primary' : 'text-gray-500'}`}>Financeiro</button>
+                <button onClick={() => setActiveTab('divergences')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${activeTab === 'divergences' ? 'bg-white dark:bg-white/10 shadow text-primary' : 'text-gray-500'}`}>Diverg.</button>
+            </div>
+        </header>
 
-      <main className="flex-1 max-w-7xl mx-auto w-full p-4 md:p-8 space-y-8">
-        
-        {/* SECTION 1: STATIC SNAPSHOTS */}
-        <div>
-            <h2 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                <Icon name="camera_alt" size={16} />
-                Snapshot Atual do Estoque
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div className="bg-gradient-to-br from-gray-900 to-gray-800 dark:from-surface-dark dark:to-black p-5 rounded-2xl shadow-lg border border-gray-700 relative overflow-hidden group">
-                    <div className="absolute right-0 top-0 p-4 opacity-10">
-                    <Icon name="payments" size={80} className="text-white" />
-                    </div>
-                    <div className="flex justify-between items-start mb-4 relative z-10">
-                        <div className="p-2 bg-white/10 rounded-lg text-white">
-                            <Icon name="attach_money" />
+        <main className="p-4 md:p-8 space-y-6">
+            
+            {activeTab === 'overview' && (
+                <div className="space-y-6 animate-fade-in">
+                    {/* KPIs */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div className="bg-white dark:bg-surface-dark p-4 rounded-xl shadow-sm border border-gray-200 dark:border-white/5">
+                            <p className="text-[10px] uppercase font-bold text-gray-400 mb-1">Custo Total Estoque</p>
+                            <p className="text-lg font-black text-gray-900 dark:text-white">
+                                {kpis?.totalCost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })}
+                            </p>
+                        </div>
+                        <div className="bg-white dark:bg-surface-dark p-4 rounded-xl shadow-sm border border-gray-200 dark:border-white/5">
+                            <p className="text-[10px] uppercase font-bold text-gray-400 mb-1">Venda Total Estoque</p>
+                            <p className="text-lg font-black text-green-600 dark:text-green-400">
+                                {kpis?.totalSales.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })}
+                            </p>
+                        </div>
+                        <div className="bg-white dark:bg-surface-dark p-4 rounded-xl shadow-sm border border-gray-200 dark:border-white/5">
+                            <p className="text-[10px] uppercase font-bold text-gray-400 mb-1">Itens Ativos</p>
+                            <p className="text-lg font-black text-blue-600 dark:text-blue-400">
+                                {kpis?.totalCount.toLocaleString()}
+                            </p>
+                        </div>
+                         <div className="bg-white dark:bg-surface-dark p-4 rounded-xl shadow-sm border border-gray-200 dark:border-white/5">
+                            <p className="text-[10px] uppercase font-bold text-gray-400 mb-1">Itens Inativos</p>
+                            <p className="text-lg font-black text-gray-500">
+                                {kpis?.inactiveCount.toLocaleString()}
+                            </p>
                         </div>
                     </div>
-                    <div className="relative z-10">
-                        <p className="text-sm text-gray-300 font-medium">Valor em Estoque (Custo)</p>
-                        <h3 className="text-2xl font-bold text-white mt-1">
-                            <AnimatedNumber value={realKPIs.totalCost} prefix="R$ " decimals={2} />
+
+                    {/* Heatmap / Activity */}
+                    <div className="bg-white dark:bg-surface-dark p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-white/5">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                                <Icon name="bar_chart" /> Atividade de Contagem
+                            </h3>
+                            <select 
+                                value={selectedYear} 
+                                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                                className="bg-gray-100 dark:bg-white/5 border-none rounded-lg text-xs font-bold py-1 px-3"
+                            >
+                                {years.map(y => <option key={y} value={y}>{y}</option>)}
+                            </select>
+                        </div>
+                        <div className="h-52">
+                            {renderHeatmap()}
+                        </div>
+                    </div>
+
+                    {/* Ranking */}
+                    <div className="bg-white dark:bg-surface-dark p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-white/5">
+                        <h3 className="font-bold text-gray-800 dark:text-white flex items-center gap-2 mb-4">
+                            <Icon name="emoji_events" className="text-yellow-500" /> Ranking de Usuários ({selectedYear})
                         </h3>
-                        <div className="mt-3 pt-3 border-t border-white/10 flex justify-between items-end">
-                            <div>
-                                <p className="text-[10px] text-gray-400 font-bold uppercase">Valor de Venda</p>
-                                <p className="text-sm font-bold text-green-400">
-                                    <AnimatedNumber value={realKPIs.totalSales} prefix="R$ " decimals={2} />
-                                </p>
-                            </div>
-                            <Icon name="trending_up" className="text-green-400 opacity-50" />
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left text-sm">
+                                <thead>
+                                    <tr className="border-b border-gray-100 dark:border-white/5 text-xs text-gray-400 uppercase">
+                                        <th className="pb-2 font-bold pl-2">Pos</th>
+                                        <th className="pb-2 font-bold">Usuário</th>
+                                        <th className="pb-2 font-bold text-right">Contagens</th>
+                                        <th className="pb-2 font-bold text-right">Acuracidade</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {ranking.map((r, idx) => (
+                                        <tr key={idx} className="border-b border-gray-50 dark:border-white/5 last:border-0 hover:bg-gray-50 dark:hover:bg-white/5">
+                                            <td className="py-3 pl-2 font-bold text-gray-500">#{idx + 1}</td>
+                                            <td className="py-3 font-bold text-gray-800 dark:text-white">{r.name}</td>
+                                            <td className="py-3 text-right font-mono text-gray-600 dark:text-gray-300">{r.counts.toLocaleString()}</td>
+                                            <td className="py-3 text-right font-bold">
+                                                <span className={`px-2 py-0.5 rounded ${r.accuracy >= 98 ? 'bg-green-100 text-green-700' : (r.accuracy >= 95 ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700')}`}>
+                                                    {r.accuracy}%
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {ranking.length === 0 && (
+                                        <tr><td colSpan={4} className="py-4 text-center text-gray-400">Sem dados para este período.</td></tr>
+                                    )}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
+            )}
 
-                <div className="bg-white dark:bg-surface-dark p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-card-border hover:border-primary/50 transition-colors group">
-                    <div className="flex justify-between items-start mb-2">
-                        <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-primary">
-                            <Icon name="inventory_2" />
-                        </div>
+            {activeTab === 'financial' && (
+                <div className="bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-white/5 overflow-hidden animate-fade-in">
+                    <div className="p-4 bg-gray-50 dark:bg-white/5 border-b border-gray-200 dark:border-white/5">
+                        <h3 className="font-bold text-gray-800 dark:text-white">Detalhamento Financeiro</h3>
+                        <p className="text-xs text-gray-500">Valores baseados no custo de compra</p>
                     </div>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Itens no Sistema</p>
-                    <div className="flex items-end gap-3 mt-1">
-                        <h3 className="text-2xl font-bold text-gray-900 dark:text-white">
-                            <AnimatedNumber value={realKPIs.totalCount} duration={1500} />
-                        </h3>
-                        <span className="text-xs font-bold bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-400 px-2 py-1 rounded mb-1">
-                            + <AnimatedNumber value={realKPIs.inactiveCount} duration={1500} /> Inativos
-                        </span>
-                    </div>
-                    <p className="text-xs text-gray-400 mt-1">SKUs Únicos Cadastrados</p>
-                </div>
-
-                <div className="bg-white dark:bg-surface-dark p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-card-border hover:border-purple-500/50 transition-colors group">
-                    <div className="flex justify-between items-start mb-2">
-                        <div className="p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg text-purple-600">
-                            <Icon name="sell" />
-                        </div>
-                    </div>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Ticket Médio (Venda)</p>
-                    <h3 className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
-                        <AnimatedNumber value={ticketMedio} prefix="R$ " decimals={2} duration={2500} />
-                    </h3>
-                    <p className="text-xs text-gray-400 mt-1">Preço médio por item em estoque</p>
-                </div>
-            </div>
-        </div>
-
-        {/* SECTION 2: HISTORICAL PERFORMANCE */}
-        <div>
-            <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                    <Icon name="history" size={16} />
-                    Histórico e Performance
-                </h2>
-                
-                <div className="flex items-center gap-2 bg-white dark:bg-surface-dark border border-gray-200 dark:border-card-border rounded-lg p-1">
-                    <span className="text-xs font-bold text-gray-500 pl-2">Ano:</span>
-                    <select 
-                        value={selectedYear} 
-                        onChange={(e) => setSelectedYear(Number(e.target.value))}
-                        className="bg-transparent border-none text-sm font-bold text-primary focus:ring-0 cursor-pointer py-1 pl-1 pr-8"
-                    >
-                        {availableYears.map(year => (
-                            <option key={year} value={year}>{year}</option>
-                        ))}
-                    </select>
-                </div>
-            </div>
-
-            <div className="bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border p-6 overflow-hidden mb-6">
-                <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                        <Icon name="calendar_month" className="text-gray-400" />
-                        Atividade de Inventário ({selectedYear})
-                    </h2>
-                    
-                    <div className="flex items-center gap-2 text-xs text-gray-500 font-medium bg-gray-50 dark:bg-white/5 px-3 py-1.5 rounded-lg">
-                        <span>Menos</span>
-                        <div className="flex gap-1 mx-1">
-                            <div className="size-3 rounded-sm bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10" />
-                            <div className="size-3 rounded-sm bg-green-200 dark:bg-green-900/40" />
-                            <div className="size-3 rounded-sm bg-green-400 dark:bg-green-600" />
-                            <div className="size-3 rounded-sm bg-green-600 dark:bg-green-500" />
-                        </div>
-                        <span>Mais</span>
-                    </div>
-                </div>
-                <YearlyHeatmap data={heatmapData} year={selectedYear} />
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-                <div className="lg:col-span-1 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border p-6 flex flex-col h-[600px]">
-                    <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                        <Icon name="leaderboard" className="text-yellow-500" />
-                        Ranking ({selectedYear})
-                    </h2>
-                    <div className="space-y-5 flex-1 overflow-y-auto no-scrollbar pr-2">
-                        {rankingData.length === 0 ? (
-                            <div className="text-center text-gray-400 py-10">Nenhum dado de contagem neste ano.</div>
-                        ) : (
-                            rankingData.map((user, idx) => (
-                                <div key={idx} className="flex items-center gap-3 group">
-                                    <div className={`font-bold w-4 text-center ${idx === 0 ? 'text-yellow-500 text-lg' : 'text-gray-400'}`}>{idx + 1}</div>
-                                    <div className="size-10 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center font-bold text-gray-600 dark:text-gray-300 border border-gray-100 dark:border-gray-600 shrink-0">
-                                        {getInitials(user.name)}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex justify-between mb-1">
-                                            <span className="font-bold text-sm text-gray-900 dark:text-white truncate">{user.name}</span>
-                                            <span className="text-xs font-bold text-primary">{user.counts}</span>
-                                        </div>
-                                        <div className="flex-1 h-1.5 bg-gray-100 dark:bg-white/5 rounded-full overflow-hidden">
-                                            <div 
-                                                className="h-full bg-primary rounded-full transition-all duration-1000" 
-                                                style={{ width: `${(user.counts / (rankingData[0]?.counts || 1)) * 100}%` }}
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </div>
-
-                {/* HIERARCHICAL CATEGORY TABLE */}
-                <div className="lg:col-span-2 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border flex flex-col overflow-hidden h-[600px]">
-                    <div className="p-6 border-b border-gray-100 dark:border-white/5 flex justify-between items-center bg-gray-50/50 dark:bg-white/5">
-                        <h2 className="text-lg font-bold text-gray-900 dark:text-white">Detalhamento Financeiro (Atual)</h2>
-                    </div>
-                    
-                    <div className="flex-1 overflow-y-auto overflow-x-auto no-scrollbar relative">
-                        <table className="w-full text-left border-collapse min-w-[600px]">
-                            <thead className="bg-gray-50 dark:bg-surface-dark sticky top-0 z-10">
-                                <tr className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider font-semibold shadow-sm">
-                                    <th className="py-4 px-6 border-b border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-surface-dark w-1/3">Categoria</th>
-                                    <th className="py-4 px-6 border-b border-gray-100 dark:border-white/5 text-right bg-gray-50 dark:bg-surface-dark">Qtd Física</th>
-                                    <th className="py-4 px-6 border-b border-gray-100 dark:border-white/5 text-right bg-gray-50 dark:bg-surface-dark">Valor Total</th>
-                                    <th className="py-4 px-6 border-b border-gray-100 dark:border-white/5 w-1/4 bg-gray-50 dark:bg-surface-dark">% Share</th>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                            <thead className="bg-gray-100 dark:bg-black/20 text-xs uppercase text-gray-500 font-bold">
+                                <tr>
+                                    <th className="py-3 px-6">Grupo / Subgrupo</th>
+                                    <th className="py-3 px-6 text-right">Qtd Física</th>
+                                    <th className="py-3 px-6 text-right">Valor Total (Custo)</th>
+                                    <th className="py-3 px-6 w-32">% Repr.</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-                                {financialGroups.length === 0 ? (
-                                    <tr><td colSpan={4} className="p-8 text-center text-gray-400">Nenhum dado encontrado</td></tr>
-                                ) : (
-                                    financialGroups.map((group) => {
-                                        const percentage = totalCategoryValue > 0 ? (group.value / totalCategoryValue) * 100 : 0;
-                                        const isExpanded = expandedGroup === group.id;
-                                        const icon = GROUP_ICONS[group.id] || 'inventory_2';
+                                {financialGroups.map(group => {
+                                    const isExpanded = expandedGroupId === group.id;
+                                    const totalValue = kpis?.totalCost || 1;
+                                    const percentage = (group.value / totalValue) * 100;
 
-                                        return (
-                                            <React.Fragment key={group.id}>
-                                                {/* GROUP ROW */}
-                                                <tr onClick={() => handleToggleGroup(group.id)} className="hover:bg-gray-50 dark:hover:bg-white/5 transition-colors cursor-pointer group select-none">
-                                                    <td className="py-4 px-6">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className={`p-1 text-gray-400 group-hover:text-primary transition-colors ${isExpanded ? 'rotate-90' : ''}`}>
-                                                                <Icon name="chevron_right" size={20} />
-                                                            </div>
-                                                            <div className="size-8 rounded-lg bg-gray-100 dark:bg-white/10 flex items-center justify-center text-gray-500 dark:text-gray-400 group-hover:text-primary transition-colors">
-                                                                <Icon name={icon} size={18} />
-                                                            </div>
-                                                            <span className="font-bold text-sm text-gray-700 dark:text-gray-200">{group.name}</span>
+                                    return (
+                                        <React.Fragment key={group.id}>
+                                            <tr onClick={() => handleToggleGroup(group.id)} className="hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer transition-colors">
+                                                <td className="py-3 px-6 font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                                                    <Icon name={isExpanded ? "expand_more" : "chevron_right"} size={18} className="text-gray-400" />
+                                                    {group.name}
+                                                </td>
+                                                <td className="py-3 px-6 text-right font-mono text-sm text-gray-600 dark:text-gray-300">
+                                                    {group.qty.toLocaleString()}
+                                                </td>
+                                                <td className="py-3 px-6 text-right font-bold text-sm text-gray-900 dark:text-white">
+                                                    {group.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })}
+                                                </td>
+                                                <td className="py-3 px-6">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="flex-1 h-1.5 bg-gray-200 dark:bg-white/10 rounded-full overflow-hidden">
+                                                            <div className="h-full bg-primary rounded-full" style={{ width: `${Math.min(percentage, 100)}%` }} />
                                                         </div>
-                                                    </td>
-                                                    <td className="py-4 px-6 text-right font-mono text-sm text-gray-600 dark:text-gray-300 font-medium">
-                                                        {group.qty.toLocaleString()}
-                                                    </td>
-                                                    <td className="py-4 px-6 text-right font-bold text-sm text-gray-900 dark:text-white">
-                                                        R$ {group.value.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                                                    </td>
-                                                    <td className="py-4 px-6">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="flex-1 h-2 bg-gray-100 dark:bg-white/10 rounded-full overflow-hidden">
-                                                                <div className="h-full bg-primary rounded-full" style={{ width: `${percentage}%` }} />
-                                                            </div>
-                                                            <span className="text-xs font-bold text-gray-600 dark:text-gray-300 w-10 text-right">{percentage.toFixed(1)}%</span>
-                                                        </div>
-                                                    </td>
-                                                </tr>
+                                                        <span className="text-[10px] text-gray-400 w-8 text-right">{percentage.toFixed(1)}%</span>
+                                                    </div>
+                                                </td>
+                                            </tr>
 
-                                                {/* SUBGROUPS */}
-                                                {isExpanded && group.subgroups.map(sub => {
+                                            {/* SUBGROUPS */}
+                                            {isExpanded && group.subgroups.map(sub => {
                                                     const subIsExpanded = expandedSubgroup?.grId === group.id && expandedSubgroup?.sgId === sub.id;
                                                     const subPercentage = group.value > 0 ? (sub.value / group.value) * 100 : 0;
 
                                                     return (
                                                         <React.Fragment key={`${group.id}-${sub.id}`}>
-                                                            <tr onClick={() => handleToggleSubgroup(group.id, sub.id)} className="bg-gray-50/50 dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors cursor-pointer select-none">
-                                                                <td className="py-3 px-6 pl-20 border-l-4 border-transparent hover:border-primary">
+                                                            <tr onClick={() => handleToggleSubgroup(group.id, sub.id)} className="bg-gray-50/50 dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors cursor-pointer select-none border-l-4 border-transparent hover:border-l-primary">
+                                                                <td className="py-3 px-6 pl-12">
                                                                     <div className="flex items-center gap-2">
                                                                         <Icon name={subIsExpanded ? "expand_more" : "chevron_right"} size={16} className="text-gray-400" />
                                                                         <span className="text-xs font-bold text-gray-600 dark:text-gray-300 uppercase">{sub.name}</span>
@@ -501,32 +297,33 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                                                                     {sub.qty.toLocaleString()}
                                                                 </td>
                                                                 <td className="py-3 px-6 text-right font-bold text-xs text-gray-700 dark:text-gray-300">
-                                                                    R$ {sub.value.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                                                    {sub.value.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                                                                 </td>
                                                                 <td className="py-3 px-6">
                                                                     <div className="flex items-center gap-2">
                                                                         <div className="flex-1 h-1.5 bg-gray-200 dark:bg-white/10 rounded-full overflow-hidden">
                                                                             <div className="h-full bg-blue-400 rounded-full" style={{ width: `${subPercentage}%` }} />
                                                                         </div>
-                                                                        <span className="text-[10px] text-gray-400">{subPercentage.toFixed(0)}%</span>
+                                                                        <span className="text-[10px] text-gray-400 w-10 text-right">
+                                                                            {subPercentage.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%
+                                                                        </span>
                                                                     </div>
                                                                 </td>
                                                             </tr>
 
-                                                            {/* ITEMS LIST (LEVEL 3) - TABLE ROWS INTEGRATED */}
+                                                            {/* ITEMS LIST (LEVEL 3) */}
                                                             {subIsExpanded && (
                                                                 <>
-                                                                    {/* Item Sort Header - Subtle row underneath subgroup */}
                                                                     <tr className="bg-gray-100/50 dark:bg-black/30 border-b border-gray-100 dark:border-white/5 text-[10px] text-gray-400 font-bold uppercase tracking-wider select-none">
-                                                                        <td className="py-2 pl-28">Produto / SKU</td>
-                                                                        <td className="text-right py-2 px-6 cursor-pointer hover:text-primary transition-colors" onClick={() => handleSortItems('unit')}>
-                                                                            Unit. {itemSort.field === 'unit' && <Icon name={itemSort.direction === 'desc' ? "arrow_drop_down" : "arrow_drop_up"} size={12} className="inline align-middle" />}
-                                                                        </td>
+                                                                        <td className="py-2 pl-20">Produto / SKU</td>
                                                                         <td className="text-right py-2 px-6 cursor-pointer hover:text-primary transition-colors" onClick={() => handleSortItems('qty')}>
                                                                             Qtd {itemSort.field === 'qty' && <Icon name={itemSort.direction === 'desc' ? "arrow_drop_down" : "arrow_drop_up"} size={12} className="inline align-middle" />}
                                                                         </td>
+                                                                        <td className="text-right py-2 px-6 cursor-pointer hover:text-primary transition-colors" onClick={() => handleSortItems('unit')}>
+                                                                            Valor Unit. {itemSort.field === 'unit' && <Icon name={itemSort.direction === 'desc' ? "arrow_drop_down" : "arrow_drop_up"} size={12} className="inline align-middle" />}
+                                                                        </td>
                                                                         <td className="text-right py-2 px-6 cursor-pointer hover:text-primary transition-colors" onClick={() => handleSortItems('value')}>
-                                                                            Total {itemSort.field === 'value' && <Icon name={itemSort.direction === 'desc' ? "arrow_drop_down" : "arrow_drop_up"} size={12} className="inline align-middle" />}
+                                                                            Valor Total {itemSort.field === 'value' && <Icon name={itemSort.direction === 'desc' ? "arrow_drop_down" : "arrow_drop_up"} size={12} className="inline align-middle" />}
                                                                         </td>
                                                                     </tr>
 
@@ -539,48 +336,31 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                                                                         </tr>
                                                                     ) : (
                                                                         sortedSubgroupItems.map((item, idx) => {
-                                                                            const itemPercentage = sub.value > 0 ? (item.value / sub.value) * 100 : 0;
                                                                             return (
                                                                                 <tr key={idx} className="bg-gray-50 dark:bg-black/20 hover:bg-blue-50 dark:hover:bg-white/5 transition-colors border-b border-gray-100 dark:border-white/5 last:border-0 group">
-                                                                                    {/* Name Col - Increased Indentation */}
-                                                                                    <td className="py-2 px-6 pl-28 border-l-4 border-transparent">
+                                                                                    <td className="py-2 px-6 pl-20 border-l-4 border-transparent">
                                                                                         <div className="flex items-center gap-3">
-                                                                                            {/* CORREÇÃO DO ÍCONE: subdirectory_arrow_right */}
                                                                                             <Icon name="subdirectory_arrow_right" size={14} className="text-gray-300 group-hover:text-primary transition-colors" />
-                                                                                            <div>
-                                                                                                <div className="font-bold text-xs text-gray-800 dark:text-gray-200 line-clamp-1 group-hover:text-primary transition-colors">
+                                                                                            <div className="min-w-0">
+                                                                                                <div className="font-bold text-xs text-gray-800 dark:text-gray-200 line-clamp-1 group-hover:text-primary transition-colors" title={item.name}>
                                                                                                     {item.name}
                                                                                                 </div>
-                                                                                                <div className="flex items-center gap-2">
-                                                                                                    <span className="text-[10px] font-mono text-gray-400">{item.sku}</span>
-                                                                                                    <span className="text-[9px] text-gray-400 font-medium bg-gray-100 dark:bg-white/10 px-1 rounded">
-                                                                                                        Unit: {item.unitPrice.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                                                                                    </span>
+                                                                                                <div className="text-[10px] font-mono text-gray-400">
+                                                                                                    {item.sku}
                                                                                                 </div>
                                                                                             </div>
                                                                                         </div>
                                                                                     </td>
-                                                                                    
-                                                                                    {/* Qty Col */}
                                                                                     <td className="py-2 px-6 text-right">
-                                                                                        <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-white dark:bg-white/5 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-white/10 min-w-[24px] text-center">
+                                                                                        <span className="inline-block px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-white dark:bg-white/5 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-white/10 min-w-[32px] text-center">
                                                                                             {item.qty}
                                                                                         </span>
                                                                                     </td>
-
-                                                                                    {/* Value Col */}
+                                                                                    <td className="py-2 px-6 text-right text-xs text-gray-500 dark:text-gray-400 font-medium">
+                                                                                        {item.unitPrice.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                                                                    </td>
                                                                                     <td className="py-2 px-6 text-right font-bold text-xs text-gray-900 dark:text-white">
                                                                                         {item.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                                                                    </td>
-
-                                                                                    {/* Share Col */}
-                                                                                    <td className="py-2 px-6">
-                                                                                        <div className="flex items-center gap-2">
-                                                                                            <div className="flex-1 h-1 bg-gray-200 dark:bg-white/10 rounded-full overflow-hidden">
-                                                                                                <div className="h-full bg-blue-300 dark:bg-blue-500 rounded-full" style={{ width: `${itemPercentage}%` }} />
-                                                                                            </div>
-                                                                                            <span className="text-[9px] text-gray-400 w-6 text-right">{itemPercentage < 1 && itemPercentage > 0 ? '<1' : Math.round(itemPercentage)}%</span>
-                                                                                        </div>
                                                                                     </td>
                                                                                 </tr>
                                                                             );
@@ -591,171 +371,73 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                                                         </React.Fragment>
                                                     );
                                                 })}
-                                            </React.Fragment>
-                                        );
-                                    })
+                                        </React.Fragment>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+
+            {activeTab === 'divergences' && (
+                <div className="bg-white dark:bg-surface-dark p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-white/5 animate-fade-in">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                             <Icon name="warning" className="text-red-500" /> Top Divergências Financeiras
+                        </h3>
+                         <select 
+                                value={selectedYear} 
+                                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                                className="bg-gray-100 dark:bg-white/5 border-none rounded-lg text-xs font-bold py-1 px-3"
+                            >
+                                {years.map(y => <option key={y} value={y}>{y}</option>)}
+                            </select>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                            <thead className="bg-gray-100 dark:bg-black/20 text-xs uppercase text-gray-500 font-bold">
+                                <tr>
+                                    <th className="py-3 px-4">Item</th>
+                                    <th className="py-3 px-4 text-center">Local</th>
+                                    <th className="py-3 px-4 text-center">Usuário</th>
+                                    <th className="py-3 px-4 text-right">Diferença</th>
+                                    <th className="py-3 px-4 text-right">Impacto ($)</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100 dark:divide-white/5">
+                                {divergences.map((div, idx) => (
+                                    <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
+                                        <td className="py-3 px-4">
+                                            <div className="font-bold text-xs text-gray-800 dark:text-white line-clamp-1">{div.name}</div>
+                                            <div className="text-[10px] text-gray-400">{div.sku}</div>
+                                        </td>
+                                        <td className="py-3 px-4 text-center text-xs font-mono text-gray-600 dark:text-gray-300">
+                                            {div.location || '-'}
+                                        </td>
+                                        <td className="py-3 px-4 text-center text-xs text-gray-600 dark:text-gray-300">
+                                            {div.user.split(' ')[0]}
+                                        </td>
+                                        <td className="py-3 px-4 text-right">
+                                            <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${div.diff > 0 ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>
+                                                {div.diff > 0 ? '+' : ''}{div.diff}
+                                            </span>
+                                        </td>
+                                        <td className="py-3 px-4 text-right font-bold text-xs text-gray-800 dark:text-white">
+                                            {div.diffValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                        </td>
+                                    </tr>
+                                ))}
+                                {divergences.length === 0 && (
+                                     <tr><td colSpan={5} className="py-8 text-center text-gray-400">Nenhuma divergência relevante encontrada.</td></tr>
                                 )}
                             </tbody>
                         </table>
                     </div>
                 </div>
-            </div>
-
-            {/* TOP DIVERGENCES WITH FILTERS (SPACED) */}
-            <div className="mt-8 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border flex flex-col h-[600px]">
-                <div className="p-6 border-b border-gray-100 dark:border-white/5">
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
-                        <div>
-                            <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                                <Icon name="warning" className="text-red-500" />
-                                Divergências
-                            </h2>
-                            <p className="text-xs text-gray-500">Filtrar e analisar impactos do ano {selectedYear}</p>
-                        </div>
-                        <div className="flex items-center gap-2 text-xs font-bold text-gray-400 uppercase">
-                            <span className="flex items-center gap-1"><span className="size-2 rounded-full bg-red-500"></span> Perda</span>
-                            <span className="flex items-center gap-1"><span className="size-2 rounded-full bg-blue-500"></span> Sobra</span>
-                        </div>
-                    </div>
-
-                    {/* FILTERS BAR */}
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-gray-50 dark:bg-black/20 p-3 rounded-xl border border-gray-200 dark:border-white/5">
-                        {/* Search */}
-                        <div className="md:col-span-1">
-                            <input 
-                                type="text"
-                                placeholder="Buscar SKU ou Produto..."
-                                value={divergenceSearch}
-                                onChange={(e) => setDivergenceSearch(e.target.value)}
-                                className="w-full bg-white dark:bg-white/10 border border-gray-200 dark:border-white/10 rounded-lg text-xs py-2 px-3 text-gray-800 dark:text-white focus:ring-1 focus:ring-primary outline-none placeholder:text-gray-400"
-                            />
-                        </div>
-                        
-                        {/* Diff Range */}
-                        <div className="md:col-span-1 flex items-center gap-2 bg-white dark:bg-white/10 border border-gray-200 dark:border-white/10 rounded-lg px-2">
-                            <span className="text-[10px] font-bold text-gray-400 uppercase">Diff</span>
-                            <input 
-                                type="number" placeholder="Min" 
-                                value={diffMin} onChange={e => setDiffMin(e.target.value)}
-                                className="w-12 bg-transparent border-none text-xs p-1 text-center font-mono focus:ring-0 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" 
-                            />
-                            <span className="text-gray-400">-</span>
-                            <input 
-                                type="number" placeholder="Max" 
-                                value={diffMax} onChange={e => setDiffMax(e.target.value)}
-                                className="w-12 bg-transparent border-none text-xs p-1 text-center font-mono focus:ring-0 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" 
-                            />
-                        </div>
-
-                        {/* Impact Range */}
-                        <div className="md:col-span-1 flex items-center gap-2 bg-white dark:bg-white/10 border border-gray-200 dark:border-white/10 rounded-lg px-2">
-                            <span className="text-[10px] font-bold text-gray-400 uppercase">R$</span>
-                            <input 
-                                type="number" placeholder="Min" 
-                                value={impactMin} onChange={e => setImpactMin(e.target.value)}
-                                className="w-12 bg-transparent border-none text-xs p-1 text-center font-mono focus:ring-0 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" 
-                            />
-                            <span className="text-gray-400">-</span>
-                            <input 
-                                type="number" placeholder="Max" 
-                                value={impactMax} onChange={e => setImpactMax(e.target.value)}
-                                className="w-12 bg-transparent border-none text-xs p-1 text-center font-mono focus:ring-0 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" 
-                            />
-                        </div>
-
-                        {/* Type Select */}
-                        <div className="md:col-span-1 relative">
-                            <select 
-                                value={divergenceType} 
-                                onChange={(e) => setDivergenceType(e.target.value as any)}
-                                className="w-full bg-white dark:bg-white/10 border border-gray-200 dark:border-white/10 rounded-lg text-xs py-2 px-3 text-gray-800 dark:text-white focus:ring-1 focus:ring-primary outline-none appearance-none"
-                            >
-                                <option value="all">Todos os Tipos</option>
-                                <option value="loss">Apenas Perdas (-)</option>
-                                <option value="surplus">Apenas Sobras (+)</option>
-                            </select>
-                            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
-                                <Icon name="expand_more" size={16} />
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div className="flex-1 overflow-y-auto no-scrollbar">
-                    <table className="w-full text-left border-collapse min-w-[800px]">
-                        <thead className="bg-white dark:bg-surface-dark sticky top-0 z-10 shadow-sm">
-                            <tr className="text-xs text-gray-400 uppercase border-b border-gray-100 dark:border-white/5">
-                                <th className="py-3 px-6 font-medium">SKU / Produto</th>
-                                <th className="py-3 px-4 font-medium text-center">Local</th>
-                                <th className="py-3 px-4 font-medium text-left">Responsável</th>
-                                <th className="py-3 px-4 font-medium text-center">Contagem</th>
-                                <th className="py-3 px-4 font-medium text-center">Diff</th>
-                                <th className="py-3 px-6 font-medium text-right">Impacto (R$)</th>
-                                <th className="py-3 px-4"></th>
-                            </tr>
-                        </thead>
-                        <tbody className="text-sm">
-                            {filteredDivergences.length === 0 ? (
-                                <tr><td colSpan={7} className="text-center py-10 text-gray-400">Nenhuma divergência encontrada com estes filtros.</td></tr>
-                            ) : (
-                                filteredDivergences.map((item) => (
-                                <tr 
-                                key={item.id} 
-                                onClick={() => handleOpenDetails(item)}
-                                className="border-b border-gray-50 dark:border-white/5 last:border-0 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors cursor-pointer group"
-                                >
-                                    <td className="py-3 px-6">
-                                        <div className="font-bold text-gray-900 dark:text-white">{item.sku}</div>
-                                        <div className="text-xs text-gray-500 line-clamp-1 max-w-[200px]">{item.name}</div>
-                                    </td>
-                                    <td className="py-3 px-4 text-center text-xs text-gray-400">
-                                        {item.location || 'Geral'}
-                                    </td>
-                                    <td className="py-3 px-4">
-                                        <div className="flex items-center gap-2">
-                                            <div className="size-6 rounded-full bg-gray-200 dark:bg-white/10 flex items-center justify-center text-[9px] font-bold">
-                                                {getInitials(item.user)}
-                                            </div>
-                                            <span className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate max-w-[100px]">
-                                                {item.user ? item.user.split(' ')[0] : 'Sistema'}
-                                            </span>
-                                        </div>
-                                    </td>
-                                    <td className="py-3 px-4 text-center">
-                                        <div className="flex flex-col items-center leading-none">
-                                            <span className="font-bold text-gray-700 dark:text-gray-300">{item.counted}</span>
-                                            <span className="text-[10px] text-gray-400">de {item.expected}</span>
-                                        </div>
-                                    </td>
-                                    <td className="py-3 px-4 text-center">
-                                        <span className={`inline-block w-10 py-0.5 rounded text-xs font-bold ${item.diff < 0 ? 'bg-red-100 text-red-600 dark:bg-red-900/30' : 'bg-blue-100 text-blue-600 dark:bg-blue-900/30'}`}>
-                                            {item.diff > 0 ? '+' : ''}{item.diff}
-                                        </span>
-                                    </td>
-                                    <td className={`py-3 px-6 text-right font-bold ${item.diffValue < 0 ? 'text-red-500' : 'text-blue-500'}`}>
-                                        R$ {Math.abs(item.diffValue).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                    </td>
-                                    <td className="py-3 px-4 text-right">
-                                    <Icon name="chevron_right" size={18} className="text-gray-300 group-hover:text-primary transition-colors" />
-                                    </td>
-                                </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-      </main>
-
-      {/* REUSED DETAIL MODAL */}
-      <ItemDetailModal 
-        isOpen={!!selectedDivergence} 
-        onClose={() => setSelectedDivergence(null)} 
-        item={selectedDivergence} 
-      />
-
+            )}
+        </main>
     </div>
   );
 };
