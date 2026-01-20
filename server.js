@@ -836,13 +836,15 @@ app.post('/update-count', (req, res) => {
     });
 });
 
+// MODIFICADO: LEFT JOIN COM GRIDE_TRATAMENTO PARA OBTER STATUS DA RESOLUÇÃO
 app.get('/history', (req, res) => {
     Firebird.attach(options, (err, db) => {
         const sql = `
-            SELECT FIRST 100 L.*, M.MAR_DESCRI 
+            SELECT FIRST 100 L.*, M.MAR_DESCRI, T.STATUS AS TREATMENT_STATUS, T.RESOLUCAO_NOTA
             FROM GRIDE_INVENTARIO_LOG L 
             LEFT JOIN PRODUTOS P ON L.PRO_COD = P.PRO_COD 
             LEFT JOIN MARCAS M ON P.MAR_COD = M.MAR_COD 
+            LEFT JOIN GRIDE_TRATAMENTO T ON T.LOG_ID = L.ID
             ORDER BY L.DATA_HORA DESC
         `;
         db.query(sql, [], (err, rows) => {

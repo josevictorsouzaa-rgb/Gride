@@ -82,6 +82,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
               countedAt: entry.DATA_HORA,
               location: entry.LOCALIZACAO || 'GERAL',
               status: entry.STATUS,
+              treatmentStatus: entry.TREATMENT_STATUS, // Novo campo do JOIN
               isEdited: entry.STATUS === 'EDIÇÃO'
           });
       });
@@ -311,7 +312,8 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
                 <div className="divide-y divide-gray-100 dark:divide-white/5">
                     {block.items.map((item: any, idx: number) => {
                         const isEdited = item.isEdited;
-                        const isIssue = item.status === 'not_located' || item.status === 'divergence_info';
+                        const isIssue = item.status === 'not_located' || item.status === 'divergence_info' || item.status === 'Divergência' || item.status === 'Não Localizado';
+                        const isResolved = item.treatmentStatus === 'RESOLVED';
 
                         return (
                         <div 
@@ -326,7 +328,11 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
                                     </span>
                                     {/* ÍCONES DE STATUS */}
                                     {isIssue ? (
-                                        <Icon name="warning" size={16} className="text-red-500" />
+                                        isResolved ? (
+                                            <Icon name="task_alt" size={16} className="text-blue-500" />
+                                        ) : (
+                                            <Icon name="warning" size={16} className="text-red-500" />
+                                        )
                                     ) : (
                                         <Icon name="check" size={16} className="text-green-500" />
                                     )}
@@ -343,23 +349,37 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
                             </div>
 
                             <div className="shrink-0 text-right flex flex-col items-end">
-                                {/* EXIBIÇÃO DE QUANTIDADE OU STATUS */}
-                                <span className="block text-sm font-black text-green-600 dark:text-green-400">
-                                    {item.qty} un
-                                </span>
+                                {/* EXIBIÇÃO DE QUANTIDADE OU STATUS DE TRATAMENTO */}
+                                {isIssue ? (
+                                    isResolved ? (
+                                        <span className="text-[10px] font-bold text-blue-600 bg-blue-100 dark:bg-blue-900/40 px-2 py-1 rounded">
+                                            Apontamento Solucionado
+                                        </span>
+                                    ) : (
+                                        <span className="text-[10px] font-bold text-red-600 bg-red-100 dark:bg-red-900/40 px-2 py-1 rounded">
+                                            Aguardando Tratamento
+                                        </span>
+                                    )
+                                ) : (
+                                    <span className="block text-sm font-black text-green-600 dark:text-green-400">
+                                        {item.qty} un
+                                    </span>
+                                )}
 
                                 <span className="block text-[9px] text-gray-400 whitespace-nowrap mt-1">
                                     {formatFullDateTime(item.countedAt)}
                                 </span>
                                 {isEdited && <span className="text-[9px] text-orange-500 font-bold">Editado</span>}
                                 
-                                <button 
-                                    onClick={(e) => handleEditCount(e, item)}
-                                    className="mt-2 flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/40 border border-green-200 dark:border-green-900/30 transition-all"
-                                >
-                                    <Icon name="edit" size={14} />
-                                    Editar
-                                </button>
+                                {!isIssue && (
+                                    <button 
+                                        onClick={(e) => handleEditCount(e, item)}
+                                        className="mt-2 flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/40 border border-green-200 dark:border-green-900/30 transition-all"
+                                    >
+                                        <Icon name="edit" size={14} />
+                                        Editar
+                                    </button>
+                                )}
                             </div>
                         </div>
                         );

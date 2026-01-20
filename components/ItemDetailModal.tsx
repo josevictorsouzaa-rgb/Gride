@@ -73,7 +73,8 @@ const formatHistoryEntry = (entry: any) => {
         oldValue: entry.QTD_SISTEMA,
         newValue: entry.QTD_CONTADA,
         location: entry.LOCALIZACAO,
-        reason: entry.DIVERGENCIA_MOTIVO
+        reason: entry.DIVERGENCIA_MOTIVO,
+        rawStatus: entry.STATUS
     };
 };
 
@@ -202,7 +203,7 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
                      </div>
                  ) : (
                      history.map((h, idx) => {
-                         const showDetails = h.action === 'Conclusão da Contagem' || h.action === 'Edição de Saldo' || h.action === 'Apontamento de Divergência';
+                         const showDetails = h.action === 'Conclusão da Contagem' || h.action === 'Edição de Saldo' || h.rawStatus === 'Divergência' || h.rawStatus === 'Não Localizado';
 
                          return (
                              <div key={idx} className="relative pl-6 pb-6 last:pb-0 group">
@@ -238,11 +239,20 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ isOpen, onClos
                                                     </span>
                                                  </div>
                                              )}
-                                             {h.reason && (
-                                                 <div className="pt-1 mt-1 border-t border-dashed border-gray-200 dark:border-white/10 text-orange-600 dark:text-orange-400 italic">
-                                                     "{h.reason}"
+                                             
+                                             {/* Exibição do Motivo da Divergência */}
+                                             {h.reason ? (
+                                                 <div className="pt-2 mt-2 border-t border-dashed border-gray-200 dark:border-white/10">
+                                                     <p className="text-[9px] uppercase font-bold text-gray-400 mb-0.5">Observação / Problema:</p>
+                                                     <p className="text-orange-600 dark:text-orange-400 italic font-medium bg-orange-50 dark:bg-orange-900/10 p-1 rounded">
+                                                         "{h.reason}"
+                                                     </p>
                                                  </div>
-                                             )}
+                                             ) : h.rawStatus === 'Não Localizado' ? (
+                                                 <div className="pt-2 mt-2 border-t border-dashed border-gray-200 dark:border-white/10">
+                                                     <p className="text-gray-500 italic text-[10px]">Item não encontrado no endereço.</p>
+                                                 </div>
+                                             ) : null}
                                          </div>
                                      )}
                                      
