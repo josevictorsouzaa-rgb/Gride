@@ -46,14 +46,15 @@ export const SubcategoriesScreen: React.FC<SubcategoriesScreenProps> = ({
       </header>
 
       {/* Content */}
-      <main className="flex-1 p-4">
+      <main className="flex-1 p-4 md:p-8">
         {items.length === 0 ? (
           <div className="flex flex-col items-center justify-center pt-20 text-gray-400">
             <Icon name="folder_off" size={64} className="mb-4 opacity-50" />
             <p>Nenhuma subcategoria encontrada.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-3">
+          /* GRID RESPONSIVO: 1 coluna no mobile, 2 no tablet, 3 no desktop, 4 no ultrawide */
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-5">
             {items.map((sub, idx) => {
               const progress = sub.count > 0 ? (sub.mappedCount / sub.count) * 100 : 0;
               
@@ -61,21 +62,31 @@ export const SubcategoriesScreen: React.FC<SubcategoriesScreenProps> = ({
               <button 
                 key={sub.id || idx}
                 onClick={() => onSelectSegment(sub.name, sub.db_id)}
-                className="flex items-center p-4 bg-white dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-card-border shadow-sm hover:border-primary/50 transition-all active:scale-[0.98] group"
+                className="flex items-center p-4 bg-white dark:bg-surface-dark rounded-xl border border-gray-200 dark:border-card-border shadow-sm hover:border-primary/50 hover:shadow-md transition-all active:scale-[0.98] group relative overflow-hidden"
               >
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 group-hover:bg-primary/10 group-hover:text-primary transition-colors">
-                  <Icon name={sub.icon} size={24} />
+                {/* Efeito Hover sutil no background */}
+                <div className="absolute inset-0 bg-primary/0 group-hover:bg-primary/5 transition-colors duration-300" />
+
+                <div className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 group-hover:bg-white group-hover:text-primary transition-colors shadow-sm border border-gray-200 dark:border-white/5">
+                  <Icon name={sub.icon} size={28} />
                 </div>
-                <div className="flex flex-col items-start ml-4 flex-1 min-w-0 pr-2">
-                   <h3 className="text-base font-semibold text-gray-900 dark:text-white truncate w-full text-left">{sub.name}</h3>
+                
+                <div className="relative flex flex-col items-start ml-4 flex-1 min-w-0 pr-2">
+                   <h3 className="text-base font-bold text-gray-900 dark:text-white truncate w-full text-left leading-tight group-hover:text-primary transition-colors">
+                       {sub.name}
+                   </h3>
                    
                    {/* Barra de Progresso */}
-                   <div className="w-full mt-2">
-                        <div className="flex justify-between items-center text-[10px] text-gray-500 dark:text-gray-400 mb-1 font-medium w-full">
-                            <span>{sub.mappedCount} de {sub.count} contados</span>
-                            <span className="font-bold">{Math.round(progress)}%</span>
+                   <div className="w-full mt-3">
+                        <div className="flex justify-between items-center text-[10px] text-gray-500 dark:text-gray-400 mb-1.5 font-medium w-full">
+                            <span>
+                                <strong className="text-gray-700 dark:text-gray-300">{sub.mappedCount}</strong>/{sub.count}
+                            </span>
+                            <span className={`font-bold ${progress >= 100 ? 'text-green-600' : 'text-primary'}`}>
+                                {Math.round(progress)}%
+                            </span>
                         </div>
-                        <div className="h-1.5 w-full bg-gray-100 dark:bg-white/5 rounded-full overflow-hidden">
+                        <div className="h-2 w-full bg-gray-100 dark:bg-white/5 rounded-full overflow-hidden border border-black/5 dark:border-white/5">
                             <div 
                                 className={`h-full rounded-full transition-all duration-500 ${progress >= 100 ? 'bg-green-500' : 'bg-primary'}`} 
                                 style={{ width: `${progress}%` }} 
@@ -83,7 +94,8 @@ export const SubcategoriesScreen: React.FC<SubcategoriesScreenProps> = ({
                         </div>
                    </div>
                 </div>
-                <Icon name="chevron_right" className="text-gray-300 dark:text-gray-600 group-hover:text-primary shrink-0" size={24} />
+                
+                <Icon name="chevron_right" className="relative text-gray-300 dark:text-gray-600 group-hover:text-primary shrink-0 group-hover:translate-x-1 transition-transform" size={24} />
               </button>
             )})}
           </div>
