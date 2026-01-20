@@ -545,7 +545,8 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                                                                                     {/* Name Col - Increased Indentation */}
                                                                                     <td className="py-2 px-6 pl-28 border-l-4 border-transparent">
                                                                                         <div className="flex items-center gap-3">
-                                                                                            <Icon name="corner_down_right" size={14} className="text-gray-300 group-hover:text-primary transition-colors" />
+                                                                                            {/* CORREÇÃO DO ÍCONE: subdirectory_arrow_right */}
+                                                                                            <Icon name="subdirectory_arrow_right" size={14} className="text-gray-300 group-hover:text-primary transition-colors" />
                                                                                             <div>
                                                                                                 <div className="font-bold text-xs text-gray-800 dark:text-gray-200 line-clamp-1 group-hover:text-primary transition-colors">
                                                                                                     {item.name}
