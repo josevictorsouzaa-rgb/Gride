@@ -358,135 +358,148 @@ app.get('/blocks', (req, res) => {
                     });
                 }
 
-                // --- ETAPA 1: DESCOBERTA (Paginada) ---
-                let discoverySql = `
-                    SELECT FIRST ? SKIP ?
-                    P.PRO_COD, P.PRO_COD_SIMILAR 
-                    FROM PRODUTOS P 
-                    WHERE P.PRO_ATIVO = 'S'
-                `;
-                
-                const fetchCount = limit * 5;
-                const discoveryParams = [fetchCount, skip]; 
+                // 3. NOVO: Obter itens em TRATAMENTO PENDENTE (BLOQUEIO)
+                db.query("SELECT PRO_NRFABRICANTE FROM GRIDE_TRATAMENTO WHERE STATUS = 'PENDING'", [], (errT, treatments) => {
+                    const treatmentSet = new Set();
+                    if(treatments) treatments.forEach(t => treatmentSet.add(safeString(t.PRO_NRFABRICANTE)));
 
-                if (search) { 
-                    discoverySql += ` AND (P.PRO_DESCRI CONTAINING ? OR P.PRO_NRFABRICANTE CONTAINING ?)`; 
-                    discoveryParams.push(search); discoveryParams.push(search); 
-                }
-                if (gr_cod) { discoverySql += ` AND TRIM(P.GR_COD) = ?`; discoveryParams.push(gr_cod); }
-                if (sg_cod) { discoverySql += ` AND TRIM(P.SG_COD) = ?`; discoveryParams.push(sg_cod); }
-                if (location) { discoverySql += ` AND P.PRO_PRATELEIRA STARTING WITH ?`; discoveryParams.push(location); }
-
-                discoverySql += ` ORDER BY P.PRO_PRATELEIRA, P.PRO_DESCRI`;
-
-                db.query(discoverySql, discoveryParams, (errD, discoveryRows) => {
-                    if (errD) { db.detach(); return res.status(500).json({ error: errD.message }); }
-
-                    // Processar linhas para encontrar as chaves únicas dos blocos
-                    const seenKeys = new Set();
-                    let blocksFound = 0;
-
-                    for (const row of discoveryRows) {
-                        if (blocksFound >= limit) break;
-                        const simRaw = safeString(row.PRO_COD_SIMILAR);
-                        const idRaw = safeString(row.PRO_COD);
-                        const key = simRaw.length > 0 ? simRaw : idRaw;
-
-                        if (!seenKeys.has(key)) {
-                            seenKeys.add(key);
-                            blocksFound++;
-                        }
-                    }
-
-                    if (seenKeys.size === 0) {
-                        db.detach();
-                        return res.json([]);
-                    }
-
-                    // --- ETAPA 2: ENRIQUECIMENTO ---
-                    let fetchSql = `
-                        SELECT 
-                        P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, 
-                        M.MAR_DESCRI, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE, P.PRO_PRATELEIRA,
-                        P.PRO_PRECOULTCOMPRA, P.PRO_PRECOVENDA 
+                    // --- ETAPA 1: DESCOBERTA (Paginada) ---
+                    let discoverySql = `
+                        SELECT FIRST ? SKIP ?
+                        P.PRO_COD, P.PRO_COD_SIMILAR 
                         FROM PRODUTOS P 
-                        LEFT JOIN MARCAS M ON (M.MAR_COD = P.MAR_COD) 
-                        WHERE P.PRO_ATIVO = 'S' AND (
+                        WHERE P.PRO_ATIVO = 'S'
                     `;
+                    
+                    const fetchCount = limit * 5;
+                    const discoveryParams = [fetchCount, skip]; 
 
-                    const fetchParams = [];
-                    const allKeys = Array.from(seenKeys);
-                    const placeholders = allKeys.map(() => '?').join(',');
+                    if (search) { 
+                        discoverySql += ` AND (P.PRO_DESCRI CONTAINING ? OR P.PRO_NRFABRICANTE CONTAINING ?)`; 
+                        discoveryParams.push(search); discoveryParams.push(search); 
+                    }
+                    if (gr_cod) { discoverySql += ` AND TRIM(P.GR_COD) = ?`; discoveryParams.push(gr_cod); }
+                    if (sg_cod) { discoverySql += ` AND TRIM(P.SG_COD) = ?`; discoveryParams.push(sg_cod); }
+                    if (location) { discoverySql += ` AND P.PRO_PRATELEIRA STARTING WITH ?`; discoveryParams.push(location); }
 
-                    fetchSql += `P.PRO_COD IN (${placeholders}) OR P.PRO_COD_SIMILAR IN (${placeholders}))`;
-                    fetchParams.push(...allKeys, ...allKeys);
-                    fetchSql += ` ORDER BY P.PRO_PRATELEIRA, P.PRO_DESCRI`;
+                    discoverySql += ` ORDER BY P.PRO_PRATELEIRA, P.PRO_DESCRI`;
 
-                    db.query(fetchSql, fetchParams, (errP, products) => {
-                        db.detach();
-                        if (errP) return res.status(500).json({ error: errP.message });
+                    db.query(discoverySql, discoveryParams, (errD, discoveryRows) => {
+                        if (errD) { db.detach(); return res.status(500).json({ error: errD.message }); }
 
-                        const groups = new Map();
-                        products.forEach(p => {
-                            const simRaw = safeString(p.PRO_COD_SIMILAR);
-                            const idRaw = safeString(p.PRO_COD);
+                        // Processar linhas para encontrar as chaves únicas dos blocos
+                        const seenKeys = new Set();
+                        let blocksFound = 0;
+
+                        for (const row of discoveryRows) {
+                            if (blocksFound >= limit) break;
+                            const simRaw = safeString(row.PRO_COD_SIMILAR);
+                            const idRaw = safeString(row.PRO_COD);
                             const key = simRaw.length > 0 ? simRaw : idRaw;
 
-                            // Verifica se item foi contado e pega detalhes
-                            const lastLog = countedMap.get(p.PRO_COD);
-                            const isCounted = !!lastLog;
-                            
-                            if (!groups.has(key)) groups.set(key, []);
-                            groups.get(key).push({
-                                id: safeString(p.PRO_COD),
-                                name: safeString(p.PRO_DESCRI),
-                                ref: safeString(p.PRO_NRFABRICANTE),
-                                brand: p.MAR_DESCRI ? safeString(p.MAR_DESCRI) : 'GENÉRICO',
-                                balance: parseFloat(p.PRO_EST_ATUAL || 0),
-                                location: safeString(p.PRO_PRATELEIRA) || 'GERAL',
-                                costPrice: parseFloat(p.PRO_PRECOULTCOMPRA || 0),
-                                salesPrice: parseFloat(p.PRO_PRECOVENDA || 0),
-                                isCounted: isCounted,
-                                lastCount: lastLog ? {
-                                    user: lastLog.user,
-                                    date: lastLog.date,
-                                    qty: parseFloat(lastLog.qty)
-                                } : null
-                            });
-                        });
-
-                        const blocks = [];
-                        groups.forEach((items, key) => {
-                            const lockedInfo = lockMap.get(key);
-                            const allCounted = items.every(i => i.isCounted);
-                            let status = allCounted ? 'completed' : 'pending';
-                            if (lockedInfo) status = 'progress';
-
-                            let parentRefDisplay = items[0].ref || items[0].name;
-                            if (items.length > 1) {
-                                const parent = items.find(i => i.id === key);
-                                const refToShow = parent ? parent.ref : items[0].ref;
-                                parentRefDisplay = `REF PAI: ${refToShow}`;
+                            if (!seenKeys.has(key)) {
+                                seenKeys.add(key);
+                                blocksFound++;
                             }
+                        }
 
-                            blocks.push({
-                                id: key,
-                                parentRef: parentRefDisplay,
-                                location: items[0].location,
-                                status: status,
-                                items: items,
-                                lockedBy: lockedInfo
+                        if (seenKeys.size === 0) {
+                            db.detach();
+                            return res.json([]);
+                        }
+
+                        // --- ETAPA 2: ENRIQUECIMENTO ---
+                        let fetchSql = `
+                            SELECT 
+                            P.PRO_COD, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.GR_COD, P.SG_COD, 
+                            M.MAR_DESCRI, P.PRO_COD_SIMILAR, P.PRO_NRFABRICANTE, P.PRO_PRATELEIRA,
+                            P.PRO_PRECOULTCOMPRA, P.PRO_PRECOVENDA 
+                            FROM PRODUTOS P 
+                            LEFT JOIN MARCAS M ON (M.MAR_COD = P.MAR_COD) 
+                            WHERE P.PRO_ATIVO = 'S' AND (
+                        `;
+
+                        const fetchParams = [];
+                        const allKeys = Array.from(seenKeys);
+                        const placeholders = allKeys.map(() => '?').join(',');
+
+                        fetchSql += `P.PRO_COD IN (${placeholders}) OR P.PRO_COD_SIMILAR IN (${placeholders}))`;
+                        fetchParams.push(...allKeys, ...allKeys);
+                        fetchSql += ` ORDER BY P.PRO_PRATELEIRA, P.PRO_DESCRI`;
+
+                        db.query(fetchSql, fetchParams, (errP, products) => {
+                            db.detach();
+                            if (errP) return res.status(500).json({ error: errP.message });
+
+                            const groups = new Map();
+                            products.forEach(p => {
+                                const simRaw = safeString(p.PRO_COD_SIMILAR);
+                                const idRaw = safeString(p.PRO_COD);
+                                const key = simRaw.length > 0 ? simRaw : idRaw;
+
+                                // Verifica se item foi contado e pega detalhes
+                                const lastLog = countedMap.get(p.PRO_COD);
+                                const isCounted = !!lastLog;
+                                
+                                if (!groups.has(key)) groups.set(key, []);
+                                groups.get(key).push({
+                                    id: safeString(p.PRO_COD),
+                                    name: safeString(p.PRO_DESCRI),
+                                    ref: safeString(p.PRO_NRFABRICANTE),
+                                    brand: p.MAR_DESCRI ? safeString(p.MAR_DESCRI) : 'GENÉRICO',
+                                    balance: parseFloat(p.PRO_EST_ATUAL || 0),
+                                    location: safeString(p.PRO_PRATELEIRA) || 'GERAL',
+                                    costPrice: parseFloat(p.PRO_PRECOULTCOMPRA || 0),
+                                    salesPrice: parseFloat(p.PRO_PRECOVENDA || 0),
+                                    isCounted: isCounted,
+                                    lastCount: lastLog ? {
+                                        user: lastLog.user,
+                                        date: lastLog.date,
+                                        qty: parseFloat(lastLog.qty)
+                                    } : null
+                                });
                             });
-                        });
 
-                        // Ordenar: Pendentes primeiro
-                        blocks.sort((a, b) => {
-                            if (a.status === 'pending' && b.status !== 'pending') return -1;
-                            if (a.status !== 'pending' && b.status === 'pending') return 1;
-                            return 0;
-                        });
+                            const blocks = [];
+                            groups.forEach((items, key) => {
+                                const lockedInfo = lockMap.get(key);
+                                const allCounted = items.every(i => i.isCounted);
+                                
+                                // Checa se algum item deste bloco está em TRATAMENTO PENDENTE
+                                const hasPendingTreatment = items.some(i => treatmentSet.has(i.ref));
 
-                        res.json(blocks);
+                                let status = allCounted ? 'completed' : 'pending';
+                                if (lockedInfo) status = 'progress';
+                                
+                                // BLOQUEIO PRIORITÁRIO: Se tiver tratamento pendente, sobrescreve status
+                                if (hasPendingTreatment) status = 'treatment_pending';
+
+                                let parentRefDisplay = items[0].ref || items[0].name;
+                                if (items.length > 1) {
+                                    const parent = items.find(i => i.id === key);
+                                    const refToShow = parent ? parent.ref : items[0].ref;
+                                    parentRefDisplay = `REF PAI: ${refToShow}`;
+                                }
+
+                                blocks.push({
+                                    id: key,
+                                    parentRef: parentRefDisplay,
+                                    location: items[0].location,
+                                    status: status,
+                                    items: items,
+                                    lockedBy: lockedInfo
+                                });
+                            });
+
+                            // Ordenar: Pendentes primeiro, tratamento depois, concluidos fim
+                            blocks.sort((a, b) => {
+                                if (a.status === 'pending' && b.status !== 'pending') return -1;
+                                if (a.status !== 'pending' && b.status === 'pending') return 1;
+                                return 0;
+                            });
+
+                            res.json(blocks);
+                        });
                     });
                 });
             });

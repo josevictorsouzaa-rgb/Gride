@@ -271,14 +271,14 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
                 <div className={`p-3 border-b ${headerClass}`}>
                     <div className="flex justify-between items-start">
                         <div className="flex-1 pr-2">
-                            <span className={`text-[10px] font-bold uppercase tracking-wider ${labelColor}`}>
+                            <span className={`text-[10px] md:text-xs font-bold uppercase tracking-wider ${labelColor}`}>
                                 Ref. Pai
                             </span>
-                            <h3 className={`text-sm font-bold leading-tight line-clamp-2 mt-0.5 ${headerTextMain}`}>
+                            <h3 className={`text-sm md:text-lg font-bold leading-tight line-clamp-2 mt-0.5 ${headerTextMain}`}>
                                 {cleanParentRef}
                             </h3>
                             
-                            <div className={`flex items-center gap-1 mt-1 text-xs ${headerTextSub}`}>
+                            <div className={`flex items-center gap-1 mt-1 text-xs md:text-sm ${headerTextSub}`}>
                                 <Icon name="place" size={14} /> 
                                 <span className="font-medium">{block.location}</span>
                             </div>
@@ -288,19 +288,19 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
                         <div className="flex flex-col items-end shrink-0 pl-2">
                             <div className="flex items-center">
                                 <div className="flex flex-col items-end mr-2 text-right">
-                                    <span className={`block text-[9px] font-bold uppercase ${labelColor} mb-0.5`}>
+                                    <span className={`block text-[9px] md:text-xs font-bold uppercase ${labelColor} mb-0.5`}>
                                         {actionLabel}
                                     </span>
-                                    <span className={`block text-xs font-bold ${headerTextMain} max-w-[80px] truncate leading-none`}>
+                                    <span className={`block text-xs md:text-sm font-bold ${headerTextMain} max-w-[80px] md:max-w-[120px] truncate leading-none`}>
                                         {firstName}
                                     </span>
                                     
-                                    <span className={`block text-[9px] font-medium opacity-80 ${headerTextMain} mt-1`}>
+                                    <span className={`block text-[9px] md:text-xs font-medium opacity-80 ${headerTextMain} mt-1`}>
                                         {block.timeAgo}
                                     </span>
                                 </div>
                                 
-                                <div className="size-9 rounded-full bg-white/20 border border-white/30 flex items-center justify-center text-white font-bold text-xs shadow-sm">
+                                <div className="size-9 md:size-11 rounded-full bg-white/20 border border-white/30 flex items-center justify-center text-white font-bold text-xs md:text-sm shadow-sm">
                                     {userInitials}
                                 </div>
                             </div>
@@ -323,26 +323,26 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
                         >
                             <div className="flex-1 min-w-0 pr-3">
                                 <div className="flex items-center gap-2 mb-1">
-                                    <span className="text-sm font-bold truncate text-gray-800 dark:text-gray-100">
+                                    <span className="text-sm md:text-base font-bold truncate text-gray-800 dark:text-gray-100">
                                         {item.name}
                                     </span>
                                     {/* ÍCONES DE STATUS */}
                                     {isIssue ? (
                                         isResolved ? (
-                                            <Icon name="task_alt" size={16} className="text-blue-500" />
+                                            <Icon name="task_alt" size={18} className="text-blue-500" />
                                         ) : (
-                                            <Icon name="warning" size={16} className="text-red-500" />
+                                            <Icon name="warning" size={18} className="text-red-500" />
                                         )
                                     ) : (
-                                        <Icon name="check" size={16} className="text-green-500" />
+                                        <Icon name="check" size={18} className="text-green-500" />
                                     )}
                                 </div>
                                 
                                 <div className="flex items-center gap-2">
-                                    <span className="text-[11px] font-mono font-bold bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-200 px-1.5 py-0.5 rounded border border-gray-200 dark:border-white/10">
+                                    <span className="text-[11px] md:text-xs font-mono font-bold bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-200 px-1.5 py-0.5 rounded border border-gray-200 dark:border-white/10">
                                         {item.ref}
                                     </span>
-                                    <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-tight">
+                                    <span className="text-[10px] md:text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-tight">
                                         {item.brand}
                                     </span>
                                 </div>
@@ -352,21 +352,21 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
                                 {/* EXIBIÇÃO DE QUANTIDADE OU STATUS DE TRATAMENTO */}
                                 {isIssue ? (
                                     isResolved ? (
-                                        <span className="text-[10px] font-bold text-blue-600 bg-blue-100 dark:bg-blue-900/40 px-2 py-1 rounded">
-                                            Apontamento Solucionado
+                                        <span className="text-[10px] md:text-xs font-bold text-white bg-blue-600 px-2 py-1 rounded shadow-sm">
+                                            Solucionado
                                         </span>
                                     ) : (
-                                        <span className="text-[10px] font-bold text-red-600 bg-red-100 dark:bg-red-900/40 px-2 py-1 rounded">
+                                        <span className="text-[10px] md:text-xs font-bold text-white bg-red-600 px-2 py-1 rounded shadow-sm">
                                             Aguardando Tratamento
                                         </span>
                                     )
                                 ) : (
-                                    <span className="block text-sm font-black text-green-600 dark:text-green-400">
+                                    <span className="block text-sm md:text-base font-black text-green-600 dark:text-green-400">
                                         {item.qty} un
                                     </span>
                                 )}
 
-                                <span className="block text-[9px] text-gray-400 whitespace-nowrap mt-1">
+                                <span className="block text-[9px] md:text-xs text-gray-400 whitespace-nowrap mt-1">
                                     {formatFullDateTime(item.countedAt)}
                                 </span>
                                 {isEdited && <span className="text-[9px] text-orange-500 font-bold">Editado</span>}
@@ -374,7 +374,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
                                 {!isIssue && (
                                     <button 
                                         onClick={(e) => handleEditCount(e, item)}
-                                        className="mt-2 flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/40 border border-green-200 dark:border-green-900/30 transition-all"
+                                        className="mt-2 flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] md:text-xs font-bold text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/40 border border-green-200 dark:border-green-900/30 transition-all"
                                     >
                                         <Icon name="edit" size={14} />
                                         Editar

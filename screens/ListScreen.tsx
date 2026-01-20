@@ -84,6 +84,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
   const filteredBlocks = useMemo(() => {
     return blocks.filter(block => {
       // Filtragem por Tab
+      // OBS: 'treatment_pending' deve aparecer em 'pending' mas bloqueado
       if (activeTab === 'pending') {
           if (block.status === 'completed' || block.status === 'progress') return false;
       } else if (activeTab === 'progress') {
@@ -229,6 +230,7 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                 
                 const isReservedByOther = block.status === 'progress';
                 const isFullyCounted = block.status === 'completed';
+                const isLockedForTreatment = block.status === 'treatment_pending';
                 const isExiting = exitingIds.includes(block.id);
 
                 const cleanParentRef = block.parentRef.replace(/REF PAI:?/gi, '').trim();
@@ -256,6 +258,14 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                     headerTextMain = "text-white";
                     headerTextSub = "text-green-100";
                     labelColor = "text-green-200";
+                }
+                // Se estiver bloqueado por tratamento (LARANJA)
+                else if (isLockedForTreatment) {
+                    containerClass = "border-orange-500/50 shadow-orange-500/10";
+                    headerClass = "bg-orange-600 dark:bg-orange-700 border-orange-600";
+                    headerTextMain = "text-white";
+                    headerTextSub = "text-orange-100";
+                    labelColor = "text-orange-200";
                 }
 
                 // Identifica quem concluiu (pega do primeiro item que tiver lastCount)
@@ -315,8 +325,15 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                                     </div>
                                 </div>
 
-                                {/* LADO DIREITO DO HEADER: Avatar (Azul ou Verde) + Tempo */}
-                                {(isReservedByOther || isFullyCounted) && (
+                                {/* LADO DIREITO DO HEADER: Status ou Info */}
+                                {isLockedForTreatment ? (
+                                    <div className="flex flex-col items-end shrink-0 pl-2">
+                                        <div className="flex items-center gap-1 px-2 py-1 bg-white/20 rounded-lg text-white text-xs font-bold border border-white/20">
+                                            <Icon name="lock" size={14} />
+                                            <span>Em Tratamento</span>
+                                        </div>
+                                    </div>
+                                ) : (isReservedByOther || isFullyCounted) && (
                                     <div className="flex flex-col items-end shrink-0 pl-2">
                                         <div className="flex items-center">
                                             <div className="flex flex-col items-end mr-2 text-right">
@@ -415,8 +432,21 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                                 </button>
                             )}
                             
-                            {/* BOTÃO DE RESERVA (Apenas se NÃO estiver em progresso por outro e NÃO estiver concluído) */}
-                            {!isReservedByOther && !isFullyCounted && (
+                            {/* BOTÃO DE BLOQUEIO ADMINISTRATIVO (Se estiver em tratamento) */}
+                            {isLockedForTreatment && (
+                                <div className="p-3 bg-orange-50 dark:bg-orange-900/10 border-t border-orange-100 dark:border-orange-900/30">
+                                    <button 
+                                        disabled
+                                        className="w-full py-3 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2 bg-gray-200 dark:bg-white/10 text-gray-500 dark:text-gray-400 cursor-not-allowed border border-gray-300 dark:border-white/10"
+                                    >
+                                        <Icon name="lock_clock" size={18} />
+                                        Bloqueio Administrativo
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* BOTÃO DE RESERVA (Apenas se NÃO estiver em progresso por outro, NÃO concluído e NÃO bloqueado por tratamento) */}
+                            {!isReservedByOther && !isFullyCounted && !isLockedForTreatment && (
                                 <div className="p-3 bg-gray-50 dark:bg-white/5 border-t border-gray-100 dark:border-white/5">
                                     <button 
                                         onClick={(e) => handleReserve(block.id, e)}
@@ -428,8 +458,8 @@ export const ListScreen: React.FC<ListScreenProps> = ({
                                 </div>
                             )}
                             
-                            {/* BOTÃO RECONTAR (Apenas se estiver concluído) */}
-                            {isFullyCounted && (
+                            {/* BOTÃO RECONTAR (Apenas se estiver concluído e NÃO bloqueado) */}
+                            {isFullyCounted && !isLockedForTreatment && (
                                 <div className="p-3 bg-gray-50 dark:bg-white/5 border-t border-gray-100 dark:border-white/5">
                                     <button 
                                         onClick={(e) => handleReserve(block.id, e)}

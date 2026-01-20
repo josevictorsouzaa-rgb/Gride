@@ -73,7 +73,7 @@ export interface Block {
   id: number;
   parentRef: string;
   location: string;
-  status: 'pending' | 'progress' | 'late' | 'completed';
+  status: 'pending' | 'progress' | 'late' | 'completed' | 'treatment_pending';
   date: string;
   subcategory?: string; // Added for filtering
   items: any[];
