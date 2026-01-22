@@ -50,6 +50,8 @@ export interface ReportOptions {
 export interface RankingItem {
   name: string;
   counts: number;
+  accuracy: number;
+  id: string;
 }
 
 export interface TopDivergenceItem {
@@ -173,7 +175,8 @@ export const api = {
       return postJson('/cycles', { name });
   },
 
-  getCyclePerformance: async (cycleId: number): Promise<CyclePerformance | null> => {
+  getCyclePerformance: async (cycleId: number | string): Promise<CyclePerformance | null> => {
+      if(cycleId === 'all') return null; // Logic is handled elsewhere or specialized endpoint needed for ALL
       const res = await fetchJson(`/analytics/cycle-performance/${cycleId}`);
       return res;
   },
@@ -270,13 +273,17 @@ export const api = {
       return postJson(`/resolve-treatment`, { id, note, user, action });
   },
 
-  getAnalyticsKPIs: async () => {
-      const res = await fetchJson('/analytics/kpis');
+  getAnalyticsKPIs: async (cycleId?: number | string) => {
+      let url = '/analytics/kpis';
+      if (cycleId) url += `?cycleId=${cycleId}`;
+      const res = await fetchJson(url);
       return res || { totalCost: 0, totalSales: 0, totalCount: 0, inactiveCount: 0 };
   },
 
-  getFinancialCategories: async (): Promise<ApiFinancialGroup[]> => {
-      const res = await fetchJson('/analytics/categories-financial');
+  getFinancialCategories: async (cycleId?: number | string): Promise<ApiFinancialGroup[]> => {
+      let url = '/analytics/categories-financial';
+      if (cycleId) url += `?cycleId=${cycleId}`;
+      const res = await fetchJson(url);
       return res || [];
   },
 
@@ -285,23 +292,34 @@ export const api = {
       return res || [new Date().getFullYear()];
   },
 
-  getHeatmapData: async (year: number): Promise<{ month: number, day: number, count: number }[]> => {
-      const res = await fetchJson(`/analytics/heatmap?year=${year}`);
+  getHeatmapData: async (year?: number, cycleId?: number | string): Promise<{ month: number, day: number, count: number }[]> => {
+      const params = new URLSearchParams();
+      if(year) params.append('year', year.toString());
+      if(cycleId) params.append('cycleId', cycleId.toString());
+      const res = await fetchJson(`/analytics/heatmap?${params.toString()}`);
       return res || [];
   },
 
-  getUserRanking: async (year: number): Promise<RankingItem[]> => {
-      const res = await fetchJson(`/analytics/ranking?year=${year}`);
+  getUserRanking: async (year?: number, cycleId?: number | string): Promise<RankingItem[]> => {
+      const params = new URLSearchParams();
+      if(year) params.append('year', year.toString());
+      if(cycleId) params.append('cycleId', cycleId.toString());
+      const res = await fetchJson(`/analytics/ranking?${params.toString()}`);
       return res || [];
   },
 
-  getTopDivergences: async (year: number): Promise<TopDivergenceItem[]> => {
-      const res = await fetchJson(`/analytics/top-divergences?year=${year}`);
+  getTopDivergences: async (year?: number, cycleId?: number | string): Promise<TopDivergenceItem[]> => {
+      const params = new URLSearchParams();
+      if(year) params.append('year', year.toString());
+      if(cycleId) params.append('cycleId', cycleId.toString());
+      const res = await fetchJson(`/analytics/top-divergences?${params.toString()}`);
       return res || [];
   },
 
-  getFinancialItems: async (grId: number, sgId: number): Promise<ApiFinancialItem[]> => {
-      const res = await fetchJson(`/analytics/financial-items?gr_cod=${grId}&sg_cod=${sgId}`);
+  getFinancialItems: async (grId: number, sgId: number, cycleId?: number | string): Promise<ApiFinancialItem[]> => {
+      let url = `/analytics/financial-items?gr_cod=${grId}&sg_cod=${sgId}`;
+      if(cycleId) url += `&cycleId=${cycleId}`;
+      const res = await fetchJson(url);
       return res || [];
   },
 

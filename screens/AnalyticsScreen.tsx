@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { Icon } from '../components/Icon';
 import { Screen } from '../types';
@@ -133,72 +132,72 @@ const YearlyHeatmap = ({ data, year }: { data: { month: number, day: number, cou
 export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) => {
   const [selectedDivergence, setSelectedDivergence] = useState<any | null>(null);
   
-  // States Gerais
+  // Data States
   const [realKPIs, setRealKPIs] = useState({ totalCost: 0, totalSales: 0, totalCount: 0, inactiveCount: 0 });
   const [heatmapData, setHeatmapData] = useState<{ month: number, day: number, count: number }[]>([]);
   const [financialGroups, setFinancialGroups] = useState<ApiFinancialGroup[]>([]);
-  
-  const [availableYears, setAvailableYears] = useState<number[]>([]);
-  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [rankingData, setRankingData] = useState<RankingItem[]>([]);
   const [topDivergences, setTopDivergences] = useState<TopDivergenceItem[]>([]);
-
-  // States Cycle Analysis
+  
+  // Cycle Analysis
   const [cycles, setCycles] = useState<Cycle[]>([]);
-  const [selectedCycleId, setSelectedCycleId] = useState<number | null>(null);
+  const [selectedCycleId, setSelectedCycleId] = useState<number | string>('all');
   const [cyclePerf, setCyclePerf] = useState<CyclePerformance | null>(null);
+
+  // Helper: Get Cycle Name
+  const currentCycleName = useMemo(() => {
+      if (selectedCycleId === 'all') return 'Todos os Ciclos';
+      return cycles.find(c => c.id == selectedCycleId)?.name || 'Ciclo Selecionado';
+  }, [cycles, selectedCycleId]);
 
   // Modal Report
   const [showReportModal, setShowReportModal] = useState(false);
 
-  // Filtros de Divergência
+  // Filters
   const [divergenceSearch, setDivergenceSearch] = useState('');
-  const [diffMin, setDiffMin] = useState('');
-  const [diffMax, setDiffMax] = useState('');
-  const [impactMin, setImpactMin] = useState('');
-  const [impactMax, setImpactMax] = useState('');
   const [divergenceType, setDivergenceType] = useState<'all' | 'loss' | 'surplus'>('all');
 
-  // Estado para Tabela Hierárquica
+  // Hierarchy Table
   const [expandedGroup, setExpandedGroup] = useState<number | null>(null);
   const [expandedSubgroup, setExpandedSubgroup] = useState<{ grId: number, sgId: number } | null>(null);
   const [subgroupItems, setSubgroupItems] = useState<ApiFinancialItem[]>([]);
   const [loadingItems, setLoadingItems] = useState(false);
   const [itemSort, setItemSort] = useState<{ field: 'value' | 'qty' | 'unit', direction: 'desc' | 'asc' }>({ field: 'value', direction: 'desc' });
 
-  // Init Data
+  // 1. Initial Load (Cycles)
   useEffect(() => {
-      api.getAnalyticsKPIs().then(setRealKPIs);
-      api.getFinancialCategories().then(setFinancialGroups);
-      api.getAvailableYears().then(years => {
-          setAvailableYears(years);
-          if (years.length > 0) setSelectedYear(years[0]);
-      });
       api.getCycles().then(c => {
           setCycles(c);
           const active = c.find(cy => cy.active);
+          // Set active cycle by default, or first if no active, or 'all' if empty
           if(active) setSelectedCycleId(active.id);
           else if(c.length > 0) setSelectedCycleId(c[0].id);
       });
   }, []);
 
-  // Fetch Year specific
+  // 2. Fetch All Data when Cycle Changes
   useEffect(() => {
-      if (selectedYear) {
-          api.getHeatmapData(selectedYear).then(setHeatmapData);
-          api.getUserRanking(selectedYear).then(setRankingData);
-          api.getTopDivergences(selectedYear).then(setTopDivergences);
-      }
-  }, [selectedYear]);
+      // Parallel Fetching for Dashboard Data
+      const fetchData = async () => {
+          const currentYear = new Date().getFullYear();
+          
+          // KPI e Perf
+          if (selectedCycleId !== 'all') {
+              api.getCyclePerformance(selectedCycleId).then(setCyclePerf);
+          } else {
+              setCyclePerf(null); // No specific chart for 'all' yet
+          }
+          
+          api.getAnalyticsKPIs(selectedCycleId).then(setRealKPIs);
+          api.getFinancialCategories(selectedCycleId).then(setFinancialGroups);
+          api.getHeatmapData(currentYear, selectedCycleId).then(setHeatmapData);
+          api.getUserRanking(currentYear, selectedCycleId).then(setRankingData);
+          api.getTopDivergences(currentYear, selectedCycleId).then(setTopDivergences);
+      };
 
-  // Fetch Cycle Specific
-  useEffect(() => {
-      if (selectedCycleId) {
-          api.getCyclePerformance(selectedCycleId).then(setCyclePerf);
-      }
+      fetchData();
   }, [selectedCycleId]);
 
-  const ticketMedio = realKPIs.totalCount > 0 ? (realKPIs.totalSales / realKPIs.totalCount) : 0;
   const totalCategoryValue = financialGroups.reduce((acc, curr) => acc + curr.value, 0);
 
   // --- FILTRAGEM AVANÇADA ---
@@ -206,17 +205,11 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
       return topDivergences.filter(item => {
           const searchLower = divergenceSearch.toLowerCase();
           if (searchLower && !item.name.toLowerCase().includes(searchLower) && !item.sku.toLowerCase().includes(searchLower)) return false;
-          const diffAbs = Math.abs(item.diff);
-          if (diffMin && diffAbs < Number(diffMin)) return false;
-          if (diffMax && diffAbs > Number(diffMax)) return false;
-          const impactAbs = Math.abs(item.diffValue);
-          if (impactMin && impactAbs < Number(impactMin)) return false;
-          if (impactMax && impactAbs > Number(impactMax)) return false;
           if (divergenceType === 'loss' && item.diff > 0) return false;
           if (divergenceType === 'surplus' && item.diff < 0) return false;
           return true;
       });
-  }, [topDivergences, divergenceSearch, diffMin, diffMax, impactMin, impactMax, divergenceType]);
+  }, [topDivergences, divergenceSearch, divergenceType]);
 
   const handleOpenDetails = (item: any) => {
       setSelectedDivergence({
@@ -249,7 +242,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
           setExpandedSubgroup({ grId, sgId });
           setLoadingItems(true);
           try {
-              const items = await api.getFinancialItems(grId, sgId);
+              const items = await api.getFinancialItems(grId, sgId, selectedCycleId);
               setSubgroupItems(items);
           } catch(e) { console.error(e); }
           setLoadingItems(false);
@@ -287,23 +280,35 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
                         <Icon name="insights" className="text-primary" />
-                        Dashboard Gerencial
+                        Dashboard de Ciclo
                     </h1>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
-                        Análise financeira e controle de perdas.
+                        Análise de performance e resultados por período.
                     </p>
                 </div>
-                <div className="flex items-center gap-2">
-                   <div className="hidden md:flex flex-col items-end mr-4">
-                      <p className="text-[10px] text-gray-400 uppercase font-bold">Última Atualização</p>
-                      <p className="text-xs font-bold text-gray-700 dark:text-white">Agora</p>
+                
+                {/* SELECTOR DE CICLO NO CABEÇALHO */}
+                <div className="flex items-center gap-3">
+                   <div className="flex items-center bg-gray-100 dark:bg-white/5 rounded-xl px-3 py-1.5 border border-gray-200 dark:border-white/10">
+                        <Icon name="history" className="text-gray-500 mr-2" size={20} />
+                        <select 
+                            value={selectedCycleId} 
+                            onChange={(e) => setSelectedCycleId(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                            className="bg-transparent border-none text-sm font-bold text-gray-800 dark:text-white focus:ring-0 cursor-pointer min-w-[150px]"
+                        >
+                            <option value="all">Todo o Histórico</option>
+                            {cycles.map(c => (
+                                <option key={c.id} value={c.id}>{c.name} {c.active ? '(Ativo)' : ''}</option>
+                            ))}
+                        </select>
                    </div>
+
                    <button 
                      onClick={() => setShowReportModal(true)}
-                     className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg text-sm font-bold shadow-lg shadow-primary/20 hover:bg-primary-dark transition-all active:scale-95"
+                     className="flex items-center justify-center p-2.5 bg-primary text-white rounded-xl shadow-lg shadow-primary/20 hover:bg-primary-dark transition-all active:scale-95"
+                     title="Gerar Relatório"
                    >
-                        <Icon name="assignment" size={18} />
-                        Gerador de Relatórios
+                        <Icon name="assignment" size={20} />
                     </button>
                 </div>
             </div>
@@ -312,25 +317,13 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
 
       <main className="flex-1 max-w-7xl mx-auto w-full p-4 md:p-8 space-y-8">
         
-        {/* NEW SECTION: CYCLE PERFORMANCE */}
-        <div>
-            <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                    <Icon name="timeline" size={16} />
-                    Performance do Ciclo
-                </h2>
-                <div className="bg-white dark:bg-surface-dark border border-gray-200 dark:border-white/10 rounded-lg p-1">
-                    <select 
-                        value={selectedCycleId || ''} 
-                        onChange={(e) => setSelectedCycleId(Number(e.target.value))}
-                        className="bg-transparent border-none text-sm font-bold text-gray-800 dark:text-white focus:ring-0 cursor-pointer py-1 pl-2 pr-8"
-                    >
-                        {cycles.map(c => (
-                            <option key={c.id} value={c.id}>{c.name} {c.active ? '(Ativo)' : ''}</option>
-                        ))}
-                    </select>
-                </div>
-            </div>
+        {/* SECTION 1: PERFORMANCE CARDS (Cycle Specific) */}
+        {selectedCycleId !== 'all' && (
+        <div className="animate-slide-up">
+            <h2 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                <Icon name="timeline" size={16} />
+                Resumo do Ciclo: <span className="text-primary">{currentCycleName}</span>
+            </h2>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 {/* Stats Cards */}
@@ -340,7 +333,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                         <span className="text-4xl font-black text-gray-900 dark:text-white">
                             <AnimatedNumber value={cyclePerf?.totalCount || 0} />
                         </span>
-                        <span className="text-[10px] text-gray-400 mt-1">Neste ciclo</span>
+                        <span className="text-[10px] text-gray-400 mt-1">Itens auditados</span>
                     </div>
                     <div className="bg-white dark:bg-surface-dark p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-white/10 flex flex-col items-center text-center relative overflow-hidden">
                         <div className="absolute top-0 left-0 w-1 h-full bg-green-500"></div>
@@ -356,13 +349,13 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                         <span className="text-4xl font-black text-red-600 dark:text-red-400">
                             <AnimatedNumber value={cyclePerf?.divergenceCount || 0} />
                         </span>
-                        <span className="text-[10px] text-gray-400 mt-1">Pendentes ou Tratadas</span>
+                        <span className="text-[10px] text-gray-400 mt-1">Erros encontrados</span>
                     </div>
                 </div>
 
                 {/* Graph */}
                 <div className="md:col-span-3 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-white/10 p-4 flex flex-col">
-                    <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-4 ml-2">Evolução Diária</h3>
+                    <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-4 ml-2">Evolução de Contagens Diárias</h3>
                     <div className="flex-1 min-h-[250px]">
                         <ResponsiveContainer width="100%" height="100%">
                             <AreaChart data={cyclePerf?.chartData || []}>
@@ -386,100 +379,48 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                 </div>
             </div>
         </div>
+        )}
 
-        {/* SECTION 1: STATIC SNAPSHOTS (KPIs) */}
-        <div>
+        {/* SECTION 2: FINANCEIRO (AUDITADO) E ATIVIDADE */}
+        <div className="animate-slide-up" style={{ animationDelay: '0.1s' }}>
             <h2 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                <Icon name="camera_alt" size={16} />
-                Snapshot Atual do Estoque
+                <Icon name="attach_money" size={16} />
+                Resultado Financeiro Auditado
             </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
                 <div className="bg-gradient-to-br from-gray-900 to-gray-800 dark:from-surface-dark dark:to-black p-5 rounded-2xl shadow-lg border border-gray-700 relative overflow-hidden group">
                     <div className="absolute right-0 top-0 p-4 opacity-10">
                     <Icon name="payments" size={80} className="text-white" />
                     </div>
-                    <div className="flex justify-between items-start mb-4 relative z-10">
-                        <div className="p-2 bg-white/10 rounded-lg text-white">
-                            <Icon name="attach_money" />
-                        </div>
-                    </div>
                     <div className="relative z-10">
-                        <p className="text-sm text-gray-300 font-medium">Valor em Estoque (Custo)</p>
-                        <h3 className="text-2xl font-bold text-white mt-1">
+                        <p className="text-sm text-gray-300 font-medium">Valor Auditado (Custo)</p>
+                        <h3 className="text-3xl font-bold text-white mt-1">
                             <AnimatedNumber value={realKPIs.totalCost} prefix="R$ " decimals={2} />
                         </h3>
-                        <div className="mt-3 pt-3 border-t border-white/10 flex justify-between items-end">
-                            <div>
-                                <p className="text-[10px] text-gray-400 font-bold uppercase">Valor de Venda</p>
-                                <p className="text-sm font-bold text-green-400">
-                                    <AnimatedNumber value={realKPIs.totalSales} prefix="R$ " decimals={2} />
-                                </p>
-                            </div>
-                            <Icon name="trending_up" className="text-green-400 opacity-50" />
-                        </div>
+                        <p className="text-xs text-gray-400 mt-2">Soma do custo dos itens contados neste período</p>
                     </div>
                 </div>
 
                 <div className="bg-white dark:bg-surface-dark p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-card-border hover:border-primary/50 transition-colors group">
-                    <div className="flex justify-between items-start mb-2">
-                        <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-primary">
-                            <Icon name="inventory_2" />
-                        </div>
-                    </div>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Itens no Sistema</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Itens Únicos Processados</p>
                     <div className="flex items-end gap-3 mt-1">
-                        <h3 className="text-2xl font-bold text-gray-900 dark:text-white">
+                        <h3 className="text-3xl font-bold text-gray-900 dark:text-white">
                             <AnimatedNumber value={realKPIs.totalCount} duration={1500} />
                         </h3>
-                        <span className="text-xs font-bold bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-400 px-2 py-1 rounded mb-1">
-                            + <AnimatedNumber value={realKPIs.inactiveCount} duration={1500} /> Inativos
+                        <span className="text-xs font-bold bg-green-100 dark:bg-green-900/20 text-green-600 dark:text-green-400 px-2 py-1 rounded mb-1">
+                            Produtos Distintos
                         </span>
                     </div>
-                    <p className="text-xs text-gray-400 mt-1">SKUs Únicos Cadastrados</p>
-                </div>
-
-                <div className="bg-white dark:bg-surface-dark p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-card-border hover:border-purple-500/50 transition-colors group">
-                    <div className="flex justify-between items-start mb-2">
-                        <div className="p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg text-purple-600">
-                            <Icon name="sell" />
-                        </div>
-                    </div>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Ticket Médio (Venda)</p>
-                    <h3 className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
-                        <AnimatedNumber value={ticketMedio} prefix="R$ " decimals={2} duration={2500} />
-                    </h3>
-                    <p className="text-xs text-gray-400 mt-1">Preço médio por item em estoque</p>
-                </div>
-            </div>
-        </div>
-
-        {/* SECTION 2: HISTORICAL PERFORMANCE & RANKING */}
-        <div>
-            <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest flex items-center gap-2">
-                    <Icon name="history" size={16} />
-                    Histórico e Performance
-                </h2>
-                
-                <div className="flex items-center gap-2 bg-white dark:bg-surface-dark border border-gray-200 dark:border-card-border rounded-lg p-1">
-                    <span className="text-xs font-bold text-gray-500 pl-2">Ano:</span>
-                    <select 
-                        value={selectedYear} 
-                        onChange={(e) => setSelectedYear(Number(e.target.value))}
-                        className="bg-transparent border-none text-sm font-bold text-primary focus:ring-0 cursor-pointer py-1 pl-1 pr-8"
-                    >
-                        {availableYears.map(year => (
-                            <option key={year} value={year}>{year}</option>
-                        ))}
-                    </select>
+                    <p className="text-xs text-gray-400 mt-2">Total de SKUs inventariados no ciclo</p>
                 </div>
             </div>
 
+            {/* ATIVIDADE (HEATMAP) */}
             <div className="bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border p-6 overflow-hidden mb-6">
                 <div className="flex items-center justify-between mb-6">
                     <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
                         <Icon name="calendar_month" className="text-gray-400" />
-                        Atividade de Inventário ({selectedYear})
+                        Mapa de Calor da Atividade
                     </h2>
                     
                     <div className="flex items-center gap-2 text-xs text-gray-500 font-medium bg-gray-50 dark:bg-white/5 px-3 py-1.5 rounded-lg">
@@ -493,19 +434,21 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                         <span>Mais</span>
                     </div>
                 </div>
-                <YearlyHeatmap data={heatmapData} year={selectedYear} />
+                <YearlyHeatmap data={heatmapData} year={new Date().getFullYear()} />
             </div>
+        </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* SECTION 3: RANKING & BREAKDOWN */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-slide-up" style={{ animationDelay: '0.2s' }}>
 
                 <div className="lg:col-span-1 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border p-6 flex flex-col h-[600px]">
                     <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
                         <Icon name="leaderboard" className="text-yellow-500" />
-                        Ranking ({selectedYear})
+                        Ranking do Ciclo
                     </h2>
                     <div className="space-y-5 flex-1 overflow-y-auto no-scrollbar pr-2">
                         {rankingData.length === 0 ? (
-                            <div className="text-center text-gray-400 py-10">Nenhum dado de contagem neste ano.</div>
+                            <div className="text-center text-gray-400 py-10">Nenhum dado de contagem neste período.</div>
                         ) : (
                             rankingData.map((user, idx) => (
                                 <div key={idx} className="flex items-center gap-3 group">
@@ -516,7 +459,12 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                                     <div className="flex-1 min-w-0">
                                         <div className="flex justify-between mb-1">
                                             <span className="font-bold text-sm text-gray-900 dark:text-white truncate">{user.name}</span>
-                                            <span className="text-xs font-bold text-primary">{user.counts}</span>
+                                            <div className="flex gap-2">
+                                                <span className="text-xs font-bold text-primary">{user.counts}</span>
+                                                <span className={`text-[10px] px-1 rounded ${user.accuracy > 98 ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                                                    {user.accuracy.toFixed(0)}%
+                                                </span>
+                                            </div>
                                         </div>
                                         <div className="flex-1 h-1.5 bg-gray-100 dark:bg-white/5 rounded-full overflow-hidden">
                                             <div 
@@ -531,10 +479,13 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                     </div>
                 </div>
 
-                {/* HIERARCHICAL CATEGORY TABLE */}
+                {/* HIERARCHICAL CATEGORY TABLE (Updated Title) */}
                 <div className="lg:col-span-2 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border flex flex-col overflow-hidden h-[600px]">
                     <div className="p-6 border-b border-gray-100 dark:border-white/5 flex justify-between items-center bg-gray-50/50 dark:bg-white/5">
-                        <h2 className="text-lg font-bold text-gray-900 dark:text-white">Detalhamento Financeiro (Atual)</h2>
+                        <h2 className="text-lg font-bold text-gray-900 dark:text-white">Detalhamento Financeiro (Auditado)</h2>
+                        <span className="text-xs text-gray-500 bg-gray-200 dark:bg-white/10 px-2 py-1 rounded">
+                            Refere-se ao valor contado no ciclo
+                        </span>
                     </div>
                     
                     <div className="flex-1 overflow-y-auto overflow-x-auto no-scrollbar relative">
@@ -542,8 +493,8 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                             <thead className="bg-gray-50 dark:bg-surface-dark sticky top-0 z-10">
                                 <tr className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider font-semibold shadow-sm">
                                     <th className="py-4 px-6 border-b border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-surface-dark w-1/3">Categoria</th>
-                                    <th className="py-4 px-6 border-b border-gray-100 dark:border-white/5 text-right bg-gray-50 dark:bg-surface-dark">Qtd Física</th>
-                                    <th className="py-4 px-6 border-b border-gray-100 dark:border-white/5 text-right bg-gray-50 dark:bg-surface-dark">Valor Total</th>
+                                    <th className="py-4 px-6 border-b border-gray-100 dark:border-white/5 text-right bg-gray-50 dark:bg-surface-dark">Qtd Contada</th>
+                                    <th className="py-4 px-6 border-b border-gray-100 dark:border-white/5 text-right bg-gray-50 dark:bg-surface-dark">Valor Auditado</th>
                                     <th className="py-4 px-6 border-b border-gray-100 dark:border-white/5 w-1/4 bg-gray-50 dark:bg-surface-dark">% Share</th>
                                 </tr>
                             </thead>
@@ -617,10 +568,9 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                                                                 </td>
                                                             </tr>
 
-                                                            {/* ITEMS LIST (LEVEL 3) - TABLE ROWS INTEGRATED */}
+                                                            {/* ITEMS LIST (LEVEL 3) */}
                                                             {subIsExpanded && (
                                                                 <>
-                                                                    {/* Item Sort Header - Subtle row underneath subgroup */}
                                                                     <tr className="bg-gray-100/50 dark:bg-black/30 border-b border-gray-100 dark:border-white/5 text-[10px] text-gray-400 font-bold uppercase tracking-wider select-none">
                                                                         <td className="py-2 pl-28">Produto / SKU</td>
                                                                         <td className="text-right py-2 px-6 cursor-pointer hover:text-primary transition-colors" onClick={() => handleSortItems('unit')}>
@@ -638,7 +588,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                                                                         <tr>
                                                                             <td colSpan={4} className="py-8 text-center text-gray-400">
                                                                                 <Icon name="sync" className="animate-spin mb-1 mx-auto" size={20} />
-                                                                                <span className="text-xs">Carregando itens...</span>
+                                                                                <span className="text-xs">Carregando itens do ciclo...</span>
                                                                             </td>
                                                                         </tr>
                                                                     ) : (
@@ -646,7 +596,6 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                                                                             const itemPercentage = sub.value > 0 ? (item.value / sub.value) * 100 : 0;
                                                                             return (
                                                                                 <tr key={idx} className="bg-gray-50 dark:bg-black/20 hover:bg-blue-50 dark:hover:bg-white/5 transition-colors border-b border-gray-100 dark:border-white/5 last:border-0 group">
-                                                                                    {/* Name Col - Increased Indentation */}
                                                                                     <td className="py-2 px-6 pl-28 border-l-4 border-transparent">
                                                                                         <div className="flex items-center gap-3">
                                                                                             <Icon name="subdirectory_arrow_right" size={14} className="text-gray-300 group-hover:text-primary transition-colors" />
@@ -664,19 +613,16 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                                                                                         </div>
                                                                                     </td>
                                                                                     
-                                                                                    {/* Qty Col */}
                                                                                     <td className="py-2 px-6 text-right">
                                                                                         <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-white dark:bg-white/5 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-white/10 min-w-[24px] text-center">
                                                                                             {item.qty}
                                                                                         </span>
                                                                                     </td>
 
-                                                                                    {/* Value Col */}
                                                                                     <td className="py-2 px-6 text-right font-bold text-xs text-gray-900 dark:text-white">
                                                                                         {item.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                                                                     </td>
 
-                                                                                    {/* Share Col */}
                                                                                     <td className="py-2 px-6">
                                                                                         <div className="flex items-center gap-2">
                                                                                             <div className="flex-1 h-1 bg-gray-200 dark:bg-white/10 rounded-full overflow-hidden">
@@ -705,20 +651,18 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
             </div>
 
             {/* TOP DIVERGENCES */}
-            <div className="mt-8 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border flex flex-col h-[600px]">
-                {/* ... (Tabela de divergências mantida como estava, apenas compactada visualmente aqui para brevidade do XML) ... */}
+            <div className="mt-8 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border flex flex-col h-[600px] animate-slide-up" style={{ animationDelay: '0.3s' }}>
                 <div className="p-6 border-b border-gray-100 dark:border-white/5">
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
                         <div>
                             <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
                                 <Icon name="warning" className="text-red-500" />
-                                Divergências
+                                Divergências do Ciclo
                             </h2>
-                            <p className="text-xs text-gray-500">Filtrar e analisar impactos do ano {selectedYear}</p>
+                            <p className="text-xs text-gray-500">Maiores impactos financeiros registrados.</p>
                         </div>
-                        {/* Filters UI... */}
+                        {/* Filters can go here */}
                     </div>
-                    {/* ... */}
                 </div>
                 <div className="flex-1 overflow-y-auto no-scrollbar">
                     <table className="w-full text-left border-collapse min-w-[800px]">
@@ -754,7 +698,6 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                     </table>
                 </div>
             </div>
-        </div>
 
       </main>
 
