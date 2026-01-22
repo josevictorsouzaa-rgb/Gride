@@ -2,8 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Icon } from '../components/Icon';
 import { Screen, User, UserPermissions } from '../types';
-import { getSettings, saveSettings, getSettingsHistory, SettingsHistoryEntry } from '../data/settingsStore';
-import { api } from '../services/api';
+import { api, Cycle } from '../services/api';
 
 interface SettingsScreenProps {
   onBack: () => void;
@@ -13,40 +12,33 @@ interface SettingsScreenProps {
 const getInitials = (name: string) => name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentUser }) => {
-  const [activeTab, setActiveTab] = useState<'params' | 'users'>('params');
+  const [activeTab, setActiveTab] = useState<'cycles' | 'users'>('cycles');
 
-  const [dailyTarget, setDailyTarget] = useState(150);
-  const [cooldownDays, setCooldownDays] = useState(30);
-  const [highGiroThreshold, setHighGiroThreshold] = useState(5);
-  const [accumulationMode, setAccumulationMode] = useState(true);
-  const [highGiroSplit, setHighGiroSplit] = useState(40); // Novo Estado
+  // Cycle States
+  const [cycles, setCycles] = useState<Cycle[]>([]);
+  const [loadingCycles, setLoadingCycles] = useState(false);
+  const [isCreatingCycle, setIsCreatingCycle] = useState(false);
+  const [newCycleName, setNewCycleName] = useState('');
 
-  const [history, setHistory] = useState<SettingsHistoryEntry[]>([]);
-  
-  const totalStock = 12500; // Valor simulado do total de itens no banco
-
-  useEffect(() => {
-    const settings = getSettings();
-    setDailyTarget(settings.dailyTarget);
-    setCooldownDays(settings.cooldownDays);
-    setHighGiroThreshold(settings.highGiroThreshold);
-    setAccumulationMode(settings.accumulationMode);
-    setHighGiroSplit(settings.highGiroSplit || 40);
-    
-    setHistory(getSettingsHistory());
-  }, []);
-
-  const turnsPerYear = ((dailyTarget * 252) / totalStock).toFixed(1); 
-  const daysToCycle = Math.round(totalStock / dailyTarget);
-
+  // User States
   const [users, setUsers] = useState<User[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
 
   useEffect(() => {
-      if (activeTab === 'users') {
+      if (activeTab === 'cycles') {
+          loadCycles();
+      } else {
           loadUsers();
       }
   }, [activeTab]);
+
+  const loadCycles = () => {
+      setLoadingCycles(true);
+      api.getCycles().then(data => {
+          setCycles(data);
+          setLoadingCycles(false);
+      });
+  };
 
   const loadUsers = () => {
       setIsLoadingUsers(true);
@@ -56,34 +48,34 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
       });
   };
 
+  const handleStartNewCycle = async () => {
+      if (!newCycleName.trim()) return alert("Nome do ciclo é obrigatório.");
+      if (!confirm(`Tem certeza que deseja iniciar "${newCycleName}"? O ciclo atual será encerrado.`)) return;
+
+      const res = await api.startNewCycle(newCycleName);
+      if (res.success) {
+          setIsCreatingCycle(false);
+          setNewCycleName('');
+          loadCycles();
+          alert("Novo ciclo iniciado com sucesso! Os indicadores do Dashboard foram resetados.");
+      } else {
+          alert("Erro: " + res.error);
+      }
+  };
+
   const handleTogglePermission = async (user: User, key: keyof UserPermissions) => {
       const updatedPermissions = { ...user.permissions, [key]: !user.permissions[key] };
-      // Optimistic update
       setUsers(prev => prev.map(u => u.id === user.id ? { ...u, permissions: updatedPermissions } : u));
-      
       await api.updateUserPermissions(user.id, user.active, updatedPermissions);
   };
 
   const handleToggleBlock = async (user: User) => {
       const newActiveState = !user.active;
-      // Optimistic update
       setUsers(prev => prev.map(u => u.id === user.id ? { ...u, active: newActiveState } : u));
-      
       await api.updateUserPermissions(user.id, newActiveState, user.permissions);
   };
 
-  const handleSave = () => {
-    const newSettings = { 
-      dailyTarget,
-      cooldownDays,
-      highGiroThreshold,
-      accumulationMode,
-      highGiroSplit
-    };
-    const updatedHistory = saveSettings(newSettings, currentUser);
-    setHistory(updatedHistory);
-    alert('Configurações atualizadas com sucesso!');
-  };
+  const activeCycle = cycles.find(c => c.active);
 
   return (
     <div className="flex flex-col w-full min-h-screen bg-background-light dark:bg-background-dark md:bg-transparent">
@@ -103,14 +95,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
         
         <div className="flex px-4 gap-6">
             <button 
-              onClick={() => setActiveTab('params')}
+              onClick={() => setActiveTab('cycles')}
               className={`pb-3 text-sm font-bold border-b-2 transition-colors ${
-                activeTab === 'params' 
+                activeTab === 'cycles' 
                   ? 'text-primary border-primary' 
                   : 'text-gray-500 border-transparent hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
               }`}
             >
-              Inteligência e Meta
+              Gestão de Ciclos
             </button>
             <button 
               onClick={() => setActiveTab('users')}
@@ -128,183 +120,113 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
       <main className="flex-1 p-4 pb-24 md:pb-6 overflow-y-auto">
         <div className="md:max-w-4xl md:mx-auto">
         
-        {activeTab === 'params' && (
+        {/* CYCLE MANAGEMENT TAB */}
+        {activeTab === 'cycles' && (
           <div className="space-y-6 animate-fade-in">
              
-             {/* CARTÃO PRINCIPAL: META */}
-             <section className="bg-white dark:bg-surface-dark p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-card-border">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="p-3 bg-purple-100 dark:bg-purple-900/20 rounded-xl text-purple-600">
-                    <Icon name="track_changes" size={28} />
+             {/* CARTÃO DO CICLO ATUAL */}
+             <section className="bg-white dark:bg-surface-dark p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-card-border relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-10 opacity-5">
+                    <Icon name="update" size={150} />
+                </div>
+                
+                <div className="flex items-center gap-3 mb-6 relative z-10">
+                  <div className="p-3 bg-green-100 dark:bg-green-900/20 rounded-xl text-green-600">
+                    <Icon name="play_circle" size={28} />
                   </div>
                   <div>
-                      <h3 className="font-bold text-xl text-gray-900 dark:text-white">Definição de Meta</h3>
-                      <p className="text-xs text-gray-500">Volume de contagem diária</p>
+                      <h3 className="font-bold text-xl text-gray-900 dark:text-white">Ciclo Ativo</h3>
+                      <p className="text-xs text-gray-500">Período de contagem vigente</p>
                   </div>
                 </div>
 
-                <div className="flex flex-col gap-6">
-                   <div className="space-y-4">
-                      <label className="text-sm font-bold text-gray-700 dark:text-gray-300 block">
-                        Alvo Diário (Itens/Dia)
-                      </label>
-                      <div className="flex items-center gap-4">
-                         <button 
-                           onClick={() => setDailyTarget(Math.max(10, dailyTarget - 10))}
-                           className="size-14 rounded-xl bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 flex items-center justify-center transition-colors border border-gray-200 dark:border-white/10"
-                         >
-                           <Icon name="remove" size={24} />
-                         </button>
-                         <div className="flex-1 relative">
-                             <input 
-                               type="number" 
-                               value={dailyTarget} 
-                               onChange={(e) => setDailyTarget(Number(e.target.value))}
-                               className="w-full h-14 text-center text-3xl font-black bg-transparent border-2 border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:border-primary focus:ring-0"
-                             />
-                             <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400 uppercase">UN</span>
-                         </div>
-                         <button 
-                           onClick={() => setDailyTarget(dailyTarget + 10)}
-                           className="size-14 rounded-xl bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 flex items-center justify-center transition-colors border border-gray-200 dark:border-white/10"
-                         >
-                           <Icon name="add" size={24} />
-                         </button>
-                      </div>
-                   </div>
+                <div className="flex flex-col gap-6 relative z-10">
+                   {activeCycle ? (
+                       <div className="bg-green-50 dark:bg-green-900/10 p-5 rounded-xl border border-green-100 dark:border-green-900/30">
+                           <div className="flex flex-col">
+                               <span className="text-xs font-bold text-green-600 uppercase tracking-widest mb-1">Em Andamento</span>
+                               <h2 className="text-3xl font-black text-gray-900 dark:text-white">{activeCycle.name}</h2>
+                               <div className="flex items-center gap-2 mt-2 text-sm text-gray-600 dark:text-gray-300">
+                                   <Icon name="calendar_today" size={16} />
+                                   Iniciado em {new Date(activeCycle.startDate).toLocaleDateString('pt-BR')}
+                               </div>
+                           </div>
+                       </div>
+                   ) : (
+                       <div className="p-5 rounded-xl bg-gray-100 dark:bg-white/5 border border-dashed border-gray-300 dark:border-white/10 text-center">
+                           <p className="text-gray-500 font-bold">Nenhum ciclo ativo.</p>
+                       </div>
+                   )}
 
-                   <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-black/20 rounded-xl border border-gray-100 dark:border-white/5">
-                      <div className="flex items-center gap-3">
-                        <Icon name="published_with_changes" className="text-primary" />
-                        <span className="text-sm font-bold text-gray-700 dark:text-gray-300">Meta Acumulativa</span>
-                      </div>
-                      <button 
-                        onClick={() => setAccumulationMode(!accumulationMode)}
-                        className={`w-14 h-8 rounded-full transition-colors relative ${accumulationMode ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`}
-                      >
-                        <div className={`absolute top-1 left-1 size-6 bg-white rounded-full shadow transition-transform ${accumulationMode ? 'translate-x-6' : 'translate-x-0'}`} />
-                      </button>
-                   </div>
-                   <p className="text-xs text-gray-500 px-1 -mt-2">
-                      Se ativado, itens não contados ontem serão somados à meta de hoje.
-                   </p>
+                   {!isCreatingCycle ? (
+                       <button 
+                         onClick={() => setIsCreatingCycle(true)}
+                         className="w-full py-4 bg-gray-900 dark:bg-white text-white dark:text-black rounded-xl font-bold shadow-lg hover:scale-[1.01] active:scale-[0.99] transition-all flex items-center justify-center gap-2"
+                       >
+                           <Icon name="flag" />
+                           Encerrar e Começar Novo Ciclo
+                       </button>
+                   ) : (
+                       <div className="bg-gray-50 dark:bg-black/20 p-4 rounded-xl border border-gray-200 dark:border-white/10 animate-fade-in">
+                           <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">Nome do Novo Ciclo</label>
+                           <input 
+                               autoFocus
+                               value={newCycleName}
+                               onChange={(e) => setNewCycleName(e.target.value)}
+                               placeholder="Ex: Inventário Natal 2024"
+                               className="w-full p-3 rounded-lg border border-gray-300 dark:border-white/10 bg-white dark:bg-surface-dark mb-3 font-bold"
+                           />
+                           <div className="flex gap-2">
+                               <button onClick={() => setIsCreatingCycle(false)} className="flex-1 py-3 rounded-lg border border-gray-300 dark:border-white/10 font-bold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5">Cancelar</button>
+                               <button onClick={handleStartNewCycle} className="flex-1 py-3 rounded-lg bg-primary text-white font-bold shadow-md hover:bg-primary-dark">Confirmar Início</button>
+                           </div>
+                           <p className="text-xs text-red-500 mt-2 text-center">
+                               Atenção: O indicador de progresso do Dashboard será zerado para o novo ciclo.
+                           </p>
+                       </div>
+                   )}
                 </div>
              </section>
 
-             {/* CARTÃO INTELIGÊNCIA */}
+             {/* HISTÓRICO DE CICLOS */}
              <section className="bg-white dark:bg-surface-dark p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-card-border">
                 <div className="flex items-center gap-3 mb-6">
                   <div className="p-3 bg-blue-100 dark:bg-blue-900/20 rounded-xl text-blue-600">
-                    <Icon name="psychology" size={28} />
+                    <Icon name="history" size={28} />
                   </div>
                   <div>
-                      <h3 className="font-bold text-xl text-gray-900 dark:text-white">Inteligência de Seleção</h3>
-                      <p className="text-xs text-gray-500">Regras para sugestão de blocos</p>
+                      <h3 className="font-bold text-xl text-gray-900 dark:text-white">Histórico de Ciclos</h3>
+                      <p className="text-xs text-gray-500">Períodos finalizados</p>
                   </div>
                 </div>
 
-                <div className="space-y-6">
-                   
-                   {/* NOVO CONTROLE: EQUILÍBRIO DA META */}
-                   <div>
-                      <div className="flex justify-between mb-2">
-                        <label className="text-sm font-bold text-gray-700 dark:text-gray-300">Equilíbrio da Meta</label>
-                        <div className="text-xs font-bold bg-gray-100 dark:bg-white/10 px-2 py-1 rounded">
-                            <span className="text-purple-600 dark:text-purple-400">{highGiroSplit}% Giro</span>
-                            <span className="mx-1 text-gray-400">/</span>
-                            <span className="text-blue-600 dark:text-blue-400">{100 - highGiroSplit}% Ciclo</span>
+                <div className="space-y-4">
+                    {loadingCycles ? (
+                        <p className="text-center text-gray-400 py-4">Carregando...</p>
+                    ) : cycles.length <= 1 ? ( // 1 porque o ativo sempre existe
+                        <p className="text-center text-gray-400 py-4 text-sm">Nenhum ciclo anterior registrado.</p>
+                    ) : (
+                        <div className="relative pl-4 space-y-6 before:absolute before:left-[19px] before:top-2 before:bottom-2 before:w-0.5 before:bg-gray-200 dark:before:bg-white/10">
+                            {cycles.filter(c => !c.active).map((cycle) => (
+                                <div key={cycle.id} className="relative pl-8">
+                                    <div className="absolute left-[13px] top-1.5 w-3.5 h-3.5 bg-gray-400 rounded-full border-2 border-white dark:border-surface-dark ring-2 ring-gray-100 dark:ring-white/5" />
+                                    <div className="bg-gray-50 dark:bg-white/5 p-3 rounded-xl border border-gray-100 dark:border-white/5">
+                                        <h4 className="font-bold text-gray-800 dark:text-white">{cycle.name}</h4>
+                                        <div className="flex justify-between mt-1 text-xs text-gray-500">
+                                            <span>Início: {new Date(cycle.startDate).toLocaleDateString('pt-BR')}</span>
+                                            <span>Fim: {cycle.endDate ? new Date(cycle.endDate).toLocaleDateString('pt-BR') : '-'}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
-                      </div>
-                      <input 
-                        type="range" 
-                        min="10" 
-                        max="90" 
-                        step="5"
-                        value={highGiroSplit}
-                        onChange={(e) => setHighGiroSplit(Number(e.target.value))}
-                        className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-600"
-                      />
-                      <p className="text-xs text-gray-400 mt-1">Define a proporção de itens de alta rotatividade na meta diária.</p>
-                   </div>
-
-                   <hr className="border-gray-100 dark:border-white/5" />
-
-                   <div>
-                      <div className="flex justify-between mb-2">
-                        <label className="text-sm font-bold text-gray-700 dark:text-gray-300">Cooldown (Descanso)</label>
-                        <span className="text-sm font-bold text-primary">{cooldownDays} dias</span>
-                      </div>
-                      <input 
-                        type="range" 
-                        min="1" 
-                        max="90" 
-                        value={cooldownDays}
-                        onChange={(e) => setCooldownDays(Number(e.target.value))}
-                        className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-primary"
-                      />
-                      <p className="text-xs text-gray-400 mt-1">Tempo mínimo para sugerir um item novamente após contagem.</p>
-                   </div>
-
-                   <div>
-                      <div className="flex justify-between mb-2">
-                        <label className="text-sm font-bold text-gray-700 dark:text-gray-300">Giro Alto (Limiar)</label>
-                        <span className="text-sm font-bold text-primary">{highGiroThreshold} saídas</span>
-                      </div>
-                      <input 
-                        type="range" 
-                        min="1" 
-                        max="50" 
-                        value={highGiroThreshold}
-                        onChange={(e) => setHighGiroThreshold(Number(e.target.value))}
-                        className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-primary"
-                      />
-                      <p className="text-xs text-gray-400 mt-1">Mínimo de saídas em pedidos para priorizar como alto giro.</p>
-                   </div>
+                    )}
                 </div>
-             </section>
-
-             <section className="bg-white dark:bg-surface-dark p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-card-border hover:shadow-md transition-shadow duration-300">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="p-2 bg-gray-100 dark:bg-white/10 rounded-lg text-gray-600 dark:text-white">
-                    <Icon name="history" size={24} />
-                  </div>
-                  <h3 className="font-bold text-lg">Histórico de Alterações</h3>
-                </div>
-
-                {history.length === 0 ? (
-                  <div className="text-center py-6 text-gray-400 text-sm">
-                    Nenhuma alteração registrada ainda.
-                  </div>
-                ) : (
-                  <div className="space-y-4 max-h-60 overflow-y-auto pr-1">
-                    {history.map((entry) => (
-                      <div key={entry.id} className="flex gap-3 text-sm border-b border-gray-100 dark:border-white/5 pb-3 last:border-0 last:pb-0">
-                         <div className="size-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center shrink-0 border border-gray-100 dark:border-gray-600 text-xs font-bold text-gray-600 dark:text-gray-300">
-                           {getInitials(entry.user)}
-                         </div>
-                         <div className="flex-1">
-                           <div className="flex justify-between items-start">
-                             <span className="font-bold text-gray-900 dark:text-white">{entry.user}</span>
-                             <span className="text-xs text-gray-500">{entry.dateStr}</span>
-                           </div>
-                           <div className="mt-1 space-y-1">
-                             {entry.changes.map((change, idx) => (
-                               <p key={idx} className="text-gray-600 dark:text-gray-300 text-xs leading-relaxed flex items-start gap-1">
-                                 <span className="mt-1 size-1 bg-gray-400 rounded-full shrink-0" />
-                                 {change}
-                               </p>
-                             ))}
-                           </div>
-                         </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
              </section>
           </div>
         )}
 
-        {/* User Tab Content - Reformulado */}
+        {/* USERS TAB (Mantido igual) */}
         {activeTab === 'users' && (
           <div className="space-y-6 animate-fade-in">
              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-900/30 flex items-start gap-3">
@@ -337,7 +259,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
                            </div>
                         </div>
                         
-                        {/* Botão de Bloqueio */}
                         <div className="flex flex-col items-end">
                             <span className={`text-[10px] font-bold uppercase mb-1 ${isActive ? 'text-green-600' : 'text-red-500'}`}>
                                 {isActive ? 'Acesso Liberado' : 'Acesso Bloqueado'}
@@ -345,7 +266,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
                             <button 
                                 onClick={() => handleToggleBlock(user)}
                                 className={`w-12 h-7 rounded-full transition-colors relative ${isActive ? 'bg-green-500' : 'bg-red-500'}`}
-                                disabled={user.id === currentUser?.id} // Não pode se bloquear
+                                disabled={user.id === currentUser?.id}
                             >
                                 <div className={`absolute top-1 left-1 size-5 bg-white rounded-full shadow transition-transform ${isActive ? 'translate-x-5' : 'translate-x-0'}`} />
                             </button>
@@ -354,7 +275,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
 
                     <div className="border-t border-gray-100 dark:border-white/5 my-3" />
 
-                    {/* Grid de Permissões */}
                     <div className={`grid grid-cols-2 md:grid-cols-4 gap-3 ${!isActive ? 'opacity-50 pointer-events-none' : ''}`}>
                         {[
                             { key: 'treatment', label: 'Tratamento', icon: 'admin_panel_settings', color: 'text-orange-500' },
@@ -367,7 +287,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
                                     type="checkbox"
                                     checked={user.permissions[perm.key as keyof UserPermissions]}
                                     onChange={() => handleTogglePermission(user, perm.key as keyof UserPermissions)}
-                                    disabled={user.id === currentUser?.id && perm.key === 'settings'} // Não pode remover seu proprio acesso a settings
+                                    disabled={user.id === currentUser?.id && perm.key === 'settings'}
                                     className="rounded border-gray-300 text-primary focus:ring-primary size-4"
                                 />
                                 <div className="flex items-center gap-1.5 select-none">
@@ -385,18 +305,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
 
         </div>
       </main>
-
-      {activeTab === 'params' && (
-        <div className="fixed bottom-0 left-0 right-0 w-full max-w-lg mx-auto md:max-w-4xl md:static md:mx-auto md:mb-8 p-4 bg-white dark:bg-surface-dark md:bg-transparent md:dark:bg-transparent border-t border-gray-200 dark:border-card-border md:border-t-0 z-30">
-          <button 
-            onClick={handleSave}
-            className="w-full h-14 bg-primary text-white rounded-xl font-bold text-lg shadow-xl shadow-primary/20 hover:bg-primary-dark active:scale-[0.98] transition-all flex items-center justify-center gap-2"
-          >
-            Salvar Configurações
-            <Icon name="save" />
-          </button>
-        </div>
-      )}
     </div>
   );
 };

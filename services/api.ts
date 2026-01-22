@@ -22,6 +22,15 @@ export interface ApiCategory {
 export interface MetaStatus {
   totalStock: number;
   mappedStock: number;
+  cycleName?: string; // Novo campo
+}
+
+export interface Cycle {
+    id: number;
+    name: string;
+    startDate: string;
+    endDate?: string;
+    active: boolean;
 }
 
 export interface RankingItem {
@@ -47,7 +56,7 @@ export interface ApiFinancialItem {
     sku: string;
     name: string;
     qty: number;
-    unitPrice: number; // CAMPO ADICIONADO
+    unitPrice: number;
     value: number;
 }
 
@@ -109,7 +118,6 @@ export const api = {
       return res?.name || null;
   },
   
-  // LOGIN REFATORADO PARA TRATAR ERROS ESPECÍFICOS (401, 403, etc)
   login: async (code: string, password: string): Promise<{ success: boolean; user?: User; error?: string }> => {
       try {
           const response = await fetch(`${BASE_URL}/login`, {
@@ -120,18 +128,14 @@ export const api = {
               body: JSON.stringify({ usuario_id: code, senha: password })
           });
 
-          // Tenta capturar o JSON de resposta (tanto sucesso quanto erro)
           const data = await response.json().catch(() => null);
 
           if (response.ok) {
-              // Sucesso (200)
               return data;
           } else {
-              // Erro vindo do servidor (401, 403, 500) com mensagem específica
               if (data && data.error) {
                   return { success: false, error: data.error };
               }
-              // Erro sem mensagem específica
               return { success: false, error: `Erro ${response.status}: Falha na autenticação` };
           }
       } catch (e) {
@@ -142,14 +146,23 @@ export const api = {
 
   getMetaStatus: async (): Promise<MetaStatus> => {
       const res = await fetchJson('/meta-status');
-      return res || { totalStock: 0, mappedStock: 0 };
+      return res || { totalStock: 0, mappedStock: 0, cycleName: '' };
   },
+
+  // --- MÉTODOS DE CICLOS ---
+  getCycles: async (): Promise<Cycle[]> => {
+      const res = await fetchJson('/cycles');
+      return res || [];
+  },
+
+  startNewCycle: async (name: string): Promise<{success: boolean, error?: string}> => {
+      return postJson('/cycles', { name });
+  },
+  // -----------------------
 
   getCategories: async (): Promise<ApiCategory[]> => {
       const res = await fetchJson('/categories');
       if (!res) return [];
-      
-      // Mapeamento de ícones (Frontend decoration)
       return res.map((cat: any) => ({
           ...cat,
           icon: GROUP_ICONS[cat.db_id] || 'inventory_2',
@@ -166,7 +179,6 @@ export const api = {
   },
 
   saveCount: async (data: any) => {
-      // Nota: No sistema atual a persistência é via finalização de bloco, mas para ad-hoc:
       return { success: true };
   },
 
@@ -275,7 +287,7 @@ export const api = {
   },
 
   getLayout: async (): Promise<WarehouseLayout | null> => {
-      const res = await fetchJson('/layout'); // LocalStorage shim handled elsewhere if needed, or implement route
+      const res = await fetchJson('/layout'); 
       return res || null;
   },
 

@@ -393,7 +393,11 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
         initialCount={selectedItem?.countedQty}
         initialLocation={selectedItem?.lastCount?.location || selectedItem?.loc}
         scannedLocation={scannedCode} 
-        lastCountInfo={selectedItem?.lastCount}
+        lastCountInfo={selectedItem?.lastCount ? {
+            user: selectedItem.lastCount.user,
+            date: selectedItem.lastCount.date,
+            quantity: selectedItem.lastCount.qty
+        } : null}
       />
 
       <ScannerModal 

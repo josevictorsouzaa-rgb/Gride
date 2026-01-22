@@ -28,7 +28,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
       return <AutoPartsLoader message="Analisando Cobertura..." fullScreen={false} />;
   }
 
-  const [metaStatus, setMetaStatus] = useState<MetaStatus>({ totalStock: 0, mappedStock: 0 });
+  const [metaStatus, setMetaStatus] = useState<MetaStatus>({ totalStock: 0, mappedStock: 0, cycleName: '' });
 
   useEffect(() => {
     const loadStatus = async () => {
@@ -38,7 +38,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     loadStatus();
   }, []);
 
-  const { totalStock, mappedStock } = metaStatus;
+  const { totalStock, mappedStock, cycleName } = metaStatus;
   const remaining = Math.max(0, totalStock - mappedStock);
   const percentComplete = totalStock > 0 ? ((mappedStock / totalStock) * 100).toFixed(1) : '0';
   
@@ -62,14 +62,16 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
                 Olá, {currentUser?.name.split(' ')[0]}
             </span>
             <span className="text-xs font-normal text-text-secondary md:hidden uppercase tracking-wide">
-                Vamos zerar o estoque?
+                {cycleName || 'Carregando ciclo...'}
             </span>
 
-            <div className="hidden md:flex items-center gap-1">
+            <div className="hidden md:flex flex-col">
               <h2 className="text-2xl font-bold leading-tight md:text-gray-900 md:dark:text-white">
                 Cobertura de Estoque
-                <span className="text-gray-400 font-normal ml-2 text-lg">| Visão Geral</span>
               </h2>
+              <span className="text-xs font-bold text-primary bg-primary/10 px-2 py-0.5 rounded w-fit mt-1 uppercase tracking-wide">
+                  {cycleName || 'Ciclo Ativo'}
+              </span>
             </div>
           </div>
         </div>
@@ -91,7 +93,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
            <div className="flex justify-between items-start mb-4 relative z-10">
               <div className="flex flex-col">
                  <h3 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                     Progresso Global
+                     Progresso do Ciclo
                  </h3>
                  <div className="flex items-baseline gap-2 mt-1">
                     <p className="text-4xl font-extrabold text-gray-900 dark:text-white">{percentComplete}%</p>
