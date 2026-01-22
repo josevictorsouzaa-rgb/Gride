@@ -109,9 +109,35 @@ export const api = {
       return res?.name || null;
   },
   
+  // LOGIN REFATORADO PARA TRATAR ERROS ESPECÍFICOS (401, 403, etc)
   login: async (code: string, password: string): Promise<{ success: boolean; user?: User; error?: string }> => {
-      const res = await postJson('/login', { usuario_id: code, senha: password });
-      return res || { success: false, error: 'Connection error' };
+      try {
+          const response = await fetch(`${BASE_URL}/login`, {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ usuario_id: code, senha: password })
+          });
+
+          // Tenta capturar o JSON de resposta (tanto sucesso quanto erro)
+          const data = await response.json().catch(() => null);
+
+          if (response.ok) {
+              // Sucesso (200)
+              return data;
+          } else {
+              // Erro vindo do servidor (401, 403, 500) com mensagem específica
+              if (data && data.error) {
+                  return { success: false, error: data.error };
+              }
+              // Erro sem mensagem específica
+              return { success: false, error: `Erro ${response.status}: Falha na autenticação` };
+          }
+      } catch (e) {
+          console.error("Login Request Failed", e);
+          return { success: false, error: 'Erro de conexão com o servidor. Verifique se ele está rodando.' };
+      }
   },
 
   getMetaStatus: async (): Promise<MetaStatus> => {
