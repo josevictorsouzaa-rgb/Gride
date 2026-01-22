@@ -479,11 +479,25 @@ app.get('/analytics/cycle-performance/:cycleId', (req, res) => {
     const { cycleId } = req.params;
     Firebird.attach(options, (err, db) => {
         if(err) return res.json({ success: false });
-        const sqlChart = `SELECT EXTRACT(DAY FROM DATA_HORA) as DIA, EXTRACT(MONTH FROM DATA_HORA) as MES, EXTRACT(YEAR FROM DATA_HORA) as ANO, COUNT(*) as QTD FROM GRIDE_INVENTARIO_LOG WHERE CICLO_ID = ? AND STATUS IN ('Contado', 'Divergência', 'Concluído') GROUP BY 3, 2, 1 ORDER BY 3, 2, 1`;
-        const sqlTotals = `SELECT COUNT(*) as TOTAL, SUM(CASE WHEN STATUS = 'Contado' THEN 1 ELSE 0 END) as CORRETOS, SUM(CASE WHEN STATUS = 'Divergência' OR STATUS = 'Não Localizado' THEN 1 ELSE 0 END) as DIVERGENTES FROM GRIDE_INVENTARIO_LOG WHERE CICLO_ID = ? AND STATUS IN ('Contado', 'Divergência', 'Concluído', 'Não Localizado')`;
-        db.query(sqlChart, [cycleId], (errC, chartRows) => {
+        
+        let sqlChart = "";
+        let sqlTotals = "";
+        const params = [];
+
+        if (cycleId === 'all') {
+            // MODO TOTAL AGREGADO
+            sqlChart = `SELECT EXTRACT(DAY FROM DATA_HORA) as DIA, EXTRACT(MONTH FROM DATA_HORA) as MES, EXTRACT(YEAR FROM DATA_HORA) as ANO, COUNT(*) as QTD FROM GRIDE_INVENTARIO_LOG WHERE STATUS IN ('Contado', 'Divergência', 'Concluído') GROUP BY 3, 2, 1 ORDER BY 3, 2, 1`;
+            sqlTotals = `SELECT COUNT(*) as TOTAL, SUM(CASE WHEN STATUS = 'Contado' THEN 1 ELSE 0 END) as CORRETOS, SUM(CASE WHEN STATUS = 'Divergência' OR STATUS = 'Não Localizado' THEN 1 ELSE 0 END) as DIVERGENTES FROM GRIDE_INVENTARIO_LOG WHERE STATUS IN ('Contado', 'Divergência', 'Concluído', 'Não Localizado')`;
+        } else {
+            // MODO POR CICLO
+            sqlChart = `SELECT EXTRACT(DAY FROM DATA_HORA) as DIA, EXTRACT(MONTH FROM DATA_HORA) as MES, EXTRACT(YEAR FROM DATA_HORA) as ANO, COUNT(*) as QTD FROM GRIDE_INVENTARIO_LOG WHERE CICLO_ID = ? AND STATUS IN ('Contado', 'Divergência', 'Concluído') GROUP BY 3, 2, 1 ORDER BY 3, 2, 1`;
+            sqlTotals = `SELECT COUNT(*) as TOTAL, SUM(CASE WHEN STATUS = 'Contado' THEN 1 ELSE 0 END) as CORRETOS, SUM(CASE WHEN STATUS = 'Divergência' OR STATUS = 'Não Localizado' THEN 1 ELSE 0 END) as DIVERGENTES FROM GRIDE_INVENTARIO_LOG WHERE CICLO_ID = ? AND STATUS IN ('Contado', 'Divergência', 'Concluído', 'Não Localizado')`;
+            params.push(cycleId);
+        }
+
+        db.query(sqlChart, params, (errC, chartRows) => {
             if(errC) { db.detach(); return res.json({success:false}); }
-            db.query(sqlTotals, [cycleId], (errT, totalRows) => {
+            db.query(sqlTotals, params, (errT, totalRows) => {
                 db.detach();
                 if(errT) return res.json({success:false});
                 const totals = totalRows[0] || { TOTAL: 0, CORRETOS: 0, DIVERGENTES: 0 };

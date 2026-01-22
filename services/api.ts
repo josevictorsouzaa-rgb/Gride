@@ -97,8 +97,8 @@ export interface Warehouse {
     descricao: string;
 }
 
-// CORREÇÃO: Usar '/api' permite que o Vite gerencie o proxy para localhost:8000
-// Isso corrige problemas de conexão em mobile e redes locais onde 'gride.local' falha.
+// FIX: Usar '/api' para que o Vite faça o proxy correto para localhost:8000
+// Isso resolve o problema de não carregar dados no Hub, Reservas, Histórico, etc.
 const BASE_URL = '/api';
 
 const fetchJson = async (url: string, options?: RequestInit) => {
@@ -178,7 +178,7 @@ export const api = {
   },
 
   getCyclePerformance: async (cycleId: number | string): Promise<CyclePerformance | null> => {
-      if(cycleId === 'all') return null; // Logic is handled elsewhere or specialized endpoint needed for ALL
+      // Agora chamamos mesmo se for 'all', o backend lidará com isso
       const res = await fetchJson(`/analytics/cycle-performance/${cycleId}`);
       return res;
   },
