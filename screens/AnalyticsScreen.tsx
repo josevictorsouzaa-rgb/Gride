@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { Icon } from '../components/Icon';
 import { Screen } from '../types';
@@ -11,7 +12,6 @@ interface AnalyticsScreenProps {
   onNavigate: (screen: Screen) => void;
 }
 
-// --- REUSABLE ANIMATED NUMBER COMPONENT ---
 const AnimatedNumber = ({ value, duration = 2000, prefix = '', suffix = '', decimals = 0 }: { value: number, duration?: number, prefix?: string, suffix?: string, decimals?: number }) => {
     const [display, setDisplay] = useState(0);
 
@@ -50,91 +50,11 @@ const AnimatedNumber = ({ value, duration = 2000, prefix = '', suffix = '', deci
     );
 };
 
-// --- HEATMAP COMPONENT ---
-const YearlyHeatmap = ({ data, year }: { data: { month: number, day: number, count: number }[], year: number }) => {
-    const countMap = useMemo(() => {
-        const map = new Map();
-        data.forEach(d => map.set(`${d.month}-${d.day}`, d.count));
-        return map;
-    }, [data]);
-
-    const weeks = useMemo(() => {
-        const startOfYear = new Date(year, 0, 1);
-        const endOfYear = new Date(year, 11, 31);
-        const today = new Date();
-        
-        const weeksArray = [];
-        let currentWeek: any[] = [];
-        
-        for(let i=0; i<startOfYear.getDay(); i++) currentWeek.push(null);
-
-        for (let d = new Date(startOfYear); d <= endOfYear; d.setDate(d.getDate() + 1)) {
-            const currentDate = new Date(d);
-            currentWeek.push({
-                date: currentDate,
-                key: `${currentDate.getMonth() + 1}-${currentDate.getDate()}`,
-                isFuture: currentDate > today
-            });
-
-            if (currentWeek.length === 7) {
-                weeksArray.push(currentWeek);
-                currentWeek = [];
-            }
-        }
-        if (currentWeek.length > 0) {
-            while(currentWeek.length < 7) currentWeek.push(null);
-            weeksArray.push(currentWeek);
-        }
-        return weeksArray;
-    }, [year]);
-
-    return (
-        <div className="overflow-x-auto pb-4 no-scrollbar">
-            <div className="flex gap-1.5 min-w-max">
-                {weeks.map((week, wIdx) => (
-                    <div key={wIdx} className="flex flex-col gap-1.5">
-                        {week.map((item, dIdx) => {
-                            if (!item) return <div key={dIdx} className="size-4" />;
-                            
-                            const count = countMap.get(item.key) || 0;
-                            let bgColor = 'bg-gray-100 dark:bg-white/5';
-                            
-                            if (!item.isFuture) {
-                                if (count > 50) bgColor = 'bg-green-600 dark:bg-green-500';
-                                else if (count > 20) bgColor = 'bg-green-400 dark:bg-green-600';
-                                else if (count > 0) bgColor = 'bg-green-200 dark:bg-green-900/40';
-                            } else {
-                                bgColor = 'bg-transparent border border-gray-100 dark:border-white/5'; 
-                            }
-
-                            return (
-                                <div 
-                                    key={dIdx} 
-                                    className={`size-4 rounded-[3px] ${bgColor} transition-all hover:scale-125 relative group`}
-                                    title={`${item.date.toLocaleDateString()}: ${count} itens`}
-                                >
-                                    {count > 0 && (
-                                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block bg-black text-white text-[10px] p-2 rounded whitespace-nowrap z-50 font-bold shadow-xl">
-                                            {item.date.toLocaleDateString()}<br/>
-                                            {count} itens contados
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-};
-
 export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) => {
   const [selectedDivergence, setSelectedDivergence] = useState<any | null>(null);
   
   // Data States
-  const [realKPIs, setRealKPIs] = useState({ totalCost: 0, totalSales: 0, totalCount: 0, inactiveCount: 0 });
-  const [heatmapData, setHeatmapData] = useState<{ month: number, day: number, count: number }[]>([]);
+  const [globalKPIs, setGlobalKPIs] = useState({ totalCost: 0, totalSales: 0, totalCount: 0, inactiveCount: 0 });
   const [financialGroups, setFinancialGroups] = useState<ApiFinancialGroup[]>([]);
   const [rankingData, setRankingData] = useState<RankingItem[]>([]);
   const [topDivergences, setTopDivergences] = useState<TopDivergenceItem[]>([]);
@@ -144,19 +64,9 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
   const [selectedCycleId, setSelectedCycleId] = useState<number | string>('all');
   const [cyclePerf, setCyclePerf] = useState<CyclePerformance | null>(null);
 
-  // Helper: Get Cycle Name
-  const currentCycleName = useMemo(() => {
-      if (selectedCycleId === 'all') return 'Todos os Ciclos';
-      return cycles.find(c => c.id == selectedCycleId)?.name || 'Ciclo Selecionado';
-  }, [cycles, selectedCycleId]);
-
-  // Modal Report
   const [showReportModal, setShowReportModal] = useState(false);
-
-  // Filters
   const [divergenceSearch, setDivergenceSearch] = useState('');
-  const [divergenceType, setDivergenceType] = useState<'all' | 'loss' | 'surplus'>('all');
-
+  
   // Hierarchy Table
   const [expandedGroup, setExpandedGroup] = useState<number | null>(null);
   const [expandedSubgroup, setExpandedSubgroup] = useState<{ grId: number, sgId: number } | null>(null);
@@ -164,33 +74,33 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
   const [loadingItems, setLoadingItems] = useState(false);
   const [itemSort, setItemSort] = useState<{ field: 'value' | 'qty' | 'unit', direction: 'desc' | 'asc' }>({ field: 'value', direction: 'desc' });
 
-  // 1. Initial Load (Cycles)
+  // 1. Initial Load
   useEffect(() => {
+      // Carrega ciclos
       api.getCycles().then(c => {
           setCycles(c);
           const active = c.find(cy => cy.active);
-          // Set active cycle by default, or first if no active, or 'all' if empty
           if(active) setSelectedCycleId(active.id);
           else if(c.length > 0) setSelectedCycleId(c[0].id);
       });
+
+      // Carrega KPIs GLOBAIS (Estoque Físico Total - O que o usuário gosta)
+      // Chama sem cycleId ou com 'all' explicitamente para pegar snapshot atual
+      api.getAnalyticsKPIs('all').then(setGlobalKPIs);
   }, []);
 
-  // 2. Fetch All Data when Cycle Changes
+  // 2. Fetch Cycle Specific Data
   useEffect(() => {
-      // Parallel Fetching for Dashboard Data
       const fetchData = async () => {
           const currentYear = new Date().getFullYear();
           
-          // KPI e Perf
           if (selectedCycleId !== 'all') {
               api.getCyclePerformance(selectedCycleId).then(setCyclePerf);
           } else {
-              setCyclePerf(null); // No specific chart for 'all' yet
+              setCyclePerf(null); 
           }
           
-          api.getAnalyticsKPIs(selectedCycleId).then(setRealKPIs);
           api.getFinancialCategories(selectedCycleId).then(setFinancialGroups);
-          api.getHeatmapData(currentYear, selectedCycleId).then(setHeatmapData);
           api.getUserRanking(currentYear, selectedCycleId).then(setRankingData);
           api.getTopDivergences(currentYear, selectedCycleId).then(setTopDivergences);
       };
@@ -200,16 +110,13 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
 
   const totalCategoryValue = financialGroups.reduce((acc, curr) => acc + curr.value, 0);
 
-  // --- FILTRAGEM AVANÇADA ---
   const filteredDivergences = useMemo(() => {
       return topDivergences.filter(item => {
           const searchLower = divergenceSearch.toLowerCase();
           if (searchLower && !item.name.toLowerCase().includes(searchLower) && !item.sku.toLowerCase().includes(searchLower)) return false;
-          if (divergenceType === 'loss' && item.diff > 0) return false;
-          if (divergenceType === 'surplus' && item.diff < 0) return false;
           return true;
       });
-  }, [topDivergences, divergenceSearch, divergenceType]);
+  }, [topDivergences, divergenceSearch]);
 
   const handleOpenDetails = (item: any) => {
       setSelectedDivergence({
@@ -276,25 +183,22 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
       {/* HEADER */}
       <header className="sticky top-0 z-20 bg-white/95 dark:bg-background-dark/95 backdrop-blur-md border-b border-gray-200 dark:border-card-border p-4 md:px-8">
          <div className="max-w-7xl mx-auto w-full">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
                         <Icon name="insights" className="text-primary" />
-                        Dashboard de Ciclo
+                        Dashboard de Resultados
                     </h1>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                        Análise de performance e resultados por período.
-                    </p>
                 </div>
                 
-                {/* SELECTOR DE CICLO NO CABEÇALHO */}
                 <div className="flex items-center gap-3">
-                   <div className="flex items-center bg-gray-100 dark:bg-white/5 rounded-xl px-3 py-1.5 border border-gray-200 dark:border-white/10">
+                   {/* SELETOR DE CICLO */}
+                   <div className="flex items-center bg-gray-100 dark:bg-white/5 rounded-xl px-3 py-2 border border-gray-200 dark:border-white/10">
                         <Icon name="history" className="text-gray-500 mr-2" size={20} />
                         <select 
                             value={selectedCycleId} 
                             onChange={(e) => setSelectedCycleId(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-                            className="bg-transparent border-none text-sm font-bold text-gray-800 dark:text-white focus:ring-0 cursor-pointer min-w-[150px]"
+                            className="bg-transparent border-none text-sm font-bold text-gray-800 dark:text-white focus:ring-0 cursor-pointer min-w-[180px]"
                         >
                             <option value="all">Todo o Histórico</option>
                             {cycles.map(c => (
@@ -317,138 +221,126 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
 
       <main className="flex-1 max-w-7xl mx-auto w-full p-4 md:p-8 space-y-8">
         
-        {/* SECTION 1: PERFORMANCE CARDS (Cycle Specific) */}
-        {selectedCycleId !== 'all' && (
+        {/* === SEÇÃO 1: RESULTADO FINANCEIRO (GLOBAL FIXO) === */}
+        {/* Esta seção sempre mostra o valor total do estoque, independente do ciclo selecionado, conforme pedido */}
         <div className="animate-slide-up">
-            <h2 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                <Icon name="timeline" size={16} />
-                Resumo do Ciclo: <span className="text-primary">{currentCycleName}</span>
-            </h2>
-
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                {/* Stats Cards */}
-                <div className="md:col-span-1 flex flex-col gap-4">
-                    <div className="bg-white dark:bg-surface-dark p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-white/10 flex flex-col items-center text-center">
-                        <span className="text-xs text-gray-500 font-bold uppercase mb-1">Total Contado</span>
-                        <span className="text-4xl font-black text-gray-900 dark:text-white">
-                            <AnimatedNumber value={cyclePerf?.totalCount || 0} />
-                        </span>
-                        <span className="text-[10px] text-gray-400 mt-1">Itens auditados</span>
-                    </div>
-                    <div className="bg-white dark:bg-surface-dark p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-white/10 flex flex-col items-center text-center relative overflow-hidden">
-                        <div className="absolute top-0 left-0 w-1 h-full bg-green-500"></div>
-                        <span className="text-xs text-gray-500 font-bold uppercase mb-1">Acuracidade</span>
-                        <span className="text-4xl font-black text-green-600 dark:text-green-400">
-                            {cyclePerf ? cyclePerf.accuracy.toFixed(1) : 0}%
-                        </span>
-                        <span className="text-[10px] text-gray-400 mt-1">Primeira Contagem</span>
-                    </div>
-                    <div className="bg-white dark:bg-surface-dark p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-white/10 flex flex-col items-center text-center relative overflow-hidden">
-                        <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
-                        <span className="text-xs text-gray-500 font-bold uppercase mb-1">Divergências</span>
-                        <span className="text-4xl font-black text-red-600 dark:text-red-400">
-                            <AnimatedNumber value={cyclePerf?.divergenceCount || 0} />
-                        </span>
-                        <span className="text-[10px] text-gray-400 mt-1">Erros encontrados</span>
-                    </div>
-                </div>
-
-                {/* Graph */}
-                <div className="md:col-span-3 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-white/10 p-4 flex flex-col">
-                    <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-4 ml-2">Evolução de Contagens Diárias</h3>
-                    <div className="flex-1 min-h-[250px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={cyclePerf?.chartData || []}>
-                                <defs>
-                                    <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#137fec" stopOpacity={0.8}/>
-                                        <stop offset="95%" stopColor="#137fec" stopOpacity={0}/>
-                                    </linearGradient>
-                                </defs>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" opacity={0.3} />
-                                <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#9ca3af'}} />
-                                <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#9ca3af'}} />
-                                <Tooltip 
-                                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                                    cursor={{ stroke: '#137fec', strokeWidth: 2 }}
-                                />
-                                <Area type="monotone" dataKey="count" stroke="#137fec" strokeWidth={3} fillOpacity={1} fill="url(#colorCount)" />
-                            </AreaChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
-            </div>
-        </div>
-        )}
-
-        {/* SECTION 2: FINANCEIRO (AUDITADO) E ATIVIDADE */}
-        <div className="animate-slide-up" style={{ animationDelay: '0.1s' }}>
-            <h2 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                <Icon name="attach_money" size={16} />
-                Resultado Financeiro Auditado
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-                <div className="bg-gradient-to-br from-gray-900 to-gray-800 dark:from-surface-dark dark:to-black p-5 rounded-2xl shadow-lg border border-gray-700 relative overflow-hidden group">
-                    <div className="absolute right-0 top-0 p-4 opacity-10">
-                    <Icon name="payments" size={80} className="text-white" />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                
+                {/* BIG CARD: FINANCEIRO TOTAL */}
+                <div className="md:col-span-2 bg-gradient-to-br from-gray-900 to-gray-800 dark:from-surface-dark dark:to-black p-6 rounded-2xl shadow-xl border border-gray-700 relative overflow-hidden group">
+                    <div className="absolute right-0 top-0 p-6 opacity-10 group-hover:scale-110 transition-transform duration-700">
+                        <Icon name="payments" size={140} className="text-white" />
                     </div>
                     <div className="relative z-10">
-                        <p className="text-sm text-gray-300 font-medium">Valor Auditado (Custo)</p>
-                        <h3 className="text-3xl font-bold text-white mt-1">
-                            <AnimatedNumber value={realKPIs.totalCost} prefix="R$ " decimals={2} />
-                        </h3>
-                        <p className="text-xs text-gray-400 mt-2">Soma do custo dos itens contados neste período</p>
-                    </div>
-                </div>
-
-                <div className="bg-white dark:bg-surface-dark p-5 rounded-2xl shadow-sm border border-gray-200 dark:border-card-border hover:border-primary/50 transition-colors group">
-                    <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Itens Únicos Processados</p>
-                    <div className="flex items-end gap-3 mt-1">
-                        <h3 className="text-3xl font-bold text-gray-900 dark:text-white">
-                            <AnimatedNumber value={realKPIs.totalCount} duration={1500} />
-                        </h3>
-                        <span className="text-xs font-bold bg-green-100 dark:bg-green-900/20 text-green-600 dark:text-green-400 px-2 py-1 rounded mb-1">
-                            Produtos Distintos
-                        </span>
-                    </div>
-                    <p className="text-xs text-gray-400 mt-2">Total de SKUs inventariados no ciclo</p>
-                </div>
-            </div>
-
-            {/* ATIVIDADE (HEATMAP) */}
-            <div className="bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border p-6 overflow-hidden mb-6">
-                <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                        <Icon name="calendar_month" className="text-gray-400" />
-                        Mapa de Calor da Atividade
-                    </h2>
-                    
-                    <div className="flex items-center gap-2 text-xs text-gray-500 font-medium bg-gray-50 dark:bg-white/5 px-3 py-1.5 rounded-lg">
-                        <span>Menos</span>
-                        <div className="flex gap-1 mx-1">
-                            <div className="size-3 rounded-sm bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10" />
-                            <div className="size-3 rounded-sm bg-green-200 dark:bg-green-900/40" />
-                            <div className="size-3 rounded-sm bg-green-400 dark:bg-green-600" />
-                            <div className="size-3 rounded-sm bg-green-600 dark:bg-green-500" />
+                        <div className="flex items-center gap-2 mb-2">
+                            <Icon name="account_balance" className="text-green-400" />
+                            <p className="text-sm text-gray-300 font-bold uppercase tracking-wider">Valor Total em Estoque (Global)</p>
                         </div>
-                        <span>Mais</span>
+                        <h3 className="text-4xl md:text-5xl font-black text-white mt-2 tracking-tight">
+                            <AnimatedNumber value={globalKPIs.totalCost} prefix="R$ " decimals={2} />
+                        </h3>
+                        
+                        <div className="mt-6 flex gap-8 border-t border-white/10 pt-4">
+                            <div>
+                                <p className="text-xs text-gray-400 uppercase font-bold mb-1">Preço de Venda Total</p>
+                                <p className="text-xl font-bold text-green-400"><AnimatedNumber value={globalKPIs.totalSales} prefix="R$ " decimals={2} /></p>
+                            </div>
+                            <div>
+                                <p className="text-xs text-gray-400 uppercase font-bold mb-1">Itens Cadastrados</p>
+                                <p className="text-xl font-bold text-white"><AnimatedNumber value={globalKPIs.totalCount} /></p>
+                            </div>
+                        </div>
                     </div>
                 </div>
-                <YearlyHeatmap data={heatmapData} year={new Date().getFullYear()} />
+
+                {/* SMALL CARD: RESUMO DO CICLO SELECIONADO */}
+                <div className="md:col-span-1 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-white/10 p-6 flex flex-col justify-center">
+                    {selectedCycleId !== 'all' ? (
+                        <>
+                            <h3 className="text-sm font-bold text-gray-500 uppercase mb-4 flex items-center gap-2">
+                                <Icon name="timeline" />
+                                Performance do Ciclo
+                            </h3>
+                            
+                            <div className="space-y-4">
+                                <div>
+                                    <div className="flex justify-between text-sm mb-1">
+                                        <span className="text-gray-600 dark:text-gray-300">Contados</span>
+                                        <span className="font-bold text-gray-900 dark:text-white">{cyclePerf?.totalCount || 0} itens</span>
+                                    </div>
+                                    <div className="w-full bg-gray-100 dark:bg-white/5 h-2 rounded-full overflow-hidden">
+                                        <div className="bg-primary h-full rounded-full" style={{ width: '100%' }}></div>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <div className="flex justify-between text-sm mb-1">
+                                        <span className="text-gray-600 dark:text-gray-300">Acuracidade</span>
+                                        <span className="font-bold text-green-600">{cyclePerf ? cyclePerf.accuracy.toFixed(1) : 0}%</span>
+                                    </div>
+                                    <div className="w-full bg-gray-100 dark:bg-white/5 h-2 rounded-full overflow-hidden">
+                                        <div className="bg-green-500 h-full rounded-full" style={{ width: `${cyclePerf?.accuracy || 0}%` }}></div>
+                                    </div>
+                                </div>
+
+                                <div className="pt-2 flex items-center gap-2 text-xs text-red-500 font-bold bg-red-50 dark:bg-red-900/10 p-2 rounded-lg justify-center border border-red-100 dark:border-red-900/30">
+                                    <Icon name="warning" size={16} />
+                                    {cyclePerf?.divergenceCount || 0} Divergências Encontradas
+                                </div>
+                            </div>
+                        </>
+                    ) : (
+                        <div className="text-center text-gray-400">
+                            <Icon name="history" size={48} className="mx-auto mb-2 opacity-30" />
+                            <p>Selecione um ciclo acima para ver métricas de performance.</p>
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
 
-        {/* SECTION 3: RANKING & BREAKDOWN */}
+        {/* === SEÇÃO 2: GRÁFICO DE FLUXO (CICLO) === */}
+        {selectedCycleId !== 'all' && (
+            <div className="bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-white/10 p-6 animate-slide-up" style={{ animationDelay: '0.1s' }}>
+                <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-6 ml-2 flex items-center gap-2">
+                    <Icon name="ssid_chart" className="text-primary" />
+                    Fluxo de Contagens (Diário)
+                </h3>
+                <div className="h-[250px] w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={cyclePerf?.chartData || []}>
+                            <defs>
+                                <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#137fec" stopOpacity={0.8}/>
+                                    <stop offset="95%" stopColor="#137fec" stopOpacity={0}/>
+                                </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" opacity={0.3} />
+                            <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#9ca3af'}} />
+                            <YAxis axisLine={false} tickLine={false} tick={{fontSize: 10, fill: '#9ca3af'}} />
+                            <Tooltip 
+                                contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                                cursor={{ stroke: '#137fec', strokeWidth: 2 }}
+                            />
+                            <Area type="monotone" dataKey="count" stroke="#137fec" strokeWidth={3} fillOpacity={1} fill="url(#colorCount)" />
+                        </AreaChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+        )}
+
+        {/* === SEÇÃO 3: RANKING & DETALHAMENTO === */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-slide-up" style={{ animationDelay: '0.2s' }}>
 
+                {/* RANKING */}
                 <div className="lg:col-span-1 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border p-6 flex flex-col h-[600px]">
                     <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
                         <Icon name="leaderboard" className="text-yellow-500" />
-                        Ranking do Ciclo
+                        Ranking de Produtividade
                     </h2>
                     <div className="space-y-5 flex-1 overflow-y-auto no-scrollbar pr-2">
                         {rankingData.length === 0 ? (
-                            <div className="text-center text-gray-400 py-10">Nenhum dado de contagem neste período.</div>
+                            <div className="text-center text-gray-400 py-10">Nenhum dado neste período.</div>
                         ) : (
                             rankingData.map((user, idx) => (
                                 <div key={idx} className="flex items-center gap-3 group">
@@ -479,12 +371,12 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                     </div>
                 </div>
 
-                {/* HIERARCHICAL CATEGORY TABLE (Updated Title) */}
+                {/* TABELA HIERÁRQUICA (RESULTADO DO CICLO) */}
                 <div className="lg:col-span-2 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border flex flex-col overflow-hidden h-[600px]">
                     <div className="p-6 border-b border-gray-100 dark:border-white/5 flex justify-between items-center bg-gray-50/50 dark:bg-white/5">
-                        <h2 className="text-lg font-bold text-gray-900 dark:text-white">Detalhamento Financeiro (Auditado)</h2>
+                        <h2 className="text-lg font-bold text-gray-900 dark:text-white">Resultado Auditado (Categorias)</h2>
                         <span className="text-xs text-gray-500 bg-gray-200 dark:bg-white/10 px-2 py-1 rounded">
-                            Refere-se ao valor contado no ciclo
+                            {selectedCycleId === 'all' ? 'Estoque Geral' : 'Contagem do Ciclo'}
                         </span>
                     </div>
                     
@@ -493,8 +385,8 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                             <thead className="bg-gray-50 dark:bg-surface-dark sticky top-0 z-10">
                                 <tr className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider font-semibold shadow-sm">
                                     <th className="py-4 px-6 border-b border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-surface-dark w-1/3">Categoria</th>
-                                    <th className="py-4 px-6 border-b border-gray-100 dark:border-white/5 text-right bg-gray-50 dark:bg-surface-dark">Qtd Contada</th>
-                                    <th className="py-4 px-6 border-b border-gray-100 dark:border-white/5 text-right bg-gray-50 dark:bg-surface-dark">Valor Auditado</th>
+                                    <th className="py-4 px-6 border-b border-gray-100 dark:border-white/5 text-right bg-gray-50 dark:bg-surface-dark">Qtd</th>
+                                    <th className="py-4 px-6 border-b border-gray-100 dark:border-white/5 text-right bg-gray-50 dark:bg-surface-dark">Valor R$</th>
                                     <th className="py-4 px-6 border-b border-gray-100 dark:border-white/5 w-1/4 bg-gray-50 dark:bg-surface-dark">% Share</th>
                                 </tr>
                             </thead>
@@ -588,7 +480,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                                                                         <tr>
                                                                             <td colSpan={4} className="py-8 text-center text-gray-400">
                                                                                 <Icon name="sync" className="animate-spin mb-1 mx-auto" size={20} />
-                                                                                <span className="text-xs">Carregando itens do ciclo...</span>
+                                                                                <span className="text-xs">Carregando itens...</span>
                                                                             </td>
                                                                         </tr>
                                                                     ) : (
@@ -647,55 +539,6 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                             </tbody>
                         </table>
                     </div>
-                </div>
-            </div>
-
-            {/* TOP DIVERGENCES */}
-            <div className="mt-8 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border flex flex-col h-[600px] animate-slide-up" style={{ animationDelay: '0.3s' }}>
-                <div className="p-6 border-b border-gray-100 dark:border-white/5">
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
-                        <div>
-                            <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                                <Icon name="warning" className="text-red-500" />
-                                Divergências do Ciclo
-                            </h2>
-                            <p className="text-xs text-gray-500">Maiores impactos financeiros registrados.</p>
-                        </div>
-                        {/* Filters can go here */}
-                    </div>
-                </div>
-                <div className="flex-1 overflow-y-auto no-scrollbar">
-                    <table className="w-full text-left border-collapse min-w-[800px]">
-                        <thead className="bg-white dark:bg-surface-dark sticky top-0 z-10 shadow-sm">
-                            <tr className="text-xs text-gray-400 uppercase border-b border-gray-100 dark:border-white/5">
-                                <th className="py-3 px-6 font-medium">SKU / Produto</th>
-                                <th className="py-3 px-4 font-medium text-center">Local</th>
-                                <th className="py-3 px-4 font-medium text-left">Responsável</th>
-                                <th className="py-3 px-4 font-medium text-center">Contagem</th>
-                                <th className="py-3 px-4 font-medium text-center">Diff</th>
-                                <th className="py-3 px-6 font-medium text-right">Impacto (R$)</th>
-                                <th className="py-3 px-4"></th>
-                            </tr>
-                        </thead>
-                        <tbody className="text-sm">
-                            {filteredDivergences.map((item) => (
-                                <tr key={item.id} onClick={() => handleOpenDetails(item)} className="border-b border-gray-50 dark:border-white/5 hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer group">
-                                    <td className="py-3 px-6">
-                                        <div className="font-bold text-gray-900 dark:text-white">{item.sku}</div>
-                                        <div className="text-xs text-gray-500 line-clamp-1 max-w-[200px]">{item.name}</div>
-                                    </td>
-                                    <td className="py-3 px-4 text-center text-xs text-gray-400">{item.location || 'Geral'}</td>
-                                    <td className="py-3 px-4"><span className="text-xs font-medium text-gray-700 dark:text-gray-300">{item.user?.split(' ')[0]}</span></td>
-                                    <td className="py-3 px-4 text-center text-xs text-gray-500">{item.counted} / {item.expected}</td>
-                                    <td className="py-3 px-4 text-center">
-                                        <span className={`inline-block w-10 py-0.5 rounded text-xs font-bold ${item.diff < 0 ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>{item.diff > 0 ? '+' : ''}{item.diff}</span>
-                                    </td>
-                                    <td className={`py-3 px-6 text-right font-bold ${item.diffValue < 0 ? 'text-red-500' : 'text-blue-500'}`}>R$ {Math.abs(item.diffValue).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                                    <td className="py-3 px-4 text-right"><Icon name="chevron_right" size={18} className="text-gray-300 group-hover:text-primary" /></td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
                 </div>
             </div>
 

@@ -97,7 +97,9 @@ export interface Warehouse {
     descricao: string;
 }
 
-const BASE_URL = 'http://gride.local:8000';
+// CORREÇÃO: Usar '/api' permite que o Vite gerencie o proxy para localhost:8000
+// Isso corrige problemas de conexão em mobile e redes locais onde 'gride.local' falha.
+const BASE_URL = '/api';
 
 const fetchJson = async (url: string, options?: RequestInit) => {
     try {
