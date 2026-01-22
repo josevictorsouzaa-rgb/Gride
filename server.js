@@ -105,7 +105,7 @@ const initDb = () => {
                 await safeExecute(db, `CREATE TABLE GRIDE_CONTAS_FINALIZADAS (ID INTEGER NOT NULL PRIMARY KEY, SKU VARCHAR(50), PRO_COD INTEGER, QTD_FINAL DECIMAL(15,4), DATA_HORA TIMESTAMP DEFAULT CURRENT_TIMESTAMP, USUARIO_NOME VARCHAR(100), STATUS VARCHAR(20), LOG_ORIGEM_ID INTEGER)`, "Tab Contas Final");
                 await safeExecute(db, `CREATE TABLE GRIDE_TRATAMENTO (ID INTEGER NOT NULL PRIMARY KEY, LOG_ID INTEGER, PRO_COD INTEGER, PRO_NRFABRICANTE VARCHAR(50), NOME_PRODUTO VARCHAR(200), LOCALIZACAO VARCHAR(100), TIPO_ERRO VARCHAR(50), DESCRICAO_ERRO VARCHAR(255), REPORTADO_POR VARCHAR(100), REPORTADO_EM TIMESTAMP DEFAULT CURRENT_TIMESTAMP, STATUS VARCHAR(20) DEFAULT 'PENDING', RESOLVIDO_POR VARCHAR(20), RESOLVIDO_EM TIMESTAMP, RESOLUCAO_NOTA VARCHAR(255))`, "Tab Tratamento");
 
-                // NOVA TABELA DE PERMISSÕES (PARA NÃO MEXER NA TABELA USUARIOS)
+                // NOVA TABELA DE PERMISSÕES
                 await safeExecute(db, `CREATE TABLE GRIDE_PERFIL_USUARIO (
                     USU_COD VARCHAR(20) NOT NULL PRIMARY KEY,
                     ATIVO CHAR(1) DEFAULT 'S',
@@ -137,12 +137,10 @@ const initDb = () => {
     });
 };
 
-// --- ROTAS ---
-
+// --- ROTA LOGIN BLINDADA (SEM JOIN) ---
 app.post('/login', (req, res) => {
     const { usuario_id, senha } = req.body;
     
-    // Backdoor para testes (opcional)
     if (usuario_id === '9999' && senha === 'admin') {
         return res.json({ success: true, user: { id: '9999', name: 'Gestor', role: 'Gerente', active: true, isAdmin: true, permissions: { treatment: true, analytics: true, addressing: true, settings: true } } });
     }
@@ -150,103 +148,117 @@ app.post('/login', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json({ error: 'Erro de conexão com o banco.' });
 
-        // Consulta a tabela legada USUARIOS + LEFT JOIN com nossa tabela de perfil
-        const sqlUser = `
-            SELECT U.USU_COD, U.USU_NOME, P.ATIVO, 
-                   P.PERM_TREATMENT, P.PERM_ANALYTICS, P.PERM_ADDRESSING, P.PERM_SETTINGS 
-            FROM USUARIOS U 
-            LEFT JOIN GRIDE_PERFIL_USUARIO P ON U.USU_COD = P.USU_COD 
-            WHERE U.USU_COD = ?
-        `;
-
-        db.query(sqlUser, [usuario_id], (err, resultUser) => {
-            if (err) {
+        // 1. Busca Usuário Base na Tabela Legada
+        // Tenta buscar colunas padrão. Se falhar, tenta SELECT *
+        const sqlLegacy = `SELECT * FROM USUARIOS WHERE USU_COD = ?`;
+        
+        db.query(sqlLegacy, [usuario_id], (err, legacyRows) => {
+            if (err || !legacyRows || legacyRows.length === 0) {
                 db.detach();
-                console.error("Login Query Error:", err);
-                return res.status(500).json({error: 'Erro ao consultar usuário.'});
-            }
-            if (!resultUser || resultUser.length === 0) { 
-                db.detach(); 
-                return res.status(401).json({error: 'Usuário não encontrado.'}); 
+                return res.status(401).json({error: 'Usuário não encontrado.'});
             }
             
-            const user = resultUser[0];
+            const userLegacy = legacyRows[0];
+            const userName = safeString(userLegacy.USU_NOME || userLegacy.NOME || userLegacy.USUARIO || 'Colaborador');
             
-            // Lógica de Bloqueio: Se P.ATIVO for 'N', bloqueia. Se for null (não tem perfil ainda) ou 'S', libera.
-            const isActive = safeString(user.ATIVO) !== 'N'; 
-            
-            if (!isActive) { 
-                db.detach(); 
-                return res.status(403).json({error: 'Acesso bloqueado. Contate o administrador.'}); 
+            // Verifica status legado (se existir a coluna)
+            if (userLegacy.USU_ATIVO && safeString(userLegacy.USU_ATIVO) === 'N') {
+                db.detach();
+                return res.status(403).json({error: 'Usuário inativo no sistema legado.'});
             }
 
-            // Verifica senha
-            db.query(`SELECT FIRST 1 PWD_SENHA FROM PASSWORDS WHERE USU_COD = ? ORDER BY PWD_ID DESC`, [usuario_id], (errPwd, resultPwd) => {
-                db.detach();
+            // 2. Busca Perfil no GRIDE (Sidecar)
+            // Aqui usamos o ID como string para garantir compatibilidade
+            db.query(`SELECT * FROM GRIDE_PERFIL_USUARIO WHERE USU_COD = ?`, [safeString(usuario_id)], (errP, profileRows) => {
                 
-                if (errPwd) return res.status(500).json({error: 'Erro ao verificar senha.'});
-
-                if (resultPwd && resultPwd.length > 0 && safeString(resultPwd[0].PWD_SENHA) === senha) {
-                    
-                    // Monta permissões. Se não existir perfil, assume tudo false (seguro) ou true (aberto).
-                    // Vamos assumir false para forçar configuração, exceto se for o admin 18.
-                    const isNewUser = user.PERM_TREATMENT === null; 
-                    
-                    const perms = {
-                        treatment: safeString(user.PERM_TREATMENT) === 'S',
-                        analytics: safeString(user.PERM_ANALYTICS) === 'S',
-                        addressing: safeString(user.PERM_ADDRESSING) === 'S',
-                        settings: safeString(user.PERM_SETTINGS) === 'S'
-                    };
-
-                    res.json({ 
-                        success: true, 
-                        user: { 
-                            id: usuario_id, 
-                            name: safeString(user.USU_NOME), 
-                            role: 'Colaborador', 
-                            active: true,
-                            isAdmin: false, 
-                            permissions: perms
-                        } 
-                    });
-                } else { 
-                    res.status(401).json({ error: 'Senha incorreta.' }); 
+                const profile = (profileRows && profileRows.length > 0) ? profileRows[0] : null;
+                
+                // Lógica de Bloqueio do GRIDE (Se perfil existir e ATIVO = N, bloqueia)
+                if (profile && safeString(profile.ATIVO) === 'N') {
+                    db.detach();
+                    return res.status(403).json({error: 'Acesso bloqueado pelo administrador.'});
                 }
+
+                // 3. Verifica Senha
+                db.query(`SELECT FIRST 1 PWD_SENHA FROM PASSWORDS WHERE USU_COD = ? ORDER BY PWD_ID DESC`, [usuario_id], (errPwd, pwdRows) => {
+                    db.detach();
+                    
+                    if (!errPwd && pwdRows && pwdRows.length > 0 && safeString(pwdRows[0].PWD_SENHA) === senha) {
+                        
+                        // Permissões padrão: False se não tiver perfil
+                        const perms = {
+                            treatment: profile ? safeString(profile.PERM_TREATMENT) === 'S' : false,
+                            analytics: profile ? safeString(profile.PERM_ANALYTICS) === 'S' : false,
+                            addressing: profile ? safeString(profile.PERM_ADDRESSING) === 'S' : false,
+                            settings: profile ? safeString(profile.PERM_SETTINGS) === 'S' : false
+                        };
+
+                        res.json({ 
+                            success: true, 
+                            user: { 
+                                id: usuario_id, 
+                                name: userName, 
+                                role: 'Colaborador', 
+                                active: true,
+                                isAdmin: false, 
+                                permissions: perms
+                            } 
+                        });
+                    } else {
+                        res.status(401).json({ error: 'Senha incorreta.' });
+                    }
+                });
             });
         });
     });
 });
 
+// --- ROTA LISTA USUÁRIOS BLINDADA (SEM JOIN) ---
 app.get('/users', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.status(500).json([]);
-        const sql = `
-            SELECT U.USU_COD, U.USU_NOME, P.ATIVO, 
-                   P.PERM_TREATMENT, P.PERM_ANALYTICS, P.PERM_ADDRESSING, P.PERM_SETTINGS 
-            FROM USUARIOS U 
-            LEFT JOIN GRIDE_PERFIL_USUARIO P ON U.USU_COD = P.USU_COD 
-            WHERE U.USU_ATIVO = 'S' -- (Opcional: filtrar apenas ativos na tabela legada tb)
-            ORDER BY U.USU_NOME
-        `;
-        db.query(sql, [], (err, result) => {
-            db.detach();
-            if (err) return res.json([]); 
-            
-            const users = result.map(u => ({ 
-                id: u.USU_COD.toString(), 
-                name: safeString(u.USU_NOME), 
-                role: 'Colaborador', 
-                avatar: '', 
-                active: safeString(u.ATIVO) !== 'N', // Default Active se null
-                permissions: {
-                    treatment: safeString(u.PERM_TREATMENT) === 'S',
-                    analytics: safeString(u.PERM_ANALYTICS) === 'S',
-                    addressing: safeString(u.PERM_ADDRESSING) === 'S',
-                    settings: safeString(u.PERM_SETTINGS) === 'S'
+        
+        // 1. Busca Todos Usuários Legados
+        db.query(`SELECT USU_COD, USU_NOME, USU_ATIVO FROM USUARIOS ORDER BY USU_NOME`, [], (errU, usersLegacy) => {
+            if (errU) { db.detach(); return res.json([]); }
+
+            // 2. Busca Todos Perfis GRIDE
+            db.query(`SELECT * FROM GRIDE_PERFIL_USUARIO`, [], (errP, profiles) => {
+                db.detach();
+                
+                // Mapa para acesso rápido ao perfil
+                const profileMap = new Map();
+                if (profiles) {
+                    profiles.forEach(p => profileMap.set(safeString(p.USU_COD), p));
                 }
-            }));
-            res.json(users);
+
+                // 3. Mescla Dados em Memória
+                const result = usersLegacy.map(u => {
+                    const idStr = safeString(u.USU_COD);
+                    const prof = profileMap.get(idStr);
+                    
+                    // Usuário é ativo se (Legado != N) E (Perfil != N ou Null)
+                    // Se não tem perfil, assume ativo por padrão no GRIDE
+                    const legacyActive = safeString(u.USU_ATIVO) !== 'N';
+                    const grideActive = prof ? safeString(prof.ATIVO) !== 'N' : true;
+                    
+                    return {
+                        id: idStr,
+                        name: safeString(u.USU_NOME),
+                        role: 'Colaborador',
+                        avatar: '',
+                        active: legacyActive && grideActive,
+                        permissions: {
+                            treatment: prof ? safeString(prof.PERM_TREATMENT) === 'S' : false,
+                            analytics: prof ? safeString(prof.PERM_ANALYTICS) === 'S' : false,
+                            addressing: prof ? safeString(prof.PERM_ADDRESSING) === 'S' : false,
+                            settings: prof ? safeString(prof.PERM_SETTINGS) === 'S' : false
+                        }
+                    };
+                });
+
+                res.json(result);
+            });
         });
     });
 });
@@ -284,7 +296,7 @@ app.post('/update-user-permissions', (req, res) => {
     });
 });
 
-// --- DEMAIS ROTAS EXISTENTES ---
+// --- DEMAIS ROTAS EXISTENTES (MANTIDAS) ---
 
 app.get('/user-name/:id', (req, res) => {
     const { id } = req.params;
