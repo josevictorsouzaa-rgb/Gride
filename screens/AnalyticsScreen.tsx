@@ -66,7 +66,6 @@ const YearlyHeatmap = ({ data, year }: { data: { month: number, day: number, cou
         const weeksArray = [];
         let currentWeek: any[] = [];
         
-        // Preenche dias antes do inicio do ano
         for(let i=0; i<startOfYear.getDay(); i++) currentWeek.push(null);
 
         for (let d = new Date(startOfYear); d <= endOfYear; d.setDate(d.getDate() + 1)) {
@@ -166,7 +165,6 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
       });
 
       // Carrega KPIs GLOBAIS (Estoque Físico Total - O que o usuário gosta)
-      // Chama sem cycleId ou com 'all' explicitamente para pegar snapshot atual
       api.getAnalyticsKPIs('all').then(setGlobalKPIs);
   }, []);
 
@@ -175,10 +173,8 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
       const fetchData = async () => {
           const currentYear = new Date().getFullYear();
           
-          // SEMPRE carrega performance, mesmo que seja 'all' (backend agora suporta)
           api.getCyclePerformance(selectedCycleId).then(setCyclePerf);
           api.getHeatmapData(currentYear, selectedCycleId).then(setHeatmapData);
-          
           api.getFinancialCategories(selectedCycleId).then(setFinancialGroups);
           api.getUserRanking(currentYear, selectedCycleId).then(setRankingData);
           api.getTopDivergences(currentYear, selectedCycleId).then(setTopDivergences);
@@ -256,7 +252,6 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
       });
   }, [subgroupItems, itemSort]);
 
-  // Helper para nome do ciclo
   const currentCycleName = useMemo(() => {
       if (selectedCycleId === 'all') return 'Todo o Histórico';
       return cycles.find(c => c.id == selectedCycleId)?.name || 'Ciclo Selecionado';
@@ -307,7 +302,6 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
       <main className="flex-1 max-w-7xl mx-auto w-full p-4 md:p-8 space-y-8">
         
         {/* === SEÇÃO 1: RESULTADO FINANCEIRO (GLOBAL FIXO) === */}
-        {/* Esta seção sempre mostra o valor total do estoque, independente do ciclo selecionado */}
         <div className="animate-slide-up">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 
@@ -338,7 +332,7 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                     </div>
                 </div>
 
-                {/* SMALL CARD: PERFORMANCE DO CICLO (AGORA MOSTRA 'ALL' TAMBÉM) */}
+                {/* SMALL CARD: PERFORMANCE DO CICLO */}
                 <div className="md:col-span-1 bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-white/10 p-6 flex flex-col justify-center">
                     <h3 className="text-sm font-bold text-gray-500 uppercase mb-4 flex items-center gap-2">
                         <Icon name="timeline" />
@@ -398,7 +392,190 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
             <YearlyHeatmap data={heatmapData} year={new Date().getFullYear()} />
         </div>
 
-        {/* === SEÇÃO 3: RANKING & TABELA === */}
+        {/* === SEÇÃO 3: DETALHAMENTO FINANCEIRO HIERÁRQUICO (RESTAURADA) === */}
+        <div className="bg-white dark:bg-surface-dark rounded-2xl shadow-sm border border-gray-200 dark:border-card-border flex flex-col overflow-hidden min-h-[500px] animate-slide-up" style={{ animationDelay: '0.15s' }}>
+            <div className="p-6 border-b border-gray-100 dark:border-white/5 flex justify-between items-center bg-gray-50/50 dark:bg-white/5">
+                <div className="flex items-center gap-3">
+                    <div className="p-2 bg-blue-100 dark:bg-blue-900/20 rounded-lg text-primary">
+                        <Icon name="category" size={20} />
+                    </div>
+                    <div>
+                        <h2 className="text-lg font-bold text-gray-900 dark:text-white">Detalhamento por Categoria</h2>
+                        <span className="text-xs text-gray-500">
+                            Analise o "peso" do estoque financeiramente. {selectedCycleId === 'all' ? '(Estoque Total)' : '(Neste Ciclo)'}
+                        </span>
+                    </div>
+                </div>
+                <div className="text-right">
+                    <p className="text-[10px] font-bold uppercase text-gray-400">Valor Total Listado</p>
+                    <p className="text-lg font-black text-gray-900 dark:text-white">
+                        {totalCategoryValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </p>
+                </div>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto overflow-x-auto no-scrollbar relative max-h-[600px]">
+                <table className="w-full text-left border-collapse min-w-[600px]">
+                    <thead className="bg-gray-50 dark:bg-surface-dark sticky top-0 z-10">
+                        <tr className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider font-semibold shadow-sm">
+                            <th className="py-4 px-6 border-b border-gray-100 dark:border-white/5 bg-gray-50 dark:bg-surface-dark w-1/3">Categoria</th>
+                            <th className="py-4 px-6 border-b border-gray-100 dark:border-white/5 text-right bg-gray-50 dark:bg-surface-dark">Qtd Contada</th>
+                            <th className="py-4 px-6 border-b border-gray-100 dark:border-white/5 text-right bg-gray-50 dark:bg-surface-dark">Valor Auditado</th>
+                            <th className="py-4 px-6 border-b border-gray-100 dark:border-white/5 w-1/4 bg-gray-50 dark:bg-surface-dark">% Share</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-white/5">
+                        {financialGroups.length === 0 ? (
+                            <tr><td colSpan={4} className="p-8 text-center text-gray-400">Nenhum dado encontrado para este período.</td></tr>
+                        ) : (
+                            financialGroups.map((group) => {
+                                const percentage = totalCategoryValue > 0 ? (group.value / totalCategoryValue) * 100 : 0;
+                                const isExpanded = expandedGroup === group.id;
+                                const icon = GROUP_ICONS[group.id] || 'inventory_2';
+
+                                return (
+                                    <React.Fragment key={group.id}>
+                                        {/* GROUP ROW */}
+                                        <tr onClick={() => handleToggleGroup(group.id)} className="hover:bg-gray-50 dark:hover:bg-white/5 transition-colors cursor-pointer group select-none">
+                                            <td className="py-4 px-6">
+                                                <div className="flex items-center gap-3">
+                                                    <div className={`p-1 text-gray-400 group-hover:text-primary transition-colors ${isExpanded ? 'rotate-90' : ''}`}>
+                                                        <Icon name="chevron_right" size={20} />
+                                                    </div>
+                                                    <div className="size-8 rounded-lg bg-gray-100 dark:bg-white/10 flex items-center justify-center text-gray-500 dark:text-gray-400 group-hover:text-primary transition-colors">
+                                                        <Icon name={icon} size={18} />
+                                                    </div>
+                                                    <span className="font-bold text-sm text-gray-700 dark:text-gray-200">{group.name}</span>
+                                                </div>
+                                            </td>
+                                            <td className="py-4 px-6 text-right font-mono text-sm text-gray-600 dark:text-gray-300 font-medium">
+                                                {group.qty.toLocaleString()}
+                                            </td>
+                                            <td className="py-4 px-6 text-right font-bold text-sm text-gray-900 dark:text-white">
+                                                R$ {group.value.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                            </td>
+                                            <td className="py-4 px-6">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="flex-1 h-2 bg-gray-100 dark:bg-white/10 rounded-full overflow-hidden">
+                                                        <div className="h-full bg-primary rounded-full" style={{ width: `${percentage}%` }} />
+                                                    </div>
+                                                    <span className="text-xs font-bold text-gray-600 dark:text-gray-300 w-10 text-right">{percentage.toFixed(1)}%</span>
+                                                </div>
+                                            </td>
+                                        </tr>
+
+                                        {/* SUBGROUPS */}
+                                        {isExpanded && group.subgroups.map(sub => {
+                                            const subIsExpanded = expandedSubgroup?.grId === group.id && expandedSubgroup?.sgId === sub.id;
+                                            const subPercentage = group.value > 0 ? (sub.value / group.value) * 100 : 0;
+
+                                            return (
+                                                <React.Fragment key={`${group.id}-${sub.id}`}>
+                                                    <tr onClick={() => handleToggleSubgroup(group.id, sub.id)} className="bg-gray-50/50 dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors cursor-pointer select-none">
+                                                        <td className="py-3 px-6 pl-20 border-l-4 border-transparent hover:border-primary">
+                                                            <div className="flex items-center gap-2">
+                                                                <Icon name={subIsExpanded ? "expand_more" : "chevron_right"} size={16} className="text-gray-400" />
+                                                                <span className="text-xs font-bold text-gray-600 dark:text-gray-300 uppercase">{sub.name}</span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="py-3 px-6 text-right font-mono text-xs text-gray-500">
+                                                            {sub.qty.toLocaleString()}
+                                                        </td>
+                                                        <td className="py-3 px-6 text-right font-bold text-xs text-gray-700 dark:text-gray-300">
+                                                            R$ {sub.value.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                                                        </td>
+                                                        <td className="py-3 px-6">
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="flex-1 h-1.5 bg-gray-200 dark:bg-white/10 rounded-full overflow-hidden">
+                                                                    <div className="h-full bg-blue-400 rounded-full" style={{ width: `${subPercentage}%` }} />
+                                                                </div>
+                                                                <span className="text-[10px] text-gray-400">{subPercentage.toFixed(0)}%</span>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+
+                                                    {/* ITEMS LIST (LEVEL 3) */}
+                                                    {subIsExpanded && (
+                                                        <>
+                                                            <tr className="bg-gray-100/50 dark:bg-black/30 border-b border-gray-100 dark:border-white/5 text-[10px] text-gray-400 font-bold uppercase tracking-wider select-none">
+                                                                <td className="py-2 pl-28">Produto / SKU</td>
+                                                                <td className="text-right py-2 px-6 cursor-pointer hover:text-primary transition-colors" onClick={() => handleSortItems('unit')}>
+                                                                    Unit. {itemSort.field === 'unit' && <Icon name={itemSort.direction === 'desc' ? "arrow_drop_down" : "arrow_drop_up"} size={12} className="inline align-middle" />}
+                                                                </td>
+                                                                <td className="text-right py-2 px-6 cursor-pointer hover:text-primary transition-colors" onClick={() => handleSortItems('qty')}>
+                                                                    Qtd {itemSort.field === 'qty' && <Icon name={itemSort.direction === 'desc' ? "arrow_drop_down" : "arrow_drop_up"} size={12} className="inline align-middle" />}
+                                                                </td>
+                                                                <td className="text-right py-2 px-6 cursor-pointer hover:text-primary transition-colors" onClick={() => handleSortItems('value')}>
+                                                                    Total {itemSort.field === 'value' && <Icon name={itemSort.direction === 'desc' ? "arrow_drop_down" : "arrow_drop_up"} size={12} className="inline align-middle" />}
+                                                                </td>
+                                                            </tr>
+
+                                                            {loadingItems ? (
+                                                                <tr>
+                                                                    <td colSpan={4} className="py-8 text-center text-gray-400">
+                                                                        <Icon name="sync" className="animate-spin mb-1 mx-auto" size={20} />
+                                                                        <span className="text-xs">Carregando itens...</span>
+                                                                    </td>
+                                                                </tr>
+                                                            ) : (
+                                                                sortedSubgroupItems.map((item, idx) => {
+                                                                    const itemPercentage = sub.value > 0 ? (item.value / sub.value) * 100 : 0;
+                                                                    return (
+                                                                        <tr key={idx} className="bg-gray-50 dark:bg-black/20 hover:bg-blue-50 dark:hover:bg-white/5 transition-colors border-b border-gray-100 dark:border-white/5 last:border-0 group">
+                                                                            <td className="py-2 px-6 pl-28 border-l-4 border-transparent">
+                                                                                <div className="flex items-center gap-3">
+                                                                                    <Icon name="subdirectory_arrow_right" size={14} className="text-gray-300 group-hover:text-primary transition-colors" />
+                                                                                    <div>
+                                                                                        <div className="font-bold text-xs text-gray-800 dark:text-gray-200 line-clamp-1 group-hover:text-primary transition-colors">
+                                                                                            {item.name}
+                                                                                        </div>
+                                                                                        <div className="flex items-center gap-2">
+                                                                                            <span className="text-[10px] font-mono text-gray-400">{item.sku}</span>
+                                                                                            <span className="text-[9px] text-gray-400 font-medium bg-gray-100 dark:bg-white/10 px-1 rounded">
+                                                                                                Unit: {item.unitPrice.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                                                                            </span>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </td>
+                                                                            
+                                                                            <td className="py-2 px-6 text-right">
+                                                                                <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-white dark:bg-white/5 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-white/10 min-w-[24px] text-center">
+                                                                                    {item.qty}
+                                                                                </span>
+                                                                            </td>
+
+                                                                            <td className="py-2 px-6 text-right font-bold text-xs text-gray-900 dark:text-white">
+                                                                                {item.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                                                            </td>
+
+                                                                            <td className="py-2 px-6">
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <div className="flex-1 h-1 bg-gray-200 dark:bg-white/10 rounded-full overflow-hidden">
+                                                                                        <div className="h-full bg-blue-300 dark:bg-blue-500 rounded-full" style={{ width: `${itemPercentage}%` }} />
+                                                                                    </div>
+                                                                                    <span className="text-[9px] text-gray-400 w-6 text-right">{itemPercentage < 1 && itemPercentage > 0 ? '<1' : Math.round(itemPercentage)}%</span>
+                                                                                </div>
+                                                                            </td>
+                                                                        </tr>
+                                                                    );
+                                                                })
+                                                            )}
+                                                        </>
+                                                    )}
+                                                </React.Fragment>
+                                            );
+                                        })}
+                                    </React.Fragment>
+                                );
+                            })
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        {/* === SEÇÃO 4: RANKING & OPERACIONAL (DIVERGÊNCIAS) === */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-slide-up" style={{ animationDelay: '0.2s' }}>
 
                 {/* RANKING */}
