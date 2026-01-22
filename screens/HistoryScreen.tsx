@@ -83,7 +83,10 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
               countedAt: entry.DATA_HORA,
               location: entry.LOCALIZACAO || '',
               status: entry.STATUS,
-              treatmentStatus: entry.TREATMENT_STATUS // Novo campo do JOIN
+              treatmentStatus: entry.TREATMENT_STATUS, // Novo campo do JOIN
+              // FIX: Map financial data
+              costPrice: entry.PRO_PRECOULTCOMPRA,
+              salesPrice: entry.PRO_PRECOVENDA
           });
       });
 

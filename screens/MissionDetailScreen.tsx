@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Icon } from '../components/Icon';
-import { EntryModal, DamageModal, ConfirmationModal } from '../components/Modals';
+import { EntryModal, DamageModal, ConfirmationModal, ScannerModal } from '../components/Modals';
 import { ItemDetailModal } from '../components/ItemDetailModal';
 import { User } from '../types';
 import { api } from '../services/api';
@@ -20,7 +20,11 @@ interface BlockItem {
     user: string;
     date: string;
     qty: number;
+    location?: string;
   } | null;
+  // Financial fields
+  costPrice?: number;
+  salesPrice?: number;
 }
 
 interface MissionDetailScreenProps {
@@ -56,7 +60,10 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
           loc: blockData.location,
           expectedQty: item.balance,
           status: 'pending',
-          lastCount: lastCountData
+          lastCount: lastCountData,
+          // FIX: Map financial data from parent
+          costPrice: item.costPrice,
+          salesPrice: item.salesPrice
         };
       });
       setItems(formattedItems);
@@ -71,11 +78,16 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   
+  // Scanner State
+  const [showScanner, setShowScanner] = useState(false);
+  const [scannedCode, setScannedCode] = useState('');
+  
   const allItemsCounted = items.length > 0 && items.every(item => item.status !== 'pending');
   const progressPercentage = items.length > 0 ? Math.round((items.filter(i => i.status !== 'pending').length / items.length) * 100) : 0;
 
   const handleItemClick = (item: BlockItem) => {
     setSelectedItem(item);
+    setScannedCode(''); // Reset scanned code
     setShowEntry(true);
   };
 
@@ -87,6 +99,23 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
   const handleCloseDetails = () => {
     setShowDetailModal(false);
     setShowEntry(true);
+  };
+
+  // Scanner Handlers
+  const handleRequestScan = () => {
+      setShowEntry(false);
+      setShowScanner(true);
+  };
+
+  const handleScanComplete = (code: string) => {
+      setScannedCode(code);
+      setShowScanner(false);
+      setShowEntry(true);
+  };
+
+  const handleScannerClose = () => {
+      setShowScanner(false);
+      setShowEntry(true);
   };
 
   const handleConfirmCount = async (quantity: number, status: 'counted' | 'not_located' | 'issue' = 'counted', divergenceReason?: string) => {
@@ -104,7 +133,7 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
           usuario_nome: currentUser.name,
           qtd_sistema: selectedItem.expectedQty,
           qtd_contada: quantity,
-          localizacao: selectedItem.loc,
+          localizacao: scannedCode || selectedItem.loc,
           status: finalStatus,
           divergencia_motivo: divergenceReason
         });
@@ -120,7 +149,8 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
               lastCount: {
                 user: currentUser?.name || 'Você',
                 date: 'Agora',
-                qty: quantity
+                qty: quantity,
+                location: scannedCode || item.lastCount?.location
               }
             } 
           : item
@@ -348,23 +378,36 @@ export const MissionDetailScreen: React.FC<MissionDetailScreenProps> = ({ blockD
       )}
 
       <EntryModal 
-        isOpen={showEntry} 
+        isOpen={showEntry}
+        onClose={() => {
+            setShowEntry(false);
+            setScannedCode('');
+        }}
+        onConfirm={handleConfirmCount}
+        onRequestScan={handleRequestScan}
+        
         itemName={selectedItem?.name}
         itemSku={selectedItem?.sku}
-        lastCountInfo={selectedItem?.lastCount ? {
-          user: selectedItem.lastCount.user,
-          date: selectedItem.lastCount.date,
-          quantity: selectedItem.lastCount.qty,
-          avatar: `https://i.pravatar.cc/150?u=${selectedItem.lastCount.user}`
-        } : null}
-        onClose={() => setShowEntry(false)} 
-        onConfirm={handleConfirmCount} 
+        itemBrand={selectedItem?.type} // Mapeando type para brand para o modal
+        systemQuantity={selectedItem?.expectedQty || 0}
+        initialCount={selectedItem?.countedQty}
+        initialLocation={selectedItem?.lastCount?.location || selectedItem?.loc}
+        scannedLocation={scannedCode} 
+        lastCountInfo={selectedItem?.lastCount}
       />
-      
+
+      <ScannerModal 
+        isOpen={showScanner} 
+        onClose={handleScannerClose}
+        onScanComplete={handleScanComplete}
+        title="Validar Localização"
+        instruction="Escaneie o QR Code do endereço para liberar a contagem"
+      />
+
       <ItemDetailModal 
         isOpen={showDetailModal}
         onClose={handleCloseDetails}
-        item={selectedItem}
+        item={selectedItem ? { ...selectedItem, ref: selectedItem.sku, brand: selectedItem.type, balance: selectedItem.expectedQty, qty: selectedItem.countedQty } : null}
         onAction={handleCloseDetails}
         actionLabel="Voltar para Contagem"
       />
