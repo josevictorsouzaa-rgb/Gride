@@ -111,7 +111,22 @@ const initDb = () => {
                 // *** VÍNCULO DE LOG AO CICLO ***
                 await safeExecute(db, `ALTER TABLE GRIDE_INVENTARIO_LOG ADD CICLO_ID INTEGER`, "Col CICLO_ID em Logs");
 
-                await safeExecute(db, `CREATE TABLE GRIDE_CONTAS_FINALIZADAS (ID INTEGER NOT NULL PRIMARY KEY, SKU VARCHAR(50), PRO_COD INTEGER, QTD_FINAL DECIMAL(15,4), DATA_HORA TIMESTAMP DEFAULT CURRENT_TIMESTAMP, USUARIO_NOME VARCHAR(100), STATUS VARCHAR(20), LOG_ORIGEM_ID INTEGER)`, "Tab Contas Final");
+                // *** NOVA TABELA FINAL PARA ITENS CONTADOS (CLEAN DATA) ***
+                // Esta tabela recebe apenas itens OK para integrações futuras
+                await safeExecute(db, `CREATE TABLE GRIDE_CONTAGEM_FINAL (
+                    ID INTEGER NOT NULL PRIMARY KEY,
+                    PRO_COD INTEGER,
+                    SKU VARCHAR(50),
+                    NOME_PRODUTO VARCHAR(200),
+                    QTD_FINAL DECIMAL(15,4),
+                    LOCALIZACAO VARCHAR(100),
+                    USUARIO_NOME VARCHAR(100),
+                    DATA_HORA TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    LOG_REF_ID INTEGER
+                )`, "Tab Contagem Final");
+                await safeExecute(db, `CREATE GENERATOR GEN_GRIDE_CONTAGEM_FINAL_ID`, "Gen Contagem Final");
+                await safeExecute(db, `CREATE TRIGGER TR_GRIDE_CONTAGEM_FINAL FOR GRIDE_CONTAGEM_FINAL ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_CONTAGEM_FINAL_ID, 1); END`, "Trig Contagem Final");
+
                 await safeExecute(db, `CREATE TABLE GRIDE_TRATAMENTO (ID INTEGER NOT NULL PRIMARY KEY, LOG_ID INTEGER, PRO_COD INTEGER, PRO_NRFABRICANTE VARCHAR(50), NOME_PRODUTO VARCHAR(200), LOCALIZACAO VARCHAR(100), TIPO_ERRO VARCHAR(50), DESCRICAO_ERRO VARCHAR(255), REPORTADO_POR VARCHAR(100), REPORTADO_EM TIMESTAMP DEFAULT CURRENT_TIMESTAMP, STATUS VARCHAR(20) DEFAULT 'PENDING', RESOLVIDO_POR VARCHAR(20), RESOLVIDO_EM TIMESTAMP, RESOLUCAO_NOTA VARCHAR(255))`, "Tab Tratamento");
 
                 // TABELA DE PERMISSÕES
@@ -128,7 +143,7 @@ const initDb = () => {
                 await safeExecute(db, `CREATE TABLE GRIDE_CONFIG (KEY_ID VARCHAR(50) NOT NULL PRIMARY KEY, VAL_BLOB BLOB SUB_TYPE TEXT)`, "Tab Config");
 
                 // Generators
-                const gens = ['GEN_GRIDE_ENDERECOS_ID', 'GEN_GRIDE_GALPOES_ID', 'GEN_GRIDE_LOG_ID', 'GEN_GRIDE_TRATAMENTO_ID', 'GEN_GRIDE_CONTAS_FIN_ID'];
+                const gens = ['GEN_GRIDE_ENDERECOS_ID', 'GEN_GRIDE_GALPOES_ID', 'GEN_GRIDE_LOG_ID', 'GEN_GRIDE_TRATAMENTO_ID'];
                 for (const g of gens) await safeExecute(db, `CREATE GENERATOR ${g}`, `Gen ${g}`);
 
                 // Triggers
@@ -136,7 +151,6 @@ const initDb = () => {
                 await safeExecute(db, `CREATE TRIGGER TR_GRIDE_GALPOES FOR GRIDE_GALPOES ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_GALPOES_ID, 1); END`, "Trig Galpões");
                 await safeExecute(db, `CREATE TRIGGER TR_GRIDE_LOG FOR GRIDE_INVENTARIO_LOG ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_LOG_ID, 1); END`, "Trig Logs");
                 await safeExecute(db, `CREATE TRIGGER TR_GRIDE_TRATAMENTO FOR GRIDE_TRATAMENTO ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_TRATAMENTO_ID, 1); END`, "Trig Tratamento");
-                await safeExecute(db, `CREATE TRIGGER TR_GRIDE_CONTAS_FIN FOR GRIDE_CONTAS_FINALIZADAS ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_CONTAS_FIN_ID, 1); END`, "Trig Contas Fin");
 
                 // *** GARANTIR CICLO ATIVO INICIAL ***
                 const activeCycle = await execute(db, `SELECT ID FROM GRIDE_CICLOS WHERE ATIVO = 'S'`);
@@ -909,20 +923,43 @@ app.post('/finalize-block', (req, res) => {
                     const statusDB = item.status === 'not_located' ? 'Não Localizado' : (item.status === 'divergence_info' ? 'Divergência' : 'Contado');
                     const qtd = item.countedQty || 0;
                     const reason = item.divergenceReason || '';
+                    const itemLocation = item.lastCount?.location || 'Geral';
+
                     const genRes = await new Promise((resolve, reject) => transaction.query('SELECT GEN_ID(GEN_GRIDE_LOG_ID, 1) as NEW_ID FROM RDB$DATABASE', (err, rows) => err ? reject(err) : resolve(rows[0].NEW_ID)));
                     
+                    // 1. INSERE NO LOG DE HISTÓRICO
                     await new Promise((resolve, reject) => {
                         transaction.query(`INSERT INTO GRIDE_INVENTARIO_LOG (ID, PRO_NRFABRICANTE, NOME_PRODUTO, USU_COD, USUARIO_NOME, QTD_SISTEMA, QTD_CONTADA, LOCALIZACAO, STATUS, DIVERGENCIA_MOTIVO, BLOCK_REF, DATA_HORA, PRO_COD, CICLO_ID) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, (SELECT FIRST 1 PRO_COD FROM PRODUTOS WHERE PRO_NRFABRICANTE = ?), ?)`,
-                        [genRes, item.ref, item.name, user_id, user_name, item.balance, qtd, item.lastCount?.location || 'Geral', statusDB, reason, uniqueRef, item.ref, activeCicloId], (err) => err ? reject(err) : resolve());
+                        [genRes, item.ref, item.name, user_id, user_name, item.balance, qtd, itemLocation, statusDB, reason, uniqueRef, item.ref, activeCicloId], (err) => err ? reject(err) : resolve());
                     });
 
-                    if (statusDB === 'Divergência' || statusDB === 'Não Localizado') {
-                        await new Promise((resolve) => transaction.query(`INSERT INTO GRIDE_TRATAMENTO (LOG_ID, PRO_NRFABRICANTE, NOME_PRODUTO, LOCALIZACAO, TIPO_ERRO, DESCRICAO_ERRO, REPORTADO_POR, REPORTADO_EM, STATUS) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 'PENDING')`, [genRes, item.ref, item.name, item.lastCount?.location || 'Geral', statusDB, reason || 'Sem descrição', user_name], () => resolve()));
+                    // 2. NOVA LÓGICA: SE ESTIVER CONTADO (OK), INSERE NA TABELA FINAL LIMPA
+                    if (statusDB === 'Contado') {
+                        // Busca o PRO_COD primeiro para inserir corretamente (como chave estrangeira virtual)
+                        const proCodResult = await new Promise((resolve) => transaction.query(`SELECT FIRST 1 PRO_COD FROM PRODUTOS WHERE PRO_NRFABRICANTE = ?`, [item.ref], (err, rows) => resolve(rows)));
+                        const proCod = (proCodResult && proCodResult.length > 0) ? proCodResult[0].PRO_COD : null;
+
+                        await new Promise((resolve, reject) => {
+                            transaction.query(
+                                `INSERT INTO GRIDE_CONTAGEM_FINAL (PRO_COD, SKU, NOME_PRODUTO, QTD_FINAL, LOCALIZACAO, USUARIO_NOME, DATA_HORA, LOG_REF_ID) 
+                                 VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)`,
+                                [proCod, item.ref, item.name, qtd, itemLocation, user_name, genRes],
+                                (err) => err ? reject(err) : resolve()
+                            );
+                        });
                     }
+
+                    // 3. SE HOUVER DIVERGÊNCIA, MANDA PARA TRATAMENTO
+                    if (statusDB === 'Divergência' || statusDB === 'Não Localizado') {
+                        await new Promise((resolve) => transaction.query(`INSERT INTO GRIDE_TRATAMENTO (LOG_ID, PRO_NRFABRICANTE, NOME_PRODUTO, LOCALIZACAO, TIPO_ERRO, DESCRICAO_ERRO, REPORTADO_POR, REPORTADO_EM, STATUS) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 'PENDING')`, [genRes, item.ref, item.name, itemLocation, statusDB, reason || 'Sem descrição', user_name], () => resolve()));
+                    }
+
+                    // 4. ATUALIZA ESTOQUE NO SISTEMA (Apenas se Contado ou Divergente confirmado)
                     if (statusDB === 'Contado' || statusDB === 'Divergência') {
-                        await new Promise((resolve) => transaction.query(`UPDATE PRODUTOS SET PRO_EST_ATUAL = ?, PRO_PRATELEIRA = ? WHERE PRO_NRFABRICANTE = ?`, [qtd, item.lastCount?.location || 'Geral', item.ref], () => resolve()));
+                        await new Promise((resolve) => transaction.query(`UPDATE PRODUTOS SET PRO_EST_ATUAL = ?, PRO_PRATELEIRA = ? WHERE PRO_NRFABRICANTE = ?`, [qtd, itemLocation, item.ref], () => resolve()));
                     }
                 }
+                
                 await new Promise((resolve) => transaction.query('DELETE FROM GRIDE_RESERVAS WHERE BLOCK_ID = ?', [block_id], () => resolve()));
                 transaction.commit((err) => { db.detach(); res.json({success: true}); });
             } catch(e) { transaction.rollback(); db.detach(); res.json({success: false, error: e.message}); }
