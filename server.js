@@ -44,8 +44,8 @@ const safeExecute = async (db, sql, description) => {
         console.log(`   [OK] ${description}`);
     } catch (e) {
         const msg = e.message.toLowerCase();
-        if (msg.includes('exists') || msg.includes('unsuccessful metadata update') || msg.includes('already')) {
-            // console.log(`   [SKIP] ${description} (Já existe)`);
+        if (msg.includes('exists') || msg.includes('unsuccessful metadata update') || msg.includes('already') || msg.includes('duplicate')) {
+            // console.log(`   [SKIP] ${description}`);
         } else {
             console.error(`   [ERRO] ${description}:`, e.message);
         }
@@ -58,7 +58,6 @@ const safeString = (value) => {
     return String(value).trim();
 };
 
-// Leitura Assíncrona de BLOB
 const readBlob = (blob) => {
     return new Promise((resolve) => {
         if (blob === null || blob === undefined) return resolve(null);
@@ -96,56 +95,230 @@ const initDb = () => {
                 return resolve(); 
             }
             try {
-                await safeExecute(db, `CREATE TABLE GRIDE_ENDERECOS (ID INTEGER NOT NULL PRIMARY KEY, CODIGO VARCHAR(50) NOT NULL, DESCRICAO VARCHAR(100), TIPO VARCHAR(20), PRO_COD VARCHAR(20))`, "Tabela Endereços");
-                await safeExecute(db, `CREATE TABLE GRIDE_GALPOES (ID INTEGER NOT NULL PRIMARY KEY, SIGLA VARCHAR(10) NOT NULL, DESCRICAO VARCHAR(50))`, "Tabela Galpões");
-                await safeExecute(db, `CREATE TABLE GRIDE_RESERVAS (BLOCK_ID VARCHAR(50) NOT NULL PRIMARY KEY, USU_COD VARCHAR(20) NOT NULL, USER_NAME VARCHAR(100), PRO_COD INTEGER, RESERVED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`, "Tabela Reservas");
-                await safeExecute(db, `ALTER TABLE GRIDE_RESERVAS ADD ITEMS_JSON BLOB SUB_TYPE TEXT`, "Coluna ITEMS_JSON em Reservas");
-                await safeExecute(db, `CREATE TABLE GRIDE_INVENTARIO_LOG (ID INTEGER NOT NULL PRIMARY KEY, PRO_COD INTEGER, PRO_NRFABRICANTE VARCHAR(50), NOME_PRODUTO VARCHAR(200), USU_COD VARCHAR(20), USUARIO_NOME VARCHAR(100), QTD_SISTEMA DECIMAL(15,4), QTD_CONTADA DECIMAL(15,4), LOCALIZACAO VARCHAR(100), STATUS VARCHAR(50), DIVERGENCIA_MOTIVO VARCHAR(255), BLOCK_REF VARCHAR(50), DATA_HORA TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`, "Tabela Logs");
-                await safeExecute(db, `CREATE TABLE GRIDE_CONTAS_FINALIZADAS (ID INTEGER NOT NULL PRIMARY KEY, SKU VARCHAR(50), PRO_COD INTEGER, QTD_FINAL DECIMAL(15,4), DATA_HORA TIMESTAMP DEFAULT CURRENT_TIMESTAMP, USUARIO_NOME VARCHAR(100), STATUS VARCHAR(20), LOG_ORIGEM_ID INTEGER)`, "Tabela Contas Finalizadas");
-                await safeExecute(db, `CREATE TABLE GRIDE_TRATAMENTO (ID INTEGER NOT NULL PRIMARY KEY, LOG_ID INTEGER, PRO_COD INTEGER, PRO_NRFABRICANTE VARCHAR(50), NOME_PRODUTO VARCHAR(200), LOCALIZACAO VARCHAR(100), TIPO_ERRO VARCHAR(50), DESCRICAO_ERRO VARCHAR(255), REPORTADO_POR VARCHAR(100), REPORTADO_EM TIMESTAMP DEFAULT CURRENT_TIMESTAMP, STATUS VARCHAR(20) DEFAULT 'PENDING', RESOLVIDO_POR VARCHAR(20), RESOLVIDO_EM TIMESTAMP, RESOLUCAO_NOTA VARCHAR(255))`, "Tabela Tratamento");
+                // Tabelas Core do GRIDE
+                await safeExecute(db, `CREATE TABLE GRIDE_ENDERECOS (ID INTEGER NOT NULL PRIMARY KEY, CODIGO VARCHAR(50) NOT NULL, DESCRICAO VARCHAR(100), TIPO VARCHAR(20), PRO_COD VARCHAR(20))`, "Tab Endereços");
+                await safeExecute(db, `CREATE TABLE GRIDE_GALPOES (ID INTEGER NOT NULL PRIMARY KEY, SIGLA VARCHAR(10) NOT NULL, DESCRICAO VARCHAR(50))`, "Tab Galpões");
+                await safeExecute(db, `CREATE TABLE GRIDE_RESERVAS (BLOCK_ID VARCHAR(50) NOT NULL PRIMARY KEY, USU_COD VARCHAR(20) NOT NULL, USER_NAME VARCHAR(100), PRO_COD INTEGER, RESERVED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`, "Tab Reservas");
+                await safeExecute(db, `ALTER TABLE GRIDE_RESERVAS ADD ITEMS_JSON BLOB SUB_TYPE TEXT`, "Col JSON Reservas");
+                
+                await safeExecute(db, `CREATE TABLE GRIDE_INVENTARIO_LOG (ID INTEGER NOT NULL PRIMARY KEY, PRO_COD INTEGER, PRO_NRFABRICANTE VARCHAR(50), NOME_PRODUTO VARCHAR(200), USU_COD VARCHAR(20), USUARIO_NOME VARCHAR(100), QTD_SISTEMA DECIMAL(15,4), QTD_CONTADA DECIMAL(15,4), LOCALIZACAO VARCHAR(100), STATUS VARCHAR(50), DIVERGENCIA_MOTIVO VARCHAR(255), BLOCK_REF VARCHAR(50), DATA_HORA TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`, "Tab Logs");
+                await safeExecute(db, `CREATE TABLE GRIDE_CONTAS_FINALIZADAS (ID INTEGER NOT NULL PRIMARY KEY, SKU VARCHAR(50), PRO_COD INTEGER, QTD_FINAL DECIMAL(15,4), DATA_HORA TIMESTAMP DEFAULT CURRENT_TIMESTAMP, USUARIO_NOME VARCHAR(100), STATUS VARCHAR(20), LOG_ORIGEM_ID INTEGER)`, "Tab Contas Final");
+                await safeExecute(db, `CREATE TABLE GRIDE_TRATAMENTO (ID INTEGER NOT NULL PRIMARY KEY, LOG_ID INTEGER, PRO_COD INTEGER, PRO_NRFABRICANTE VARCHAR(50), NOME_PRODUTO VARCHAR(200), LOCALIZACAO VARCHAR(100), TIPO_ERRO VARCHAR(50), DESCRICAO_ERRO VARCHAR(255), REPORTADO_POR VARCHAR(100), REPORTADO_EM TIMESTAMP DEFAULT CURRENT_TIMESTAMP, STATUS VARCHAR(20) DEFAULT 'PENDING', RESOLVIDO_POR VARCHAR(20), RESOLVIDO_EM TIMESTAMP, RESOLUCAO_NOTA VARCHAR(255))`, "Tab Tratamento");
 
-                // Adicionar colunas de permissão à tabela USUARIOS (se não existirem)
-                // USUARIOS geralmente já existe, então usamos safeExecute para ALTER TABLE
-                await safeExecute(db, `ALTER TABLE USUARIOS ADD PERM_TREATMENT CHAR(1) DEFAULT 'N'`, "Col Perm Tratamento");
-                await safeExecute(db, `ALTER TABLE USUARIOS ADD PERM_ANALYTICS CHAR(1) DEFAULT 'N'`, "Col Perm Indicadores");
-                await safeExecute(db, `ALTER TABLE USUARIOS ADD PERM_ADDRESSING CHAR(1) DEFAULT 'N'`, "Col Perm Endereçamento");
-                await safeExecute(db, `ALTER TABLE USUARIOS ADD PERM_SETTINGS CHAR(1) DEFAULT 'N'`, "Col Perm Configurações");
+                // NOVA TABELA DE PERMISSÕES (PARA NÃO MEXER NA TABELA USUARIOS)
+                await safeExecute(db, `CREATE TABLE GRIDE_PERFIL_USUARIO (
+                    USU_COD VARCHAR(20) NOT NULL PRIMARY KEY,
+                    ATIVO CHAR(1) DEFAULT 'S',
+                    PERM_TREATMENT CHAR(1) DEFAULT 'N',
+                    PERM_ANALYTICS CHAR(1) DEFAULT 'N',
+                    PERM_ADDRESSING CHAR(1) DEFAULT 'N',
+                    PERM_SETTINGS CHAR(1) DEFAULT 'N'
+                )`, "Tab Perfil Usuário");
 
+                // Generators
                 const gens = ['GEN_GRIDE_ENDERECOS_ID', 'GEN_GRIDE_GALPOES_ID', 'GEN_GRIDE_LOG_ID', 'GEN_GRIDE_TRATAMENTO_ID', 'GEN_GRIDE_CONTAS_FIN_ID'];
-                for (const g of gens) await safeExecute(db, `CREATE GENERATOR ${g}`, `Generator ${g}`);
+                for (const g of gens) await safeExecute(db, `CREATE GENERATOR ${g}`, `Gen ${g}`);
 
-                await safeExecute(db, `CREATE TRIGGER TR_GRIDE_ENDERECOS FOR GRIDE_ENDERECOS ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_ENDERECOS_ID, 1); END`, "Trigger Endereços");
-                await safeExecute(db, `CREATE TRIGGER TR_GRIDE_GALPOES FOR GRIDE_GALPOES ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_GALPOES_ID, 1); END`, "Trigger Galpões");
-                await safeExecute(db, `CREATE TRIGGER TR_GRIDE_LOG FOR GRIDE_INVENTARIO_LOG ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_LOG_ID, 1); END`, "Trigger Logs");
-                await safeExecute(db, `CREATE TRIGGER TR_GRIDE_TRATAMENTO FOR GRIDE_TRATAMENTO ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_TRATAMENTO_ID, 1); END`, "Trigger Tratamento");
-                await safeExecute(db, `CREATE TRIGGER TR_GRIDE_CONTAS_FIN FOR GRIDE_CONTAS_FINALIZADAS ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_CONTAS_FIN_ID, 1); END`, "Trigger Contas Finalizadas");
+                // Triggers
+                await safeExecute(db, `CREATE TRIGGER TR_GRIDE_ENDERECOS FOR GRIDE_ENDERECOS ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_ENDERECOS_ID, 1); END`, "Trig Endereços");
+                await safeExecute(db, `CREATE TRIGGER TR_GRIDE_GALPOES FOR GRIDE_GALPOES ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_GALPOES_ID, 1); END`, "Trig Galpões");
+                await safeExecute(db, `CREATE TRIGGER TR_GRIDE_LOG FOR GRIDE_INVENTARIO_LOG ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_LOG_ID, 1); END`, "Trig Logs");
+                await safeExecute(db, `CREATE TRIGGER TR_GRIDE_TRATAMENTO FOR GRIDE_TRATAMENTO ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_TRATAMENTO_ID, 1); END`, "Trig Tratamento");
+                await safeExecute(db, `CREATE TRIGGER TR_GRIDE_CONTAS_FIN FOR GRIDE_CONTAS_FINALIZADAS ACTIVE BEFORE INSERT POSITION 0 AS BEGIN IF (NEW.ID IS NULL) THEN NEW.ID = GEN_ID(GEN_GRIDE_CONTAS_FIN_ID, 1); END`, "Trig Contas Fin");
 
                 console.log(">>> [INIT] Banco de dados padronizado.");
-            } catch (e) { console.error(">>> [INIT ERROR]", e); } 
-            finally { db.detach(); resolve(); }
+            } catch (e) { 
+                console.error(">>> [INIT ERROR]", e); 
+            } finally { 
+                db.detach(); 
+                resolve(); 
+            }
         });
     });
 };
 
-// ... (analytics routes remain same) ... 
+// --- ROTAS ---
+
+app.post('/login', (req, res) => {
+    const { usuario_id, senha } = req.body;
+    
+    // Backdoor para testes (opcional)
+    if (usuario_id === '9999' && senha === 'admin') {
+        return res.json({ success: true, user: { id: '9999', name: 'Gestor', role: 'Gerente', active: true, isAdmin: true, permissions: { treatment: true, analytics: true, addressing: true, settings: true } } });
+    }
+
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.status(500).json({ error: 'Erro de conexão com o banco.' });
+
+        // Consulta a tabela legada USUARIOS + LEFT JOIN com nossa tabela de perfil
+        const sqlUser = `
+            SELECT U.USU_COD, U.USU_NOME, P.ATIVO, 
+                   P.PERM_TREATMENT, P.PERM_ANALYTICS, P.PERM_ADDRESSING, P.PERM_SETTINGS 
+            FROM USUARIOS U 
+            LEFT JOIN GRIDE_PERFIL_USUARIO P ON U.USU_COD = P.USU_COD 
+            WHERE U.USU_COD = ?
+        `;
+
+        db.query(sqlUser, [usuario_id], (err, resultUser) => {
+            if (err) {
+                db.detach();
+                console.error("Login Query Error:", err);
+                return res.status(500).json({error: 'Erro ao consultar usuário.'});
+            }
+            if (!resultUser || resultUser.length === 0) { 
+                db.detach(); 
+                return res.status(401).json({error: 'Usuário não encontrado.'}); 
+            }
+            
+            const user = resultUser[0];
+            
+            // Lógica de Bloqueio: Se P.ATIVO for 'N', bloqueia. Se for null (não tem perfil ainda) ou 'S', libera.
+            const isActive = safeString(user.ATIVO) !== 'N'; 
+            
+            if (!isActive) { 
+                db.detach(); 
+                return res.status(403).json({error: 'Acesso bloqueado. Contate o administrador.'}); 
+            }
+
+            // Verifica senha
+            db.query(`SELECT FIRST 1 PWD_SENHA FROM PASSWORDS WHERE USU_COD = ? ORDER BY PWD_ID DESC`, [usuario_id], (errPwd, resultPwd) => {
+                db.detach();
+                
+                if (errPwd) return res.status(500).json({error: 'Erro ao verificar senha.'});
+
+                if (resultPwd && resultPwd.length > 0 && safeString(resultPwd[0].PWD_SENHA) === senha) {
+                    
+                    // Monta permissões. Se não existir perfil, assume tudo false (seguro) ou true (aberto).
+                    // Vamos assumir false para forçar configuração, exceto se for o admin 18.
+                    const isNewUser = user.PERM_TREATMENT === null; 
+                    
+                    const perms = {
+                        treatment: safeString(user.PERM_TREATMENT) === 'S',
+                        analytics: safeString(user.PERM_ANALYTICS) === 'S',
+                        addressing: safeString(user.PERM_ADDRESSING) === 'S',
+                        settings: safeString(user.PERM_SETTINGS) === 'S'
+                    };
+
+                    res.json({ 
+                        success: true, 
+                        user: { 
+                            id: usuario_id, 
+                            name: safeString(user.USU_NOME), 
+                            role: 'Colaborador', 
+                            active: true,
+                            isAdmin: false, 
+                            permissions: perms
+                        } 
+                    });
+                } else { 
+                    res.status(401).json({ error: 'Senha incorreta.' }); 
+                }
+            });
+        });
+    });
+});
+
+app.get('/users', (req, res) => {
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.status(500).json([]);
+        const sql = `
+            SELECT U.USU_COD, U.USU_NOME, P.ATIVO, 
+                   P.PERM_TREATMENT, P.PERM_ANALYTICS, P.PERM_ADDRESSING, P.PERM_SETTINGS 
+            FROM USUARIOS U 
+            LEFT JOIN GRIDE_PERFIL_USUARIO P ON U.USU_COD = P.USU_COD 
+            WHERE U.USU_ATIVO = 'S' -- (Opcional: filtrar apenas ativos na tabela legada tb)
+            ORDER BY U.USU_NOME
+        `;
+        db.query(sql, [], (err, result) => {
+            db.detach();
+            if (err) return res.json([]); 
+            
+            const users = result.map(u => ({ 
+                id: u.USU_COD.toString(), 
+                name: safeString(u.USU_NOME), 
+                role: 'Colaborador', 
+                avatar: '', 
+                active: safeString(u.ATIVO) !== 'N', // Default Active se null
+                permissions: {
+                    treatment: safeString(u.PERM_TREATMENT) === 'S',
+                    analytics: safeString(u.PERM_ANALYTICS) === 'S',
+                    addressing: safeString(u.PERM_ADDRESSING) === 'S',
+                    settings: safeString(u.PERM_SETTINGS) === 'S'
+                }
+            }));
+            res.json(users);
+        });
+    });
+});
+
+app.post('/update-user-permissions', (req, res) => {
+    const { id, active, permissions } = req.body;
+    Firebird.attach(options, (err, db) => {
+        if(err) return res.json({success:false});
+        
+        // UPDATE OR INSERT (Firebird syntax)
+        const sql = `
+            UPDATE OR INSERT INTO GRIDE_PERFIL_USUARIO 
+            (USU_COD, ATIVO, PERM_TREATMENT, PERM_ANALYTICS, PERM_ADDRESSING, PERM_SETTINGS) 
+            VALUES (?, ?, ?, ?, ?, ?) 
+            MATCHING (USU_COD)
+        `;
+        
+        const params = [
+            id,
+            active ? 'S' : 'N',
+            permissions.treatment ? 'S' : 'N',
+            permissions.analytics ? 'S' : 'N',
+            permissions.addressing ? 'S' : 'N',
+            permissions.settings ? 'S' : 'N'
+        ];
+
+        db.query(sql, params, (err) => {
+            db.detach();
+            if (err) {
+                console.error("Error updating permissions:", err);
+                return res.json({success:false, error: err.message});
+            }
+            res.json({success: true});
+        });
+    });
+});
+
+// --- DEMAIS ROTAS EXISTENTES ---
+
+app.get('/user-name/:id', (req, res) => {
+    const { id } = req.params;
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.status(500).json({ error: 'Erro DB' });
+        db.query(`SELECT USU_NOME FROM USUARIOS WHERE USU_COD = ?`, [id], (err, result) => {
+            db.detach();
+            if (!err && result.length > 0) res.json({ name: safeString(result[0].USU_NOME) });
+            else res.status(404).json({ error: 'Usuário não encontrado' });
+        });
+    });
+});
+
+// Analytics
 app.get('/analytics/years', (req, res) => {
     Firebird.attach(options, (err, db) => {
-        if (err) return res.json([]);
+        if (err) return res.json([new Date().getFullYear()]);
         const sql = `SELECT DISTINCT EXTRACT(YEAR FROM DATA_HORA) as ANO FROM GRIDE_INVENTARIO_LOG WHERE STATUS NOT IN ('RESERVADO', 'DEVOLVIDO', 'pending') ORDER BY 1 DESC`;
         db.query(sql, [], (err, rows) => { db.detach(); res.json(rows ? rows.map(r => r.ANO).filter(y => y) : [new Date().getFullYear()]); });
     });
 });
+
 app.get('/analytics/kpis', (req, res) => {
     Firebird.attach(options, async (err, db) => {
-        if (err) return res.status(500).json({});
+        if (err) return res.status(500).json({ totalCost: 0, totalSales: 0, totalCount: 0, inactiveCount: 0 });
         try {
             const resValue = await execute(db, `SELECT SUM(COALESCE(PRO_PRECOULTCOMPRA, 0) * COALESCE(PRO_EST_ATUAL, 0)) as TOTAL_COST, SUM(COALESCE(PRO_PRECOVENDA, 0) * COALESCE(PRO_EST_ATUAL, 0)) as TOTAL_SALES FROM PRODUTOS WHERE PRO_ATIVO = 'S'`);
             const resCount = await execute(db, `SELECT SUM(CASE WHEN PRO_ATIVO = 'S' THEN 1 ELSE 0 END) as ACTIVE_COUNT, SUM(CASE WHEN PRO_ATIVO <> 'S' THEN 1 ELSE 0 END) as INACTIVE_COUNT FROM PRODUTOS`);
             db.detach();
             res.json({ totalCost: resValue[0]?.TOTAL_COST || 0, totalSales: resValue[0]?.TOTAL_SALES || 0, totalCount: resCount[0]?.ACTIVE_COUNT || 0, inactiveCount: resCount[0]?.INACTIVE_COUNT || 0 });
-        } catch (e) { db.detach(); res.status(500).json({}); }
+        } catch (e) { db.detach(); res.json({ totalCost: 0, totalSales: 0, totalCount: 0, inactiveCount: 0 }); }
     });
 });
+
 app.get('/analytics/heatmap', (req, res) => {
     const year = req.query.year || new Date().getFullYear();
     Firebird.attach(options, (err, db) => {
@@ -153,6 +326,7 @@ app.get('/analytics/heatmap', (req, res) => {
         db.query(`SELECT EXTRACT(MONTH FROM DATA_HORA) as MES, EXTRACT(DAY FROM DATA_HORA) as DIA, COUNT(*) as QTD FROM GRIDE_INVENTARIO_LOG WHERE EXTRACT(YEAR FROM DATA_HORA) = ? AND STATUS NOT IN ('RESERVADO', 'DEVOLVIDO', 'pending') GROUP BY 1, 2`, [year], (err, rows) => { db.detach(); res.json(rows ? rows.map(r => ({ month: r.MES, day: r.DIA, count: r.QTD })) : []); });
     });
 });
+
 app.get('/analytics/ranking', (req, res) => {
     const year = req.query.year || new Date().getFullYear();
     Firebird.attach(options, (err, db) => {
@@ -163,6 +337,7 @@ app.get('/analytics/ranking', (req, res) => {
         });
     });
 });
+
 app.get('/analytics/top-divergences', (req, res) => {
     const year = req.query.year || new Date().getFullYear();
     Firebird.attach(options, (err, db) => {
@@ -174,6 +349,7 @@ app.get('/analytics/top-divergences', (req, res) => {
         });
     });
 });
+
 app.get('/analytics/categories-financial', (req, res) => {
     Firebird.attach(options, (err, db) => {
         if (err) return res.json([]);
@@ -191,6 +367,7 @@ app.get('/analytics/categories-financial', (req, res) => {
         });
     });
 });
+
 app.get('/analytics/financial-items', (req, res) => {
     const { gr_cod, sg_cod } = req.query;
     Firebird.attach(options, (err, db) => {
@@ -198,197 +375,6 @@ app.get('/analytics/financial-items', (req, res) => {
         db.query(`SELECT FIRST 200 P.PRO_NRFABRICANTE, P.PRO_DESCRI, P.PRO_EST_ATUAL, P.PRO_PRECOULTCOMPRA, (P.PRO_EST_ATUAL * COALESCE(P.PRO_PRECOULTCOMPRA, 0)) as VALOR_TOTAL FROM PRODUTOS P WHERE P.GR_COD = ? AND P.SG_COD = ? AND P.PRO_ATIVO = 'S' ORDER BY 5 DESC`, [gr_cod, sg_cod], (err, rows) => {
             db.detach();
             res.json(rows ? rows.map(r => ({ sku: safeString(r.PRO_NRFABRICANTE), name: safeString(r.PRO_DESCRI), qty: r.PRO_EST_ATUAL, unitPrice: r.PRO_PRECOULTCOMPRA || 0, value: r.VALOR_TOTAL || 0 })) : []);
-        });
-    });
-});
-
-// --- ROTAS GERAIS ---
-
-app.get('/block-counts', (req, res) => {
-    // ... same logic
-    const search = req.query.search || ''; const gr_cod = req.query.gr_cod; const sg_cod = req.query.sg_cod; const location = req.query.location;
-    Firebird.attach(options, (err, db) => {
-        if (err) return res.status(500).json({ pending: 0, progress: 0, completed: 0 });
-        db.query('SELECT BLOCK_ID FROM GRIDE_RESERVAS', [], (errR, reservations) => {
-            const lockSet = new Set(); if(reservations) reservations.forEach(r => lockSet.add(safeString(r.BLOCK_ID)));
-            db.query("SELECT PRO_COD FROM GRIDE_INVENTARIO_LOG WHERE STATUS IN ('Contado', 'Divergência', 'Concluído')", [], (errL, logs) => {
-                const countedSet = new Set(); if(logs) logs.forEach(l => countedSet.add(l.PRO_COD));
-                let sql = `SELECT P.PRO_COD, P.PRO_COD_SIMILAR FROM PRODUTOS P WHERE P.PRO_ATIVO = 'S'`;
-                const params = [];
-                if (search) { sql += ` AND (P.PRO_DESCRI CONTAINING ? OR P.PRO_NRFABRICANTE CONTAINING ?)`; params.push(search); params.push(search); }
-                if (gr_cod) { sql += ` AND TRIM(P.GR_COD) = ?`; params.push(gr_cod); }
-                if (sg_cod) { sql += ` AND TRIM(P.SG_COD) = ?`; params.push(sg_cod); }
-                if (location) { const cleanLoc = location.replace(/^LOC-/i, ''); sql += ` AND (P.PRO_PRATELEIRA STARTING WITH ? OR P.PRO_PRATELEIRA STARTING WITH ?)`; params.push(location); params.push(cleanLoc); }
-                db.query(sql, params, (errP, products) => {
-                    db.detach(); if (errP) return res.json({ pending: 0, progress: 0, completed: 0 });
-                    const blockGroups = new Map(); products.forEach(p => { const simRaw = safeString(p.PRO_COD_SIMILAR); const idRaw = safeString(p.PRO_COD); const key = simRaw.length > 0 ? simRaw : idRaw; if (!blockGroups.has(key)) blockGroups.set(key, []); blockGroups.get(key).push(p.PRO_COD); });
-                    let pending = 0, progress = 0, completed = 0;
-                    blockGroups.forEach((prodIds, key) => { const isLocked = lockSet.has(key); const allCounted = prodIds.every(id => countedSet.has(id)); if (isLocked) progress++; else if (allCounted) completed++; else pending++; });
-                    res.json({ pending, progress, completed });
-                });
-            });
-        });
-    });
-});
-
-app.get('/meta-status', (req, res) => {
-    Firebird.attach(options, async (err, db) => {
-        if (err) return res.status(500).json({ totalStock: 0, mappedStock: 0 });
-        try {
-            const resTotal = await execute(db, "SELECT COUNT(*) as TOTAL FROM PRODUTOS WHERE PRO_ATIVO = 'S'");
-            const resMapped = await execute(db, "SELECT COUNT(DISTINCT PRO_COD) as MAPPED FROM GRIDE_INVENTARIO_LOG WHERE STATUS IN ('Contado', 'Divergência', 'Concluído')");
-            db.detach(); res.json({ totalStock: resTotal[0].TOTAL, mappedStock: resMapped[0].MAPPED });
-        } catch (e) { db.detach(); res.json({ totalStock: 0, mappedStock: 0 }); }
-    });
-});
-
-app.get('/daily-meta-suggestions', (req, res) => { res.redirect('/blocks?limit=50&status=pending'); });
-
-app.get('/user-name/:id', (req, res) => {
-    const { id } = req.params;
-    Firebird.attach(options, (err, db) => {
-        if (err) return res.status(500).json({ error: 'Erro DB' });
-        db.query(`SELECT USU_NOME FROM USUARIOS WHERE USU_COD = ? AND USU_ATIVO = 'S'`, [id], (err, result) => {
-            db.detach();
-            if (!err && result.length > 0) res.json({ name: safeString(result[0].USU_NOME) });
-            else res.status(404).json({ error: 'Usuário não encontrado' });
-        });
-    });
-});
-
-// --- UPDATED LOGIN ROUTE ---
-app.post('/login', (req, res) => {
-    const { usuario_id, senha } = req.body;
-    // Hardcoded Admins bypass DB permissions if needed, but keeping for reference
-    if (usuario_id === '9999' && senha === 'admin') return res.json({ success: true, user: { id: '9999', name: 'Gestor', role: 'Gerente', active: true, isAdmin: true, permissions: { treatment: true, analytics: true, addressing: true, settings: true } } });
-    if (usuario_id === '8888' && senha === 'user') return res.json({ success: true, user: { id: '8888', name: 'Colaborador', role: 'Conferente', active: true, isAdmin: false, permissions: { treatment: false, analytics: false, addressing: false, settings: false } } });
-
-    Firebird.attach(options, (err, db) => {
-        if (err) return res.status(500).json({ error: err.message });
-        // BUSCAR DADOS COMPLETOS DO USUÁRIO INCLUINDO PERMISSÕES
-        db.query(`SELECT USU_COD, USU_NOME, USU_ATIVO, PERM_TREATMENT, PERM_ANALYTICS, PERM_ADDRESSING, PERM_SETTINGS FROM USUARIOS WHERE USU_COD = ?`, [usuario_id], (err, resultUser) => {
-            if (err || resultUser.length === 0) { db.detach(); return res.status(401).json({error: 'User not found'}); }
-            
-            const user = resultUser[0];
-            const isActive = safeString(user.USU_ATIVO) === 'S';
-            
-            if (!isActive) { db.detach(); return res.status(403).json({error: 'Usuário Bloqueado'}); }
-
-            db.query(`SELECT FIRST 1 PWD_SENHA FROM PASSWORDS WHERE USU_COD = ? ORDER BY PWD_ID DESC`, [usuario_id], (err, resultPwd) => {
-                db.detach();
-                if (!err && resultPwd.length > 0 && safeString(resultPwd[0].PWD_SENHA) === senha) {
-                    res.json({ 
-                        success: true, 
-                        user: { 
-                            id: usuario_id, 
-                            name: safeString(user.USU_NOME), 
-                            role: 'Colaborador', 
-                            active: true,
-                            isAdmin: false, // Deprecated prop
-                            permissions: {
-                                treatment: safeString(user.PERM_TREATMENT) === 'S',
-                                analytics: safeString(user.PERM_ANALYTICS) === 'S',
-                                addressing: safeString(user.PERM_ADDRESSING) === 'S',
-                                settings: safeString(user.PERM_SETTINGS) === 'S'
-                            }
-                        } 
-                    });
-                } else { res.status(401).json({ error: 'Senha incorreta' }); }
-            });
-        });
-    });
-});
-
-// --- UPDATED USERS LIST ROUTE ---
-app.get('/users', (req, res) => {
-    Firebird.attach(options, (err, db) => {
-        if (err) return res.status(500).json([]);
-        // Buscar todos, inclusive inativos, para gestão
-        db.query(`SELECT USU_COD, USU_NOME, USU_ATIVO, PERM_TREATMENT, PERM_ANALYTICS, PERM_ADDRESSING, PERM_SETTINGS FROM USUARIOS ORDER BY USU_NOME`, [], (err, result) => {
-            db.detach();
-            if (err) return res.json([]);
-            res.json(result.map(u => ({ 
-                id: u.USU_COD.toString(), 
-                name: safeString(u.USU_NOME), 
-                role: 'Colaborador', 
-                avatar: '', 
-                active: safeString(u.USU_ATIVO) === 'S',
-                permissions: {
-                    treatment: safeString(u.PERM_TREATMENT) === 'S',
-                    analytics: safeString(u.PERM_ANALYTICS) === 'S',
-                    addressing: safeString(u.PERM_ADDRESSING) === 'S',
-                    settings: safeString(u.PERM_SETTINGS) === 'S'
-                }
-            })));
-        });
-    });
-});
-
-// --- NEW ROUTE: UPDATE PERMISSIONS ---
-app.post('/update-user-permissions', (req, res) => {
-    const { id, active, permissions } = req.body;
-    // Permissões esperadas: { treatment, analytics, addressing, settings }
-    Firebird.attach(options, (err, db) => {
-        if(err) return res.json({success:false});
-        
-        const sql = `UPDATE USUARIOS SET 
-                     USU_ATIVO = ?, 
-                     PERM_TREATMENT = ?, 
-                     PERM_ANALYTICS = ?, 
-                     PERM_ADDRESSING = ?, 
-                     PERM_SETTINGS = ? 
-                     WHERE USU_COD = ?`;
-        
-        const params = [
-            active ? 'S' : 'N',
-            permissions.treatment ? 'S' : 'N',
-            permissions.analytics ? 'S' : 'N',
-            permissions.addressing ? 'S' : 'N',
-            permissions.settings ? 'S' : 'N',
-            id
-        ];
-
-        db.query(sql, params, (err) => {
-            db.detach();
-            if (err) return res.json({success:false, error: err.message});
-            res.json({success:true});
-        });
-    });
-});
-
-app.get('/categories', (req, res) => {
-    // ... existing logic for categories
-    Firebird.attach(options, (err, db) => {
-        if (err) return res.status(500).json([]);
-        db.query('SELECT GR_COD, GR_DESCRI FROM GRUPOPRODUTOS', [], (errG, groups) => {
-            if (errG) { db.detach(); return res.json([]); }
-            db.query('SELECT GR_COD, SG_COD, SG_DESCRI FROM SUBGRUPOPRODUTOS', [], (errS, subgroups) => {
-                if (errS) { db.detach(); return res.json([]); }
-                const sqlTotal = `SELECT GR_COD, SG_COD, COUNT(*) as TOTAL FROM PRODUTOS WHERE PRO_ATIVO = 'S' GROUP BY GR_COD, SG_COD`;
-                const sqlMapped = `SELECT P.GR_COD, P.SG_COD, COUNT(DISTINCT L.PRO_COD) as MAPPED FROM GRIDE_INVENTARIO_LOG L JOIN PRODUTOS P ON P.PRO_COD = L.PRO_COD WHERE L.STATUS IN ('Contado', 'Divergência', 'Concluído') GROUP BY P.GR_COD, P.SG_COD`;
-                db.query(sqlTotal, [], (errT, totalRes) => {
-                    if (errT) { db.detach(); return res.json([]); }
-                    db.query(sqlMapped, [], (errM, mappedRes) => {
-                        db.detach();
-                        const totalMap = new Map();
-                        totalRes.forEach(r => totalMap.set(`${r.GR_COD}-${r.SG_COD}`, r.TOTAL));
-                        const mappedMap = new Map();
-                        if(mappedRes) mappedRes.forEach(r => mappedMap.set(`${r.GR_COD}-${r.SG_COD}`, r.MAPPED));
-                        const tree = groups.map(g => {
-                            const grId = String(g.GR_COD).trim();
-                            const subs = subgroups.filter(s => String(s.GR_COD).trim() === grId).map(s => {
-                                const sgId = String(s.SG_COD).trim();
-                                const key = `${grId}-${sgId}`;
-                                return { id: sgId, db_id: s.SG_COD, name: safeString(s.SG_DESCRI), count: totalMap.get(key) || 0, mappedCount: mappedMap.get(key) || 0 };
-                            });
-                            const groupTotal = subs.reduce((acc, s) => acc + s.count, 0);
-                            const groupMapped = subs.reduce((acc, s) => acc + s.mappedCount, 0);
-                            return { id: grId, db_id: g.GR_COD, label: safeString(g.GR_DESCRI), count: groupTotal, mappedCount: groupMapped, subcategories: subs };
-                        });
-                        res.json(tree);
-                    });
-                });
-            });
         });
     });
 });
@@ -486,11 +472,6 @@ app.get('/blocks', (req, res) => {
                                 }
                                 blocks.push({ id: key, parentRef: parentRefDisplay, location: items[0].location, status: status, items: items, lockedBy: lockedInfo });
                             });
-                            blocks.sort((a, b) => {
-                                if (a.status === 'pending' && b.status !== 'pending') return -1;
-                                if (a.status !== 'pending' && b.status === 'pending') return 1;
-                                return 0;
-                            });
                             res.json(blocks);
                         });
                     });
@@ -500,7 +481,32 @@ app.get('/blocks', (req, res) => {
     });
 });
 
-// ... (existing reserve-block, history, etc. routes kept same) ...
+app.get('/block-counts', (req, res) => {
+    const search = req.query.search || ''; const gr_cod = req.query.gr_cod; const sg_cod = req.query.sg_cod; const location = req.query.location;
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.status(500).json({ pending: 0, progress: 0, completed: 0 });
+        db.query('SELECT BLOCK_ID FROM GRIDE_RESERVAS', [], (errR, reservations) => {
+            const lockSet = new Set(); if(reservations) reservations.forEach(r => lockSet.add(safeString(r.BLOCK_ID)));
+            db.query("SELECT PRO_COD FROM GRIDE_INVENTARIO_LOG WHERE STATUS IN ('Contado', 'Divergência', 'Concluído')", [], (errL, logs) => {
+                const countedSet = new Set(); if(logs) logs.forEach(l => countedSet.add(l.PRO_COD));
+                let sql = `SELECT P.PRO_COD, P.PRO_COD_SIMILAR FROM PRODUTOS P WHERE P.PRO_ATIVO = 'S'`;
+                const params = [];
+                if (search) { sql += ` AND (P.PRO_DESCRI CONTAINING ? OR P.PRO_NRFABRICANTE CONTAINING ?)`; params.push(search); params.push(search); }
+                if (gr_cod) { sql += ` AND TRIM(P.GR_COD) = ?`; params.push(gr_cod); }
+                if (sg_cod) { sql += ` AND TRIM(P.SG_COD) = ?`; params.push(sg_cod); }
+                if (location) { const cleanLoc = location.replace(/^LOC-/i, ''); sql += ` AND (P.PRO_PRATELEIRA STARTING WITH ? OR P.PRO_PRATELEIRA STARTING WITH ?)`; params.push(location); params.push(cleanLoc); }
+                db.query(sql, params, (errP, products) => {
+                    db.detach(); if (errP) return res.json({ pending: 0, progress: 0, completed: 0 });
+                    const blockGroups = new Map(); products.forEach(p => { const simRaw = safeString(p.PRO_COD_SIMILAR); const idRaw = safeString(p.PRO_COD); const key = simRaw.length > 0 ? simRaw : idRaw; if (!blockGroups.has(key)) blockGroups.set(key, []); blockGroups.get(key).push(p.PRO_COD); });
+                    let pending = 0, progress = 0, completed = 0;
+                    blockGroups.forEach((prodIds, key) => { const isLocked = lockSet.has(key); const allCounted = prodIds.every(id => countedSet.has(id)); if (isLocked) progress++; else if (allCounted) completed++; else pending++; });
+                    res.json({ pending, progress, completed });
+                });
+            });
+        });
+    });
+});
+
 app.get('/reserved-blocks/:userId', (req, res) => {
     const { userId } = req.params;
     Firebird.attach(options, async (err, db) => {
@@ -508,7 +514,6 @@ app.get('/reserved-blocks/:userId', (req, res) => {
         try {
             const rows = await execute(db, 'SELECT BLOCK_ID, ITEMS_JSON FROM GRIDE_RESERVAS WHERE TRIM(USU_COD) = ?', [userId]);
             if(!rows || rows.length === 0) { db.detach(); return res.json([]); }
-
             const blocks = [];
             const logs = await execute(db, "SELECT PRO_COD FROM GRIDE_INVENTARIO_LOG WHERE STATUS IN ('Contado', 'Divergência', 'Concluído')");
             const countedSet = new Set(logs.map(l => l.PRO_COD));
@@ -516,7 +521,6 @@ app.get('/reserved-blocks/:userId', (req, res) => {
             for (const r of rows) {
                 let items = [];
                 let loadedFromSnapshot = false;
-                
                 try { 
                     const jsonStr = await readBlob(r.ITEMS_JSON);
                     if (jsonStr && jsonStr.trim().length > 0) {
@@ -761,11 +765,58 @@ app.post('/layout', (req, res) => {
     res.json({ success: true });
 });
 
+app.get('/categories', (req, res) => {
+    Firebird.attach(options, (err, db) => {
+        if (err) return res.status(500).json([]);
+        db.query('SELECT GR_COD, GR_DESCRI FROM GRUPOPRODUTOS', [], (errG, groups) => {
+            if (errG) { db.detach(); return res.json([]); }
+            db.query('SELECT GR_COD, SG_COD, SG_DESCRI FROM SUBGRUPOPRODUTOS', [], (errS, subgroups) => {
+                if (errS) { db.detach(); return res.json([]); }
+                const sqlTotal = `SELECT GR_COD, SG_COD, COUNT(*) as TOTAL FROM PRODUTOS WHERE PRO_ATIVO = 'S' GROUP BY GR_COD, SG_COD`;
+                const sqlMapped = `SELECT P.GR_COD, P.SG_COD, COUNT(DISTINCT L.PRO_COD) as MAPPED FROM GRIDE_INVENTARIO_LOG L JOIN PRODUTOS P ON P.PRO_COD = L.PRO_COD WHERE L.STATUS IN ('Contado', 'Divergência', 'Concluído') GROUP BY P.GR_COD, P.SG_COD`;
+                db.query(sqlTotal, [], (errT, totalRes) => {
+                    if (errT) { db.detach(); return res.json([]); }
+                    db.query(sqlMapped, [], (errM, mappedRes) => {
+                        db.detach();
+                        const totalMap = new Map();
+                        totalRes.forEach(r => totalMap.set(`${r.GR_COD}-${r.SG_COD}`, r.TOTAL));
+                        const mappedMap = new Map();
+                        if(mappedRes) mappedRes.forEach(r => mappedMap.set(`${r.GR_COD}-${r.SG_COD}`, r.MAPPED));
+                        const tree = groups.map(g => {
+                            const grId = String(g.GR_COD).trim();
+                            const subs = subgroups.filter(s => String(s.GR_COD).trim() === grId).map(s => {
+                                const sgId = String(s.SG_COD).trim();
+                                const key = `${grId}-${sgId}`;
+                                return { id: sgId, db_id: s.SG_COD, name: safeString(s.SG_DESCRI), count: totalMap.get(key) || 0, mappedCount: mappedMap.get(key) || 0 };
+                            });
+                            const groupTotal = subs.reduce((acc, s) => acc + s.count, 0);
+                            const groupMapped = subs.reduce((acc, s) => acc + s.mappedCount, 0);
+                            return { id: grId, db_id: g.GR_COD, label: safeString(g.GR_DESCRI), count: groupTotal, mappedCount: groupMapped, subcategories: subs };
+                        });
+                        res.json(tree);
+                    });
+                });
+            });
+        });
+    });
+});
+
+app.get('/meta-status', (req, res) => {
+    Firebird.attach(options, async (err, db) => {
+        if (err) return res.status(500).json({ totalStock: 0, mappedStock: 0 });
+        try {
+            const resTotal = await execute(db, "SELECT COUNT(*) as TOTAL FROM PRODUTOS WHERE PRO_ATIVO = 'S'");
+            const resMapped = await execute(db, "SELECT COUNT(DISTINCT PRO_COD) as MAPPED FROM GRIDE_INVENTARIO_LOG WHERE STATUS IN ('Contado', 'Divergência', 'Concluído')");
+            db.detach(); res.json({ totalStock: resTotal[0].TOTAL, mappedStock: resMapped[0].MAPPED });
+        } catch (e) { db.detach(); res.json({ totalStock: 0, mappedStock: 0 }); }
+    });
+});
+
 const startServer = async () => {
     try {
         await initDb();
         app.listen(port, '0.0.0.0', () => {
-            console.log(`Servidor GRIDE (Completo v3) rodando em http://localhost:${port}`);
+            console.log(`Servidor GRIDE (Tabela Paralela v5) rodando em http://localhost:${port}`);
         });
     } catch (e) {
         console.error("Falha fatal na inicialização:", e);
