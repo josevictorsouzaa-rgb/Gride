@@ -139,11 +139,6 @@ export const api = {
       return res || [];
   },
 
-  updateCount: async (data: { logId: number, sku: string, newQty: number, oldQty: number, user_name: string, user_id: string }): Promise<{ success: boolean }> => {
-      const res = await postJson('/update-count', data);
-      return res || { success: false };
-  },
-
   saveCount: async (data: any) => {
       // Nota: No sistema atual a persistência é via finalização de bloco, mas para ad-hoc:
       return { success: true };

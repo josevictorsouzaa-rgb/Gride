@@ -789,23 +789,6 @@ app.post('/resolve-treatment', (req, res) => {
     });
 });
 
-app.post('/update-count', (req, res) => {
-    const { logId, newQty, oldQty, user_name, user_id, sku } = req.body;
-    Firebird.attach(options, (err, db) => {
-        if(err) return res.json({success:false});
-        db.query('SELECT * FROM GRIDE_INVENTARIO_LOG WHERE ID = ?', [logId], (err, rows) => {
-            if(err || !rows || rows.length === 0) { db.detach(); return res.json({success: false}); }
-            const original = rows[0];
-            const diff = newQty - oldQty;
-            const motivo = `Ajuste pós-conclusão: ${oldQty} -> ${newQty} (${diff > 0 ? '+' : ''}${diff})`;
-            db.query(`INSERT INTO GRIDE_INVENTARIO_LOG (PRO_COD, PRO_NRFABRICANTE, NOME_PRODUTO, USU_COD, USUARIO_NOME, QTD_SISTEMA, QTD_CONTADA, LOCALIZACAO, STATUS, DIVERGENCIA_MOTIVO, BLOCK_REF, DATA_HORA) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'EDIÇÃO', ?, ?, CURRENT_TIMESTAMP)`, [original.PRO_COD, original.PRO_NRFABRICANTE, original.NOME_PRODUTO, user_id || original.USU_COD, user_name, original.QTD_SISTEMA, newQty, original.LOCALIZACAO, motivo, original.BLOCK_REF], (errInsert) => {
-                if(errInsert) { db.detach(); return res.json({success:false}); }
-                db.query('UPDATE PRODUTOS SET PRO_EST_ATUAL = ? WHERE PRO_COD = ?', [newQty, original.PRO_COD], () => { db.detach(); res.json({success: true}); });
-            });
-        });
-    });
-});
-
 app.get('/history', (req, res) => {
     Firebird.attach(options, (err, db) => {
         const sql = `SELECT FIRST 100 L.*, M.MAR_DESCRI, T.STATUS AS TREATMENT_STATUS, T.RESOLUCAO_NOTA FROM GRIDE_INVENTARIO_LOG L LEFT JOIN PRODUTOS P ON L.PRO_COD = P.PRO_COD LEFT JOIN MARCAS M ON P.MAR_COD = M.MAR_COD LEFT JOIN GRIDE_TRATAMENTO T ON T.LOG_ID = L.ID ORDER BY L.DATA_HORA DESC`;

@@ -46,9 +46,10 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
       const blockGroups = new Map();
 
       data.forEach((entry: any) => {
-          // FILTRO RIGOROSO: Apenas itens concluídos/contados/divergentes/editados.
+          // FILTRO RIGOROSO: Apenas itens concluídos/contados/divergentes.
           // Ignora logs de processo como 'RESERVADO', 'DEVOLVIDO' ou 'Pendente'.
-          if (['RESERVADO', 'DEVOLVIDO', 'pending'].includes(entry.STATUS)) return;
+          // 'EDIÇÃO' removido da lógica visual conforme solicitado.
+          if (['RESERVADO', 'DEVOLVIDO', 'pending', 'EDIÇÃO'].includes(entry.STATUS)) return;
 
           const rawRef = entry.BLOCK_REF || '';
           // Tenta extrair a referencia do pai. Se tiver || (timestamp), pega a primeira parte.
@@ -63,7 +64,6 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
               blockGroups.set(uniqueBlockId, {
                   id: uniqueBlockId,
                   parentRef: parentRef,
-                  // CORREÇÃO: Remove fallback 'GERAL'
                   location: entry.LOCALIZACAO || '',
                   latestDate: entry.DATA_HORA, 
                   user: entry.USUARIO_NOME,
@@ -74,18 +74,16 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
           const group = blockGroups.get(uniqueBlockId);
           
           group.items.push({
-              id: entry.ID, // Log ID crucial para edição
+              id: entry.ID, 
               name: entry.NOME_PRODUTO,
               ref: entry.PRO_NRFABRICANTE || 'S/N', // Usa Nr Fabricante
               brand: entry.MAR_DESCRI || '', // Usa Marca (agora trazida pelo JOIN)
               qty: entry.QTD_CONTADA,
               countedBy: entry.USUARIO_NOME,
               countedAt: entry.DATA_HORA,
-              // CORREÇÃO: Remove fallback 'GERAL'
               location: entry.LOCALIZACAO || '',
               status: entry.STATUS,
-              treatmentStatus: entry.TREATMENT_STATUS, // Novo campo do JOIN
-              isEdited: entry.STATUS === 'EDIÇÃO'
+              treatmentStatus: entry.TREATMENT_STATUS // Novo campo do JOIN
           });
       });
 
@@ -148,34 +146,6 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
   }, [historyBlocks, searchText, activeFilters]);
 
   const hasActiveFilters = activeFilters.startDate || activeFilters.endDate || activeFilters.users.length > 0;
-
-  // EDIT LOGIC
-  const handleEditCount = async (e: React.MouseEvent, item: any) => {
-      e.stopPropagation();
-      if (!currentUser) return alert("Faça login para editar.");
-
-      const newQtyStr = prompt(`Editar contagem para ${item.name}?\nQuantidade atual: ${item.qty}`, item.qty);
-      if (newQtyStr === null) return;
-      
-      const newQty = parseFloat(newQtyStr);
-      if (isNaN(newQty)) return alert("Valor inválido.");
-
-      const res = await api.updateCount({
-          logId: item.id,
-          sku: item.ref,
-          newQty: newQty,
-          oldQty: item.qty,
-          user_name: currentUser.name,
-          user_id: currentUser.id
-      });
-
-      if (res.success) {
-          alert("Contagem atualizada e registrada com sucesso!");
-          fetchHistory(); // Refresh to show updated value
-      } else {
-          alert("Erro ao atualizar contagem.");
-      }
-  };
 
   const handleOpenDetails = (item: any) => {
       setSelectedItem(item);
@@ -313,7 +283,6 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
                 {/* Itens List */}
                 <div className="divide-y divide-gray-100 dark:divide-white/5">
                     {block.items.map((item: any, idx: number) => {
-                        const isEdited = item.isEdited;
                         const isIssue = item.status === 'not_located' || item.status === 'divergence_info' || item.status === 'Divergência' || item.status === 'Não Localizado';
                         const isResolved = item.treatmentStatus === 'RESOLVED';
 
@@ -371,17 +340,6 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ currentUser, onNav
                                 <span className="block text-[9px] md:text-xs text-gray-400 whitespace-nowrap mt-1">
                                     {formatFullDateTime(item.countedAt)}
                                 </span>
-                                {isEdited && <span className="text-[9px] text-orange-500 font-bold">Editado</span>}
-                                
-                                {!isIssue && (
-                                    <button 
-                                        onClick={(e) => handleEditCount(e, item)}
-                                        className="mt-2 flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] md:text-xs font-bold text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/20 hover:bg-green-100 dark:hover:bg-green-900/40 border border-green-200 dark:border-green-900/30 transition-all"
-                                    >
-                                        <Icon name="edit" size={14} />
-                                        Editar
-                                    </button>
-                                )}
                             </div>
                         </div>
                         );
