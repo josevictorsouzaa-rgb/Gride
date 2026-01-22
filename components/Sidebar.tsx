@@ -24,21 +24,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
   reservedCount = 0,
   treatmentCount = 0 
 }) => {
-  const isAdmin = currentUser?.isAdmin;
+  // Acesso seguro às permissões (fallback para false se undefined)
+  const perms = currentUser?.permissions || { 
+      treatment: false, 
+      analytics: false, 
+      addressing: false, 
+      settings: false 
+  };
 
-  // Definição da ordem exata solicitada com propriedades de espaçamento
   const navItems = [
     { id: 'dashboard', label: 'Hub de Controle', icon: 'grid_view' },
-    ...(isAdmin ? [{ id: 'analytics', label: 'Indicadores', icon: 'insights' }] : []),
-    // Meta Diária removida conforme solicitado
+    
+    // Analytics (Permissão: analytics)
+    ...(perms.analytics ? [{ id: 'analytics', label: 'Indicadores', icon: 'insights' }] : []),
+    
     { id: 'reserved', label: 'Meus Reservados', icon: 'assignment' },
     { id: 'history', label: 'Histórico', icon: 'history' },
     
-    // Grupo Tratamento (Separado)
-    ...(isAdmin ? [{ id: 'treatment', label: 'Tratamento', icon: 'admin_panel_settings', spacer: true }] : []),
+    // Tratamento (Permissão: treatment)
+    ...(perms.treatment ? [{ id: 'treatment', label: 'Tratamento', icon: 'admin_panel_settings', spacer: true }] : []),
     
-    // Grupo Endereçamento (Separado)
-    ...(isAdmin ? [{ id: 'address_manager', label: 'Endereçamento', icon: 'qr_code_2', spacer: true }] : []),
+    // Endereçamento (Permissão: addressing)
+    ...(perms.addressing ? [{ id: 'address_manager', label: 'Endereçamento', icon: 'qr_code_2', spacer: true }] : []),
   ];
 
   return (
@@ -57,7 +64,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
              <p className="text-sm font-bold text-gray-900 dark:text-white truncate">{currentUser?.name}</p>
              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{currentUser?.role}</p>
            </div>
-           {isAdmin && (
+           {perms.settings && (
              <button 
                onClick={() => onNavigate('settings')}
                className="text-gray-400 hover:text-primary transition-colors hover:rotate-90 duration-300"

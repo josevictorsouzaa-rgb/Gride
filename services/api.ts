@@ -1,5 +1,5 @@
 
-import { User, Block, WarehouseLayout, WMSAddress, TreatmentItem } from '../types';
+import { User, Block, WarehouseLayout, WMSAddress, TreatmentItem, UserPermissions } from '../types';
 import { getIconByTerm, GROUP_ICONS } from '../data/categories';
 
 export interface ApiCategory {
@@ -147,6 +147,10 @@ export const api = {
   getUsers: async (): Promise<User[]> => {
       const res = await fetchJson('/users');
       return res || [];
+  },
+
+  updateUserPermissions: async (id: string, active: boolean, permissions: UserPermissions): Promise<{success: boolean, error?: string}> => {
+      return postJson('/update-user-permissions', { id, active, permissions });
   },
 
   getReservedBlocks: async (userId: string): Promise<Block[]> => {

@@ -60,13 +60,22 @@ export interface InventoryItem {
   history?: HistoryEntry[];
 }
 
+export interface UserPermissions {
+  treatment: boolean;
+  analytics: boolean;
+  addressing: boolean;
+  settings: boolean;
+}
+
 export interface User {
   name: string;
   id: string;
   role: string;
   avatar: string;
-  isAdmin?: boolean; // Master user (Jose Victor)
-  canTreat?: boolean; // Permission to treat issues
+  isAdmin?: boolean; // Mantido para compatibilidade, mas o foco agora são as permissions
+  canTreat?: boolean; // Deprecated, use permissions.treatment
+  active: boolean;    // Bloqueio de usuário
+  permissions: UserPermissions;
 }
 
 export interface Block {

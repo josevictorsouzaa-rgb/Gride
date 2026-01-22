@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Icon } from '../components/Icon';
-import { Screen, User } from '../types';
+import { Screen, User, UserPermissions } from '../types';
 import { getSettings, saveSettings, getSettingsHistory, SettingsHistoryEntry } from '../data/settingsStore';
 import { api } from '../services/api';
 
@@ -44,18 +44,32 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
 
   useEffect(() => {
       if (activeTab === 'users') {
-          setIsLoadingUsers(true);
-          api.getUsers().then(data => {
-              setUsers(data);
-              setIsLoadingUsers(false);
-          });
+          loadUsers();
       }
   }, [activeTab]);
 
-  const toggleUserPermission = (id: string) => {
-    setUsers(prev => prev.map(u => 
-      u.id === id ? { ...u, canTreat: !u.canTreat } : u
-    ));
+  const loadUsers = () => {
+      setIsLoadingUsers(true);
+      api.getUsers().then(data => {
+          setUsers(data);
+          setIsLoadingUsers(false);
+      });
+  };
+
+  const handleTogglePermission = async (user: User, key: keyof UserPermissions) => {
+      const updatedPermissions = { ...user.permissions, [key]: !user.permissions[key] };
+      // Optimistic update
+      setUsers(prev => prev.map(u => u.id === user.id ? { ...u, permissions: updatedPermissions } : u));
+      
+      await api.updateUserPermissions(user.id, user.active, updatedPermissions);
+  };
+
+  const handleToggleBlock = async (user: User) => {
+      const newActiveState = !user.active;
+      // Optimistic update
+      setUsers(prev => prev.map(u => u.id === user.id ? { ...u, active: newActiveState } : u));
+      
+      await api.updateUserPermissions(user.id, newActiveState, user.permissions);
   };
 
   const handleSave = () => {
@@ -290,36 +304,81 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ onBack, currentU
           </div>
         )}
 
-        {/* User Tab Content */}
+        {/* User Tab Content - Reformulado */}
         {activeTab === 'users' && (
-          <div className="space-y-4 animate-fade-in">
-             <div className="flex flex-col gap-3">
-               {users.map(user => (
-                 <div key={user.id} className="bg-white dark:bg-surface-dark p-4 rounded-xl border border-gray-200 dark:border-card-border shadow-sm flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                       <div className="size-12 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-gray-500 dark:text-gray-300 font-bold border border-white dark:border-gray-600">
-                         {getInitials(user.name)}
-                       </div>
-                       <div>
-                          <h4 className="font-bold text-gray-900 dark:text-white">{user.name}</h4>
-                          <p className="text-xs text-gray-500">ID: {user.id}</p>
-                       </div>
+          <div className="space-y-6 animate-fade-in">
+             <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-900/30 flex items-start gap-3">
+                 <Icon name="info" className="text-blue-500" />
+                 <p className="text-xs text-blue-800 dark:text-blue-200">
+                     Gerencie quem tem acesso e quais ferramentas cada usuário pode utilizar. Usuários bloqueados não conseguirão fazer login no aplicativo.
+                 </p>
+             </div>
+
+             <div className="flex flex-col gap-4">
+               {users.map(user => {
+                 const isActive = user.active;
+                 return (
+                 <div key={user.id} className={`bg-white dark:bg-surface-dark p-5 rounded-xl border shadow-sm transition-colors ${!isActive ? 'border-red-200 dark:border-red-900/30 bg-red-50/50 dark:bg-red-900/5' : 'border-gray-200 dark:border-card-border'}`}>
+                    {/* Header do User */}
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                           <div className={`size-12 rounded-full flex items-center justify-center font-bold border text-lg ${
+                               isActive 
+                               ? 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600'
+                               : 'bg-red-100 dark:bg-red-900/20 text-red-500 border-red-200 dark:border-red-800'
+                           }`}>
+                             {getInitials(user.name)}
+                           </div>
+                           <div>
+                              <h4 className={`font-bold text-lg ${!isActive ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>
+                                {user.name} {user.id === currentUser?.id ? '(Você)' : ''}
+                              </h4>
+                              <p className="text-xs text-gray-500">ID: {user.id} • {isActive ? 'Ativo' : 'Bloqueado'}</p>
+                           </div>
+                        </div>
+                        
+                        {/* Botão de Bloqueio */}
+                        <div className="flex flex-col items-end">
+                            <span className={`text-[10px] font-bold uppercase mb-1 ${isActive ? 'text-green-600' : 'text-red-500'}`}>
+                                {isActive ? 'Acesso Liberado' : 'Acesso Bloqueado'}
+                            </span>
+                            <button 
+                                onClick={() => handleToggleBlock(user)}
+                                className={`w-12 h-7 rounded-full transition-colors relative ${isActive ? 'bg-green-500' : 'bg-red-500'}`}
+                                disabled={user.id === currentUser?.id} // Não pode se bloquear
+                            >
+                                <div className={`absolute top-1 left-1 size-5 bg-white rounded-full shadow transition-transform ${isActive ? 'translate-x-5' : 'translate-x-0'}`} />
+                            </button>
+                        </div>
                     </div>
-                    <div className="flex flex-col items-end gap-1">
-                       <span className="text-[10px] font-bold uppercase text-gray-400">Tratar Erros</span>
-                       <button 
-                         onClick={() => toggleUserPermission(user.id)}
-                         className={`relative w-12 h-7 rounded-full transition-colors duration-200 ${
-                           user.canTreat ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'
-                         }`}
-                       >
-                         <div className={`absolute top-1 left-1 size-5 bg-white rounded-full shadow transition-transform duration-200 ${
-                           user.canTreat ? 'translate-x-5' : 'translate-x-0'
-                         }`} />
-                       </button>
+
+                    <div className="border-t border-gray-100 dark:border-white/5 my-3" />
+
+                    {/* Grid de Permissões */}
+                    <div className={`grid grid-cols-2 md:grid-cols-4 gap-3 ${!isActive ? 'opacity-50 pointer-events-none' : ''}`}>
+                        {[
+                            { key: 'treatment', label: 'Tratamento', icon: 'admin_panel_settings', color: 'text-orange-500' },
+                            { key: 'analytics', label: 'Indicadores', icon: 'insights', color: 'text-blue-500' },
+                            { key: 'addressing', label: 'Endereçamento', icon: 'qr_code_2', color: 'text-purple-500' },
+                            { key: 'settings', label: 'Parâmetros', icon: 'settings', color: 'text-gray-500' }
+                        ].map((perm) => (
+                            <label key={perm.key} className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer border border-transparent hover:border-gray-200 dark:hover:border-white/10 transition-all">
+                                <input 
+                                    type="checkbox"
+                                    checked={user.permissions[perm.key as keyof UserPermissions]}
+                                    onChange={() => handleTogglePermission(user, perm.key as keyof UserPermissions)}
+                                    disabled={user.id === currentUser?.id && perm.key === 'settings'} // Não pode remover seu proprio acesso a settings
+                                    className="rounded border-gray-300 text-primary focus:ring-primary size-4"
+                                />
+                                <div className="flex items-center gap-1.5 select-none">
+                                    <Icon name={perm.icon} size={16} className={perm.color} />
+                                    <span className="text-xs font-bold text-gray-700 dark:text-gray-300">{perm.label}</span>
+                                </div>
+                            </label>
+                        ))}
                     </div>
                  </div>
-               ))}
+               );})}
             </div>
           </div>
         )}
