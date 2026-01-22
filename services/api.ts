@@ -72,7 +72,7 @@ export interface Warehouse {
     descricao: string;
 }
 
-const BASE_URL = '/api';
+const BASE_URL = 'http://gride.local:8000';
 
 const fetchJson = async (url: string, options?: RequestInit) => {
     try {
