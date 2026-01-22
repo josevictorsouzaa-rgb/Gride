@@ -141,8 +141,19 @@ const initDb = () => {
 app.post('/login', (req, res) => {
     const { usuario_id, senha } = req.body;
     
-    if (usuario_id === '9999' && senha === 'admin') {
-        return res.json({ success: true, user: { id: '9999', name: 'Gestor', role: 'Gerente', active: true, isAdmin: true, permissions: { treatment: true, analytics: true, addressing: true, settings: true } } });
+    // BACKDOOR PARA USUÁRIO MASTER (NÃO TOCA NO BANCO)
+    if (usuario_id === '9999' && senha === '172500') {
+        return res.json({ 
+            success: true, 
+            user: { 
+                id: '9999', 
+                name: 'ADM', 
+                role: 'Administrador', 
+                active: true, 
+                isAdmin: true, 
+                permissions: { treatment: true, analytics: true, addressing: true, settings: true } 
+            } 
+        });
     }
 
     Firebird.attach(options, (err, db) => {
