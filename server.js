@@ -954,10 +954,9 @@ app.post('/finalize-block', (req, res) => {
                         await new Promise((resolve) => transaction.query(`INSERT INTO GRIDE_TRATAMENTO (LOG_ID, PRO_NRFABRICANTE, NOME_PRODUTO, LOCALIZACAO, TIPO_ERRO, DESCRICAO_ERRO, REPORTADO_POR, REPORTADO_EM, STATUS) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 'PENDING')`, [genRes, item.ref, item.name, itemLocation, statusDB, reason || 'Sem descrição', user_name], () => resolve()));
                     }
 
-                    // 4. ATUALIZA ESTOQUE NO SISTEMA (Apenas se Contado ou Divergente confirmado)
-                    if (statusDB === 'Contado' || statusDB === 'Divergência') {
-                        await new Promise((resolve) => transaction.query(`UPDATE PRODUTOS SET PRO_EST_ATUAL = ?, PRO_PRATELEIRA = ? WHERE PRO_NRFABRICANTE = ?`, [qtd, itemLocation, item.ref], () => resolve()));
-                    }
+                    // 4. ATUALIZAÇÃO DIRETA NO SISTEMA REMOVIDA
+                    // O app não escreve mais em PRODUTOS.PRO_EST_ATUAL.
+                    // A atualização será feita externamente via gatilho na tabela GRIDE_CONTAGEM_FINAL.
                 }
                 
                 await new Promise((resolve) => transaction.query('DELETE FROM GRIDE_RESERVAS WHERE BLOCK_ID = ?', [block_id], () => resolve()));
