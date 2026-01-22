@@ -22,7 +22,7 @@ export interface ApiCategory {
 export interface MetaStatus {
   totalStock: number;
   mappedStock: number;
-  cycleName?: string; // Novo campo
+  cycleName?: string;
 }
 
 export interface Cycle {
@@ -31,6 +31,20 @@ export interface Cycle {
     startDate: string;
     endDate?: string;
     active: boolean;
+}
+
+export interface CyclePerformance {
+    totalCount: number;
+    accuracy: number;
+    divergenceCount: number;
+    chartData: { date: string, count: number }[];
+}
+
+export interface ReportOptions {
+    cycleId: number | string;
+    statuses: string[];
+    users: string[];
+    columns: string[];
 }
 
 export interface RankingItem {
@@ -149,7 +163,7 @@ export const api = {
       return res || { totalStock: 0, mappedStock: 0, cycleName: '' };
   },
 
-  // --- MÉTODOS DE CICLOS ---
+  // --- MÉTODOS DE CICLOS & ANALYTICS AVANÇADO ---
   getCycles: async (): Promise<Cycle[]> => {
       const res = await fetchJson('/cycles');
       return res || [];
@@ -158,7 +172,17 @@ export const api = {
   startNewCycle: async (name: string): Promise<{success: boolean, error?: string}> => {
       return postJson('/cycles', { name });
   },
-  // -----------------------
+
+  getCyclePerformance: async (cycleId: number): Promise<CyclePerformance | null> => {
+      const res = await fetchJson(`/analytics/cycle-performance/${cycleId}`);
+      return res;
+  },
+
+  generateReport: async (options: ReportOptions): Promise<any[]> => {
+      const res = await postJson('/reports/generate', options);
+      return res || [];
+  },
+  // ---------------------------------------------
 
   getCategories: async (): Promise<ApiCategory[]> => {
       const res = await fetchJson('/categories');
